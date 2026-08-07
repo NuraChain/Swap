@@ -1,0 +1,23 @@
+{
+    "name": "@nuraswap/contracts",
+    "private": true,
+    "version": "0.0.0",
+    "type": "module",
+    "license": "GPL-3.0-or-later",
+    "scripts": {
+        "compile": "hardhat compile && node scripts/write-init-code-hash.ts && hardhat compile",
+        "test": "hardhat test",
+        "node": "hardhat node",
+        "deploy:local": "hardhat run scripts/deploy.ts --network localhost",
+        "seed:local": "hardhat run scripts/seed.ts --network localhost",
+        "deploy:testnet": "hardhat run scripts/deploy.ts --network bscTestnet",
+        "seed:testnet": "hardhat run scripts/seed.ts --network bscTestnet",
+        "fund": "node scripts/fund.ts"
+    },
+    "devDependencies": {
+        "@nomicfoundation/hardhat-toolbox-viem": "^5.0.7",
+        "@openzeppelin/contracts": "^5.6.1",
+        "hardhat": "^3.12.0",
+        "viem": "^2.55.11"
+    }
+}
