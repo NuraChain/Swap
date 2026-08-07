@@ -1,0 +1,18 @@
+{
+    "name": "@nuraswap/shared",
+    "private": true,
+    "version": "0.0.0",
+    "type": "module",
+    "license": "MIT",
+    "exports": {
+        "./math": "./src/math.ts",
+        "./digits": "./src/digits.ts",
+        "./deployments": "./src/deployments.ts"
+    },
+    "scripts": {
+        "test": "vitest run"
+    },
+    "devDependencies": {
+        "vitest": "^4.1.10"
+    }
+}
