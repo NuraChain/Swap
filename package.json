@@ -1,0 +1,28 @@
+{
+    "name": "nuraswap",
+    "private": true,
+    "version": "0.0.0",
+    "type": "module",
+    "engines": {
+        "node": ">=24"
+    },
+    "workspaces": [
+        "application",
+        "server",
+        "contracts",
+        "shared"
+    ],
+    "scripts": {
+        "dev": "azeroth dev",
+        "check": "azeroth check",
+        "build": "azeroth build",
+        "test": "azeroth test && npm test --workspace shared && npm test --workspace contracts",
+        "start": "npm start --workspace server",
+        "test:app": "azeroth test",
+        "lint:rtl": "node application/scripts/lint-rtl.mjs",
+        "verify": "npm run lint:rtl && npm run check && npm run build && npm test"
+    },
+    "devDependencies": {
+        "@azerothjs/cli": "^2.0.0-beta.2"
+    }
+}

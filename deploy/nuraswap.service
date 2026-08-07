@@ -1,0 +1,28 @@
+# systemd unit for the NuraSwap server (API + SSR pages + built client, one origin).
+# Install: sudo cp deploy/nuraswap.service /etc/systemd/system/
+#          sudo systemctl daemon-reload && sudo systemctl enable --now nuraswap
+[Unit]
+Description=NuraSwap
+Documentation=https://github.com/AzerothJS/AzerothJS
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=nuraswap
+WorkingDirectory=/srv/nuraswap/server
+# Node 24+ runs the server's TypeScript directly - there is no server build step.
+ExecStart=/usr/bin/node src/main.ts
+EnvironmentFile=/srv/nuraswap/server/.env
+Restart=always
+RestartSec=3
+
+# The sqlite database is the only state; everything else is read-only to the service.
+ReadWritePaths=/var/lib/nuraswap /srv/nuraswap/server/logs
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target
