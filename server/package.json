@@ -1,0 +1,38 @@
+{
+    "name": "nuraswap-server",
+    "private": true,
+    "version": "0.0.0",
+    "type": "module",
+    "engines": {
+        "node": ">=24"
+    },
+    "scripts": {
+        "dev": "azeroth dev",
+        "check": "azeroth check",
+        "test": "vitest run",
+        "start": "node src/main.ts"
+    },
+    "dependencies": {
+        "@azerothjs/http": "^2.0.0-beta.2",
+        "@azerothjs/kit": "^2.0.0-beta.2",
+        "@azerothjs/logger": "^2.0.0-beta.2",
+        "@azerothjs/schema": "^2.0.0-beta.2",
+        "@nuraswap/shared": "0.0.0",
+        "azerothjs": "^2.0.0-beta.2",
+        "viem": "^2.55.11"
+    },
+    "devDependencies": {
+        "@azerothjs/cli": "^2.0.0-beta.2",
+        "@azerothjs/devtools": "^2.0.0-beta.2",
+        "@azerothjs/eslint-plugin": "^2.0.0-beta.2",
+        "@azerothjs/ws": "^2.0.0-beta.2",
+        "@eslint/js": "^10.0.1",
+        "@types/node": "^26.1.0",
+        "eslint": "^10.7.0",
+        "globals": "^17.7.0",
+        "jiti": "^2.7.0",
+        "typescript": "^6.0.3",
+        "typescript-eslint": "^8.64.0",
+        "vitest": "^4.1.9"
+    }
+}

@@ -1,0 +1,146 @@
+// Applies decoded domain events to storage. Within a transaction the pair emits
+// Sync before Swap/Mint/Burn, so processing logs in (block, logIndex) order means
+// reserves are already current when the trade lands - the candle price reads them.
+
+import { priceFromReserves } from '@nuraswap/shared/math';
+
+import type { DomainEvent } from './decode.ts';
+import type { IndexerDb } from './db.ts';
+
+export const HOUR = 3600;
+
+export function hourStartOf(timestamp: number): number
+{
+    return timestamp - (timestamp % HOUR);
+}
+
+export interface ApplyContext
+{
+    // Block timestamp lookup for the event's block, already fetched by the caller.
+    timestampOf: (blockNumber: number) => number;
+    // Token decimals resolver; unknown tokens were registered at pairCreated time.
+    decimalsOf: (address: string) => number;
+}
+
+export function applyEvent(db: IndexerDb, event: DomainEvent, context: ApplyContext): void
+{
+    if (event.kind === 'pairCreated')
+    {
+        db.upsertPair({
+            address: event.pair,
+            token0: event.token0,
+            token1: event.token1,
+            createdBlock: event.blockNumber
+        });
+        return;
+    }
+
+    if (event.kind === 'sync')
+    {
+        db.updateReserves(event.pair, event.reserve0, event.reserve1);
+        return;
+    }
+
+    const timestamp = context.timestampOf(event.blockNumber);
+
+    if (event.kind === 'swap')
+    {
+        const inserted = db.insertEvent({
+            blockNumber: event.blockNumber,
+            logIndex: event.logIndex,
+            txHash: event.txHash,
+            timestamp,
+            pair: event.pair,
+            kind: 'swap',
+            account: event.account,
+            amount0In: event.amount0In,
+            amount1In: event.amount1In,
+            amount0Out: event.amount0Out,
+            amount1Out: event.amount1Out
+        });
+        if (!inserted)
+        {
+            return; // replayed tail - candle already counted it
+        }
+        const pair = db.getPair(event.pair);
+        if (pair === null || pair.reserve0 <= 0n || pair.reserve1 <= 0n)
+        {
+            return;
+        }
+        const price = priceFromReserves(
+            pair.reserve0,
+            context.decimalsOf(pair.token0),
+            pair.reserve1,
+            context.decimalsOf(pair.token1)
+        );
+        db.recordCandlePoint(
+            event.pair,
+            hourStartOf(timestamp),
+            price,
+            event.amount0In + event.amount0Out,
+            event.amount1In + event.amount1Out
+        );
+        return;
+    }
+
+    db.insertEvent({
+        blockNumber: event.blockNumber,
+        logIndex: event.logIndex,
+        txHash: event.txHash,
+        timestamp,
+        pair: event.pair,
+        kind: event.kind,
+        account: event.account,
+        amount0In: event.amount0,
+        amount1In: event.amount1,
+        amount0Out: 0n,
+        amount1Out: 0n
+    });
+}
+
+export interface CandlePoint
+{
+    hourStart: number;
+    open: bigint;
+    high: bigint;
+    low: bigint;
+    close: bigint;
+    volume0: bigint;
+    volume1: bigint;
+}
+
+// Forward-fills the gaps between traded hours with flat candles so a quiet chain
+// still charts a continuous line. Pure - tested without a database.
+export function fillCandles(candles: CandlePoint[], toHour: number): CandlePoint[]
+{
+    if (candles.length === 0)
+    {
+        return [];
+    }
+    const filled: CandlePoint[] = [];
+    let cursor = 0;
+    let lastClose = candles[0].open;
+    for (let hour = candles[0].hourStart; hour <= toHour; hour += HOUR)
+    {
+        const next = candles[cursor];
+        if (next !== undefined && next.hourStart === hour)
+        {
+            filled.push(next);
+            lastClose = next.close;
+            cursor++;
+        }
+        else
+        {
+            filled.push({
+                hourStart: hour,
+                open: lastClose,
+                high: lastClose,
+                low: lastClose,
+                close: lastClose,
+                volume0: 0n,
+                volume1: 0n
+            });
+        }
+    }
+    return filled;
+}
