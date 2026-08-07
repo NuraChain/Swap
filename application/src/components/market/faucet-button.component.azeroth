@@ -1,0 +1,68 @@
+import { client } from '../../api.ts';
+import type { TokenRef } from '../../api.ts';
+import { MOCK_TOKEN_ABI, deployment } from '../../lib/chain.ts';
+import type { Address } from '../../lib/chain.ts';
+import { t } from '../../lib/i18n.ts';
+import { pushToast } from '../../lib/toast.ts';
+import { account, refreshBalances, requiredWallet, sendTx } from '../../lib/wallet/store.ts';
+
+import Button from '../ui/button.component.azeroth';
+import Icon from '../ui/icon.component.azeroth';
+import Tooltip from '../ui/tooltip.component.azeroth';
+
+// Test-token tap. Only the mock tokens carry a faucet, and only where the deploy
+// enabled it - a mainnet deployment reports faucet: false and this never renders.
+// Without it a testnet visitor has nothing to trade and the whole app is a
+// read-only demo.
+
+const PER_TOKEN = 1000;
+
+export default component FaucetButton()
+{
+    state busy = false;
+
+    const mocks = async (): Promise<TokenRef[]> =>
+    {
+        const tokens = await client.market.tokens();
+        return tokens.filter((token) => token.symbol.startsWith('m'));
+    };
+
+    const drip = async (): Promise<void> =>
+    {
+        busy = true;
+        const tokens = await mocks();
+        let minted = 0;
+        for (const token of tokens)
+        {
+            const amount = BigInt(PER_TOKEN) * 10n ** BigInt(token.decimals);
+            const ok = await sendTx(
+                `${ t().portfolio.faucet }: ${ token.symbol }`,
+                () => requiredWallet().writeContract({
+                    address: token.address as Address,
+                    abi: MOCK_TOKEN_ABI,
+                    functionName: 'faucet',
+                    args: [amount]
+                } as never)
+            );
+            if (ok)
+            {
+                minted++;
+            }
+        }
+        await refreshBalances();
+        busy = false;
+        if (minted > 0)
+        {
+            pushToast('success', t().portfolio.faucetDone);
+        }
+    };
+
+    <Show when={ (deployment()?.faucet ?? false) && account() !== null }>
+        <Tooltip label={ t().portfolio.faucetHint }>
+            <Button variant="ghost" size="sm" busy={ busy } testId="faucet" onClick={ () => void drip() }>
+                <Icon name="droplets" size={ 15 } />
+                <span>{ t().portfolio.faucet }</span>
+            </Button>
+        </Tooltip>
+    </Show>
+}

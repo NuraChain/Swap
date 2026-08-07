@@ -1,0 +1,179 @@
+import { formatTokenAmount } from '@nuraswap/shared/digits';
+
+import { client } from '../api.ts';
+import type { Pool, TokenWithPrice } from '../api.ts';
+import { ensureDeployment } from '../lib/chain.ts';
+import type { Address } from '../lib/chain.ts';
+import { fmtAmount } from '../lib/format.ts';
+import { fmtNumber, fmtUsd, t } from '../lib/i18n.ts';
+import { account, balances, nativeBalance, txEpoch, watchTokens } from '../lib/wallet/store.ts';
+
+import FaucetButton from '../components/market/faucet-button.component.azeroth';
+import PositionsGrid from '../components/market/positions-grid.component.azeroth';
+import TokenIcon from '../components/market/token-icon.component.azeroth';
+import TxList from '../components/market/tx-list.component.azeroth';
+import WalletModal from '../components/market/wallet-modal.component.azeroth';
+import Button from '../components/ui/button.component.azeroth';
+import EmptyState from '../components/ui/empty-state.component.azeroth';
+
+interface Holding
+{
+    symbol: string;
+    name: string;
+    address: string;
+    decimals: number;
+    balance: bigint;
+    priceUsd: number;
+    valueUsd: number;
+}
+
+export default component Portfolio()
+{
+    state tokens: TokenWithPrice[] = [];
+    state pools: Pool[] = [];
+    state walletOpen = false;
+
+    mount
+    {
+        void (async () =>
+        {
+            await ensureDeployment();
+            const served = await client.market.tokens();
+            tokens = served;
+            watchTokens(served.map((token) => token.address as Address));
+        })();
+    }
+
+    effect (txEpoch())
+    {
+        void client.market.pools().then((list) => { pools = list; }).catch(() => undefined);
+        void client.market.tokens().then((list) => { tokens = list; }).catch(() => undefined);
+    }
+
+    // Native BNB rides the WBNB price; ERC20 balances come from the wallet store.
+    derived holdings = (() =>
+    {
+        const rows: Holding[] = [];
+        const wbnbPrice = tokens.find((token) => token.symbol === 'WBNB')?.priceUsd ?? 0;
+        if (nativeBalance() > 0n)
+        {
+            const amount = Number(formatTokenAmount(nativeBalance(), 18, 8));
+            rows.push({
+                symbol: 'BNB',
+                name: 'BNB',
+                address: 'bnb',
+                decimals: 18,
+                balance: nativeBalance(),
+                priceUsd: wbnbPrice,
+                valueUsd: amount * wbnbPrice
+            });
+        }
+        for (const token of tokens)
+        {
+            const balance = balances()[token.address.toLowerCase()] ?? 0n;
+            if (balance === 0n)
+            {
+                continue;
+            }
+            const amount = Number(formatTokenAmount(balance, token.decimals, 8));
+            rows.push({ ...token, balance, valueUsd: amount * token.priceUsd });
+        }
+        return rows.sort((a, b) => b.valueUsd - a.valueUsd);
+    })();
+
+    derived totalUsd = holdings.reduce((sum, holding) => sum + holding.valueUsd, 0);
+
+    <section class="mx-auto max-w-6xl px-4 py-8 sm:py-12">
+        <div class="flex flex-wrap items-end justify-between gap-4">
+            <h1 class="font-display text-xl font-medium">{ t().portfolio.title }</h1>
+            <Show when={ account() !== null }>
+                <div class="flex items-end gap-4">
+                    <FaucetButton />
+                    <div class="text-end">
+                        <div class="eyebrow">{ t().portfolio.totalValue }</div>
+                        <div class="font-mono text-2xl text-val">{ fmtUsd(totalUsd) }</div>
+                    </div>
+                </div>
+            </Show>
+        </div>
+
+        <Show
+            when={ account() !== null }
+            fallback={
+                <div class="card mt-8">
+                    <EmptyState title={ t().liquidity.connectFirst }>
+                        <Button size="sm" onClick={ () => { walletOpen = true; } }>{ t().common.connect }</Button>
+                    </EmptyState>
+                </div>
+            }
+        >
+            <div class="mt-8">
+                <h2 class="eyebrow">{ t().portfolio.holdings }</h2>
+                <Show
+                    when={ holdings.length > 0 }
+                    fallback={
+                        <div class="card mt-3">
+                            <EmptyState title={ t().portfolio.noHoldings } />
+                        </div>
+                    }
+                >
+                    <div class="card mt-3 overflow-x-auto">
+                        <table class="w-full min-w-[480px] text-sm">
+                            <thead>
+                                <tr class="border-b border-line text-xs text-faint">
+                                    <th class="px-4 py-3 text-start font-normal">{ t().portfolio.asset }</th>
+                                    <th class="px-4 py-3 text-end font-normal">{ t().portfolio.amount }</th>
+                                    <th class="px-4 py-3 text-end font-normal">{ t().portfolio.price }</th>
+                                    <th class="px-4 py-3 text-end font-normal">{ t().portfolio.value }</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <For each={ holdings } key={ (holding) => holding.address } let={ holding }>
+                                    <tr class="border-b border-line last:border-b-0 hover:bg-ink/4">
+                                        <td class="px-4 py-3">
+                                            <span class="flex items-center gap-2.5">
+                                                <TokenIcon symbol={ holding.symbol } address={ holding.address } size={ 26 } />
+                                                <span>
+                                                    <span class="block font-medium">{ holding.symbol }</span>
+                                                    <span class="block text-xs text-faint">{ holding.name }</span>
+                                                </span>
+                                            </span>
+                                        </td>
+                                        <td class="px-4 py-3 text-end font-mono">
+                                            <span>{ fmtAmount(holding.balance, holding.decimals) }</span>
+                                        </td>
+                                        <td class="px-4 py-3 text-end font-mono">
+                                            <span>{ holding.priceUsd === 0 ? '-' : fmtNumber(holding.priceUsd, 4) }</span>
+                                        </td>
+                                        <td class="px-4 py-3 text-end font-mono text-val">
+                                            <span>{ fmtUsd(holding.valueUsd) }</span>
+                                        </td>
+                                    </tr>
+                                </For>
+                            </tbody>
+                        </table>
+                    </div>
+                </Show>
+            </div>
+
+            <div class="mt-10">
+                <h2 class="eyebrow">{ t().liquidity.myPositions }</h2>
+                <PositionsGrid pools={ pools } />
+            </div>
+
+            <div class="mt-10">
+                <TxList
+                    limit={ 10 }
+                    account={ account() as string }
+                    title={ t().portfolio.history }
+                    filterable
+                    paginate
+                />
+            </div>
+        </Show>
+
+        <Show when={ walletOpen }>
+            <WalletModal onClose={ () => { walletOpen = false; } } />
+        </Show>
+    </section>
+}

@@ -1,0 +1,68 @@
+import { addressGradient, fmtAmount, shortAddress } from '../../lib/format.ts';
+import { t } from '../../lib/i18n.ts';
+import { account, nativeBalance, onRightChain, startDiscovery, switchChain } from '../../lib/wallet/store.ts';
+
+import WalletMenu from './wallet-menu.component.azeroth';
+import WalletModal from './wallet-modal.component.azeroth';
+
+export default component ConnectButton()
+{
+    state open = false;
+    state menuOpen = false;
+
+    mount
+    {
+        startDiscovery();
+    }
+
+    <div class="flex items-center gap-2">
+        <Show
+            when={ account() }
+            let={ address }
+            fallback={
+                <button
+                    type="button"
+                    class="btn-ice px-4 py-2 text-sm"
+                    data-testid="header-connect"
+                    onClick={ () => { open = true; } }
+                >
+                    { t().common.connect }
+                </button>
+            }
+        >
+            <Show when={ !onRightChain() }>
+                <button
+                    type="button"
+                    class="rounded-lg bg-fall px-3 py-2 text-sm font-medium text-white"
+                    data-testid="switch-network"
+                    onClick={ () => void switchChain() }
+                >
+                    { t().wallet.switchNetwork }
+                </button>
+            </Show>
+            <button
+                type="button"
+                class="btn-ghost px-3 py-2 text-sm"
+                data-testid="wallet-button"
+                aria-expanded={ menuOpen }
+                onClick={ () => { menuOpen = true; } }
+            >
+                <span
+                    class="h-4 w-4 shrink-0 rounded-full"
+                    style={ `background:${ addressGradient(address) }` }
+                    aria-hidden="true"
+                />
+                <span class="font-mono" data-ltr>{ shortAddress(address) }</span>
+                <span class="hidden font-mono text-faint sm:inline">
+                    { fmtAmount(nativeBalance(), 18) } BNB
+                </span>
+            </button>
+            <Show when={ menuOpen }>
+                <WalletMenu address={ address } onClose={ () => { menuOpen = false; } } />
+            </Show>
+        </Show>
+        <Show when={ open }>
+            <WalletModal onClose={ () => { open = false; } } />
+        </Show>
+    </div>
+}

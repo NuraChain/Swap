@@ -1,0 +1,136 @@
+import type { Pool } from '../../api.ts';
+import { PAIR_ABI, publicClient } from '../../lib/chain.ts';
+import type { Address } from '../../lib/chain.ts';
+import { fmtAmount, fmtPercentBps } from '../../lib/format.ts';
+import { t } from '../../lib/i18n.ts';
+import { account, txEpoch } from '../../lib/wallet/store.ts';
+
+import Badge from '../ui/badge.component.azeroth';
+import Button from '../ui/button.component.azeroth';
+import EmptyState from '../ui/empty-state.component.azeroth';
+import TokenIcon from './token-icon.component.azeroth';
+
+interface Position
+{
+    pool: Pool;
+    lpBalance: bigint;
+    share: number;
+    amount0: bigint;
+    amount1: bigint;
+}
+
+// The connected wallet's LP positions over the given pools. Read-only unless the
+// parent wires add/remove handlers (the liquidity page does; the portfolio not).
+
+export default component PositionsGrid(props: {
+    pools: Pool[];
+    onAdd?: (pool: Pool) => void;
+    onRemove?: (pool: Pool) => void;
+})
+{
+    state positions: Position[] = [];
+
+    effect (props.pools, account(), txEpoch())
+    {
+        const owner = account();
+        if (owner === null || props.pools.length === 0)
+        {
+            positions = [];
+            return;
+        }
+        void (async () =>
+        {
+            const reader = publicClient();
+            const found: Position[] = [];
+            for (const pool of props.pools)
+            {
+                const lpBalance = await reader.readContract({
+                    address: pool.address as Address,
+                    abi: PAIR_ABI,
+                    functionName: 'balanceOf',
+                    args: [owner]
+                }).catch(() => 0n) as bigint;
+                if (lpBalance === 0n)
+                {
+                    continue;
+                }
+                const totalSupply = await reader.readContract({
+                    address: pool.address as Address,
+                    abi: PAIR_ABI,
+                    functionName: 'totalSupply'
+                }) as bigint;
+                found.push({
+                    pool,
+                    lpBalance,
+                    share: totalSupply === 0n ? 0 : Number((lpBalance * 10_000n) / totalSupply),
+                    amount0: totalSupply === 0n ? 0n : (lpBalance * BigInt(pool.reserve0)) / totalSupply,
+                    amount1: totalSupply === 0n ? 0n : (lpBalance * BigInt(pool.reserve1)) / totalSupply
+                });
+            }
+            positions = found;
+        })();
+    }
+
+    <Show
+        when={ positions.length > 0 }
+        fallback={
+            <div class="card mt-3">
+                <EmptyState title={ t().liquidity.noPositions } />
+            </div>
+        }
+    >
+        <div class="mt-3 grid gap-4 md:grid-cols-2">
+            <For each={ positions } key={ (position) => position.pool.address } let={ position }>
+                <article class="card p-5">
+                    <div class="flex items-center justify-between gap-3">
+                        <span class="flex items-center gap-2">
+                            <span class="flex -space-x-2" data-ltr>
+                                <TokenIcon symbol={ position.pool.token0.symbol } address={ position.pool.token0.address } size={ 26 } />
+                                <TokenIcon symbol={ position.pool.token1.symbol } address={ position.pool.token1.address } size={ 26 } />
+                            </span>
+                            <span class="text-sm font-medium" data-ltr>
+                                { `${ position.pool.token0.symbol }/${ position.pool.token1.symbol }` }
+                            </span>
+                        </span>
+                        <Badge tone="ice">{ fmtPercentBps(position.share) }</Badge>
+                    </div>
+                    <dl class="mt-4 flex flex-col gap-1 text-xs">
+                        <div class="flex justify-between">
+                            <dt class="text-faint">{ `${ t().liquidity.pooled } ${ position.pool.token0.symbol }` }</dt>
+                            <dd class="font-mono text-val">{ fmtAmount(position.amount0, position.pool.token0.decimals) }</dd>
+                        </div>
+                        <div class="flex justify-between">
+                            <dt class="text-faint">{ `${ t().liquidity.pooled } ${ position.pool.token1.symbol }` }</dt>
+                            <dd class="font-mono text-val">{ fmtAmount(position.amount1, position.pool.token1.decimals) }</dd>
+                        </div>
+                        <div class="flex justify-between">
+                            <dt class="text-faint">{ t().liquidity.lpTokens }</dt>
+                            <dd class="font-mono">{ fmtAmount(position.lpBalance, 18) }</dd>
+                        </div>
+                    </dl>
+                    <Show when={ props.onAdd !== undefined && props.onRemove !== undefined }>
+                        <div class="mt-4 flex gap-2">
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                block
+                                onClick={ () => props.onAdd?.(position.pool) }
+                            >
+                                { t().liquidity.add }
+                            </Button>
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                block
+                                testId={ `remove-${ position.pool.token0.symbol }-${ position.pool.token1.symbol }` }
+                                onClick={ () => props.onRemove?.(position.pool) }
+                            >
+                                { t().liquidity.remove }
+                            </Button>
+                        </div>
+                    </Show>
+                </article>
+            </For>
+        </div>
+    </Show>
+}

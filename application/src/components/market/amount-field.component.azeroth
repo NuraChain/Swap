@@ -1,0 +1,76 @@
+import type { TokenRef } from '../../api.ts';
+import { fmtAmount } from '../../lib/format.ts';
+import { t } from '../../lib/i18n.ts';
+
+import Icon from '../ui/icon.component.azeroth';
+import TokenIcon from './token-icon.component.azeroth';
+
+// One side of a trade: label, amount, token picker trigger, balance + MAX.
+// The amount input is an LTR island; Persian digits are accepted and normalized
+// at parse time, never rejected at the field.
+
+export default component AmountField(props: {
+    label: string;
+    amount: string;
+    onAmount?: (value: string) => void;
+    readOnly?: boolean;
+    token: TokenRef | null;
+    onPickToken: () => void;
+    balance?: bigint | null;
+    onMax?: () => void;
+    testId?: string;
+})
+{
+    <div class="rounded-xl border border-line bg-raised p-4 focus-within:border-ice">
+        <div class="flex items-center justify-between gap-2">
+            <span class="text-xs text-faint">{ props.label }</span>
+            <Show when={ props.token !== null && props.balance !== null && props.balance !== undefined }>
+                <span class="flex items-center gap-1.5 text-xs text-faint">
+                    <span>{ t().common.balance }</span>
+                    <span class="font-mono">
+                        { fmtAmount(props.balance as bigint, (props.token as TokenRef).decimals) }
+                    </span>
+                    <Show when={ props.onMax !== undefined && !(props.readOnly ?? false) }>
+                        <button
+                            type="button"
+                            class="rounded px-1 text-[11px] font-semibold text-ice hover:bg-ice/10"
+                            onClick={ () => props.onMax?.() }
+                        >
+                            { t().common.max }
+                        </button>
+                    </Show>
+                </span>
+            </Show>
+        </div>
+        <div class="mt-2 flex items-center gap-3">
+            <input
+                class="w-full min-w-0 bg-transparent font-mono text-2xl text-ink outline-none placeholder:text-faint"
+                value={ props.amount }
+                placeholder="0"
+                inputmode="decimal"
+                autocomplete="off"
+                readonly={ props.readOnly ?? false }
+                aria-label={ props.label }
+                data-testid={ props.testId }
+                data-ltr
+                onInput={ (event) => props.onAmount?.((event.currentTarget as HTMLInputElement).value) }
+            />
+            <button
+                type="button"
+                class="btn-ghost h-10 shrink-0 gap-2 px-2.5"
+                data-testid={ props.testId === undefined ? undefined : `${ props.testId }-token` }
+                onClick={ () => props.onPickToken() }
+            >
+                <Show
+                    when={ props.token }
+                    let={ token }
+                    fallback={ <span class="px-1 text-sm">{ t().swap.selectToken }</span> }
+                >
+                    <TokenIcon symbol={ token.symbol } address={ token.address } size={ 24 } />
+                    <span class="text-sm font-medium" data-ltr>{ token.symbol }</span>
+                </Show>
+                <Icon name="chevron-down" size={ 14 } class="text-faint" />
+            </button>
+        </div>
+    </div>
+}

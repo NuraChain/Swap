@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+        <title>NuraSwap</title>
+        <meta name="description" content="NuraSwap - swap tokens and provide liquidity on an open automated market maker. Self-custody, on-chain, bilingual."/>
+        <meta property="og:title" content="NuraSwap"/>
+        <meta property="og:description" content="Trade straight from your wallet on an open automated market maker."/>
+        <meta property="og:type" content="website"/>
+        <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f2efe6"/>
+        <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#081412"/>
+        <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='-50%20-50%20100%20100'%3E%3Cg%20fill='none'%20stroke='%23E8B84B'%20stroke-width='6'%3E%3Crect%20x='-31'%20y='-31'%20width='62'%20height='62'/%3E%3Crect%20x='-31'%20y='-31'%20width='62'%20height='62'%20transform='rotate(45)'/%3E%3C/g%3E%3Ccircle%20r='9'%20fill='%23E8B84B'/%3E%3C/svg%3E"/>
+        <script>
+            // Pre-paint: apply the persisted theme class and text direction so the
+            // first frame is already right. Strings localize at hydration.
+            try
+            {
+                var theme = localStorage.getItem('nuraswap.theme');
+                if (theme === 'light' || theme === 'dark') { document.documentElement.classList.add(theme); }
+                var lang = localStorage.getItem('nuraswap.lang');
+                if (lang === 'fa') { document.documentElement.lang = 'fa'; document.documentElement.dir = 'rtl'; }
+            }
+            catch (error) { /* storage unavailable - defaults stand */ }
+        </script>
+        <link rel="stylesheet" href="/src/styles.css"/>
+    </head>
+    <body>
+        <div id="root"></div>
+        <script type="module" src="/src/main.azeroth" defer></script>
+    </body>
+</html>

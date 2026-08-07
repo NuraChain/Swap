@@ -1,0 +1,45 @@
+import { onCleanup } from 'azerothjs';
+
+import { client } from '../../api.ts';
+import { t } from '../../lib/i18n.ts';
+
+import Icon from '../ui/icon.component.azeroth';
+
+// Served market data can trail the chain (a restarted indexer catching up, a slow
+// public RPC). Silent stale prices are the failure a DEX cannot afford, so lag
+// past a few blocks says so out loud - and says what is still trustworthy.
+
+const LAG_THRESHOLD = 5;
+const POLL_MS = 15_000;
+
+export default component IndexerBanner()
+{
+    state blocksBehind = 0;
+
+    const check = (): void =>
+    {
+        void client.market.stats()
+            .then((stats) => { blocksBehind = stats.blocksBehind; })
+            .catch(() => { blocksBehind = 0; });
+    };
+
+    mount
+    {
+        check();
+        const timer = setInterval(check, POLL_MS);
+        onCleanup(() => clearInterval(timer));
+    }
+
+    <Show when={ blocksBehind > LAG_THRESHOLD }>
+        <div
+            class="border-b border-val/30 bg-val/10 px-4 py-2 text-center text-xs text-val"
+            role="status"
+            data-testid="indexer-lag"
+        >
+            <span class="mx-auto flex max-w-3xl items-center justify-center gap-2">
+                <Icon name="triangle-alert" size={ 14 } class="shrink-0" />
+                <span>{ t().common.indexerLag }</span>
+            </span>
+        </div>
+    </Show>
+}

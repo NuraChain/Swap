@@ -1,0 +1,89 @@
+import { Portal, createEffect } from 'azerothjs';
+import type { Child } from 'azerothjs';
+
+// Hoverable pointers and KEYBOARD focus reveal the bubble; touch taps do not
+// (the trigger's own label speaks there). Portaled and fixed-positioned: inside
+// tables and sticky bars a z-index alone cannot escape the stacking context.
+
+export default component Tooltip(props: { label: string; children?: Child })
+{
+    state open = false;
+    state below = false;
+    state left = 0;
+    state top = 0;
+
+    let wrap: HTMLElement | null = null;
+    let bubble: HTMLElement | null = null;
+    let viaPointer = false;
+
+    const hoverable = (): boolean =>
+        typeof matchMedia !== 'undefined' && matchMedia('(hover: hover)').matches;
+
+    const place = (): void =>
+    {
+        if (wrap === null || typeof window === 'undefined')
+        {
+            return;
+        }
+        const rect = wrap.getBoundingClientRect();
+        const half = (bubble?.getBoundingClientRect().width ?? 0) / 2;
+        const min = 8 + half;
+        const max = Math.max(min, window.innerWidth - 8 - half);
+        left = Math.min(Math.max(rect.left + rect.width / 2, min), max);
+        below = rect.top < 44;
+        top = below ? rect.bottom + 6 : rect.top - 6;
+    };
+
+    createEffect(() =>
+    {
+        if (!open || typeof window === 'undefined')
+        {
+            return;
+        }
+        place();
+        const frame = requestAnimationFrame(place);
+        window.addEventListener('resize', place);
+        document.addEventListener('scroll', place, true);
+        const onKey = (event: KeyboardEvent): void =>
+        {
+            if (event.key === 'Escape')
+            {
+                open = false;
+            }
+        };
+        document.addEventListener('keydown', onKey);
+        return () =>
+        {
+            cancelAnimationFrame(frame);
+            window.removeEventListener('resize', place);
+            document.removeEventListener('scroll', place, true);
+            document.removeEventListener('keydown', onKey);
+        };
+    });
+
+    <span
+        class="relative inline-flex"
+        ref={ (element) => { wrap = element; } }
+        onPointerdown={ () => { viaPointer = true; } }
+        onMouseenter={ () => { if (hoverable()) { open = true; } } }
+        onMouseleave={ () => { open = false; } }
+        onFocusin={ () => { if (!viaPointer) { open = true; } viaPointer = false; } }
+        onFocusout={ () => { viaPointer = false; open = false; } }
+    >
+        { props.children }
+        <Show when={ open }>
+            <Portal>
+                <span
+                    class={ below
+                        ? 'pointer-events-none fixed z-[60] max-w-64 -translate-x-1/2 rounded-md border border-line-strong bg-raised px-2.5 py-1.5 text-xs leading-snug text-ink shadow-lg'
+                        : 'pointer-events-none fixed z-[60] max-w-64 -translate-x-1/2 -translate-y-full rounded-md border border-line-strong bg-raised px-2.5 py-1.5 text-xs leading-snug text-ink shadow-lg' }
+                    style={ `left:${ left }px;top:${ top }px` }
+                    ref={ (element) => { bubble = element; } }
+                    aria-hidden="true"
+                >
+                    { props.label }
+                </span>
+            </Portal>
+        </Show>
+    </span>
+}

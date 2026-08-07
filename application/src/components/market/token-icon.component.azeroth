@@ -1,0 +1,71 @@
+import { deployment } from '../../lib/chain.ts';
+
+// Token mark. A real coin brand is a TRUST SIGNAL, so it is earned by ADDRESS,
+// never by the symbol a token declares about itself: anyone can deploy an ERC20
+// calling itself mUSDT, and keying the sprite on the symbol handed that token
+// the authentic Tether mark in the picker and on the swap card. Only addresses
+// the served deployment vouches for get a brand; everything else - every import -
+// gets the gradient monogram derived from its own address.
+
+const COIN_ID: Record<string, string> = {
+    NURA: 'nura',
+    BNB: 'bnb',
+    WBNB: 'bnb',
+    mUSDT: 'usdt',
+    mUSDC: 'usdc',
+    mDAI: 'dai',
+    mWBTC: 'wbtc',
+    USDT: 'usdt',
+    USDC: 'usdc',
+    DAI: 'dai',
+    WBTC: 'wbtc',
+    BTC: 'btc'
+};
+
+export default component TokenIcon(props: { symbol: string; address: string; size?: number })
+{
+    // The native pseudo-token has no contract to check - it IS the chain.
+    const trustedCoin = (): string | null =>
+    {
+        if (props.address === 'bnb')
+        {
+            return 'bnb';
+        }
+        const info = deployment();
+        if (info === null)
+        {
+            return null;
+        }
+        const listed = info.tokens.find((token) => token.address.toLowerCase() === props.address.toLowerCase());
+        return listed === undefined ? null : COIN_ID[listed.symbol] ?? null;
+    };
+
+    const hue = (): number =>
+        Number.parseInt(props.address.slice(2, 8), 16) % 360;
+
+    <Show
+        when={ trustedCoin() }
+        let={ coin }
+        fallback={
+            <span
+                class="inline-flex shrink-0 select-none items-center justify-center rounded-full font-mono font-semibold text-white"
+                style={ `width:${ props.size ?? 28 }px;height:${ props.size ?? 28 }px;`
+                    + `font-size:${ Math.round((props.size ?? 28) * 0.36) }px;`
+                    + `background:linear-gradient(180deg, hsl(${ hue() } 55% 52%), hsl(${ hue() } 60% 38%))` }
+                aria-hidden="true"
+                data-ltr
+            >
+                { props.symbol.replace(/^m/, '').slice(0, 2).toUpperCase() }
+            </span>
+        }
+    >
+        <svg
+            width={ props.size ?? 28 }
+            height={ props.size ?? 28 }
+            class="shrink-0 rounded-full"
+            aria-hidden="true"
+        >
+            <use href={ `/coins.svg#c-${ coin }` } />
+        </svg>
+    </Show>
+}

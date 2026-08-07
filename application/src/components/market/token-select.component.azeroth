@@ -1,0 +1,149 @@
+import type { TokenRef } from '../../api.ts';
+import { ERC20_ABI, ERC20_BYTES32_ABI, publicClient } from '../../lib/chain.ts';
+import type { Address } from '../../lib/chain.ts';
+import { fmtAmount } from '../../lib/format.ts';
+import { t } from '../../lib/i18n.ts';
+import { balances } from '../../lib/wallet/store.ts';
+
+import Icon from '../ui/icon.component.azeroth';
+import Input from '../ui/input.component.azeroth';
+import Modal from '../ui/modal.component.azeroth';
+import TokenIcon from './token-icon.component.azeroth';
+
+// Token picker: the served list filtered by search, plus import-by-address for
+// anything foreign. An imported token's metadata is read on-chain and survives
+// tokens whose symbol()/name() revert or return bytes32.
+
+export default component TokenSelect(props: {
+    tokens: TokenRef[];
+    onClose: () => void;
+    onSelect: (token: TokenRef) => void;
+    exclude?: string;
+})
+{
+    state query = '';
+    state imported: TokenRef | null = null;
+    state importing = false;
+
+    derived visible = props.tokens.filter((token) =>
+        token.address !== props.exclude
+        && (query.trim() === ''
+            || token.symbol.toLowerCase().includes(query.trim().toLowerCase())
+            || token.name.toLowerCase().includes(query.trim().toLowerCase())
+            || token.address.toLowerCase() === query.trim().toLowerCase()));
+
+    derived importCandidate = /^0x[0-9a-fA-F]{40}$/.test(query.trim())
+        && !props.tokens.some((token) => token.address === query.trim().toLowerCase())
+        ? query.trim().toLowerCase()
+        : null;
+
+    // bytes32 metadata decodes in the browser - no Buffer here.
+    const decodeBytes32 = (hex: string): string =>
+    {
+        const pairs = hex.replace(/^0x/, '').match(/.{2}/g) ?? [];
+        return String.fromCharCode(...pairs.map((pair) => Number.parseInt(pair, 16))).replace(/\0+$/, '');
+    };
+
+    effect (importCandidate)
+    {
+        imported = null;
+        const address = importCandidate as Address | null;
+        if (address === null)
+        {
+            return;
+        }
+        importing = true;
+        void (async () =>
+        {
+            let symbol = '???';
+            let name = t().swap.unknownToken.split(' - ')[0];
+            let decimals = 18;
+            try
+            {
+                decimals = await publicClient().readContract({ address, abi: ERC20_ABI, functionName: 'decimals' });
+            }
+            catch
+            {
+                // Assume 18 - the warning row already flags the token as unknown.
+            }
+            try
+            {
+                symbol = await publicClient().readContract({ address, abi: ERC20_ABI, functionName: 'symbol' });
+                name = await publicClient().readContract({ address, abi: ERC20_ABI, functionName: 'name' });
+            }
+            catch
+            {
+                try
+                {
+                    const rawSymbol = await publicClient().readContract({ address, abi: ERC20_BYTES32_ABI, functionName: 'symbol' });
+                    const rawName = await publicClient().readContract({ address, abi: ERC20_BYTES32_ABI, functionName: 'name' });
+                    symbol = decodeBytes32(rawSymbol) || '???';
+                    name = decodeBytes32(rawName) || name;
+                }
+                catch
+                {
+                    // Placeholder metadata stands.
+                }
+            }
+            imported = { address, symbol, name, decimals };
+            importing = false;
+        })();
+    }
+
+    const balanceOf = (address: string): bigint => balances()[address.toLowerCase()] ?? 0n;
+
+    <Modal title={ t().swap.selectToken } onClose={ props.onClose }>
+        <div class="flex flex-col gap-3">
+            <Input
+                bind:value={ query }
+                icon="search"
+                placeholder={ t().swap.pasteAddress }
+                testId="token-search"
+            />
+            <div class="flex max-h-80 flex-col gap-1 overflow-y-auto">
+                <For each={ visible } key={ (token) => token.address } let={ token }>
+                    <button
+                        type="button"
+                        class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-start hover:bg-ink/6"
+                        data-testid={ `token-${ token.symbol }` }
+                        onClick={ () => props.onSelect(token) }
+                    >
+                        <TokenIcon symbol={ token.symbol } address={ token.address } size={ 32 } />
+                        <span class="flex-1">
+                            <span class="block text-sm font-medium">{ token.symbol }</span>
+                            <span class="block text-xs text-faint">{ token.name }</span>
+                        </span>
+                        <span class="font-mono text-xs text-faint">
+                            { fmtAmount(balanceOf(token.address), token.decimals) }
+                        </span>
+                    </button>
+                </For>
+                <Show when={ imported } let={ token }>
+                    <div class="rounded-lg border border-fall/40 bg-fall/8 p-3">
+                        <div class="flex items-center gap-3">
+                            <TokenIcon symbol={ token.symbol } address={ token.address } size={ 32 } />
+                            <span class="flex-1">
+                                <span class="block text-sm font-medium">{ token.symbol }</span>
+                                <span class="block break-all font-mono text-[10px] text-faint" data-ltr>{ token.address }</span>
+                            </span>
+                            <button
+                                type="button"
+                                class="btn-ice h-9 px-3 text-xs"
+                                onClick={ () => props.onSelect(token) }
+                            >
+                                { t().swap.importAction }
+                            </button>
+                        </div>
+                        <p class="mt-2 flex items-start gap-1.5 text-xs leading-relaxed text-fall">
+                            <Icon name="triangle-alert" size={ 14 } class="mt-0.5 shrink-0" />
+                            <span>{ t().swap.unknownToken }</span>
+                        </p>
+                    </div>
+                </Show>
+                <Show when={ visible.length === 0 && importCandidate === null && !importing }>
+                    <p class="px-3 py-6 text-center text-sm text-faint">{ t().swap.noRoute }</p>
+                </Show>
+            </div>
+        </div>
+    </Modal>
+}

@@ -1,0 +1,143 @@
+import { fmtNumber, t } from '../../lib/i18n.ts';
+
+import Icon from './icon.component.azeroth';
+
+// Full pager: first/prev/next/last jumps, a numbered window that truncates with
+// ellipses on long ranges, and an item-range summary.
+//
+// The pager mirrors WHOLE under RTL - position and glyph together. Forcing the
+// row to LTR while the chevrons still rotated pointed every arrow away from the
+// page it actually moves to.
+
+const WINDOW = 5;
+
+export default component Pagination(props: {
+    page: number;
+    pages: number;
+    onPage: (page: number) => void;
+    total?: number;
+    pageSize?: number;
+})
+{
+    // The visible page numbers: the whole range when it fits, otherwise a window
+    // around the current page, always anchored by the first and last pages.
+    derived slots = ((): Array<number | 'gap'> =>
+    {
+        if (props.pages <= WINDOW + 2)
+        {
+            return Array.from({ length: props.pages }, (_, index) => index + 1);
+        }
+        const half = Math.floor(WINDOW / 2);
+        let start = Math.max(2, props.page - half);
+        const end = Math.min(props.pages - 1, start + WINDOW - 1);
+        start = Math.max(2, Math.min(start, end - WINDOW + 1));
+        const out: Array<number | 'gap'> = [1];
+        if (start > 2)
+        {
+            out.push('gap');
+        }
+        for (let page = start; page <= end; page++)
+        {
+            out.push(page);
+        }
+        if (end < props.pages - 1)
+        {
+            out.push('gap');
+        }
+        out.push(props.pages);
+        return out;
+    })();
+
+    derived rangeLabel = ((): string =>
+    {
+        if (props.total === undefined || props.pageSize === undefined)
+        {
+            return '';
+        }
+        const first = props.total === 0 ? 0 : (props.page - 1) * props.pageSize + 1;
+        const last = Math.min(props.total, props.page * props.pageSize);
+        return `${ t().common.showing } ${ fmtNumber(first, 0) }-${ fmtNumber(last, 0) } ${ t().common.of } ${ fmtNumber(props.total, 0) }`;
+    })();
+
+    const step = 'flex h-8 w-8 items-center justify-center rounded-lg border border-line text-faint hover:border-ice hover:text-ice disabled:opacity-35 disabled:hover:border-line disabled:hover:text-faint';
+
+    const numberClass = (active: boolean): string =>
+        active
+            ? 'flex h-8 min-w-8 items-center justify-center rounded-lg bg-ice px-2 text-[13px] font-semibold text-ice-ink'
+            : 'flex h-8 min-w-8 items-center justify-center rounded-lg border border-line px-2 text-[13px] text-faint hover:border-ice hover:text-ice';
+
+    <Show when={ props.pages > 1 || rangeLabel !== '' }>
+        <nav
+            class="flex flex-wrap items-center justify-between gap-3"
+            aria-label={ t().common.page }
+            data-testid="pagination"
+        >
+            <Show when={ rangeLabel !== '' }>
+                <span class="text-xs text-faint" data-testid="page-range">{ rangeLabel }</span>
+            </Show>
+            <Show when={ props.pages > 1 }>
+                <div class="flex items-center gap-1.5">
+                    <button
+                        type="button"
+                        class={ step }
+                        disabled={ props.page <= 1 }
+                        aria-label={ t().common.firstPage }
+                        data-testid="page-first"
+                        onClick={ () => props.onPage(1) }
+                    >
+                        <Icon name="chevrons-left" size={ 15 } class="rtl:rotate-180" />
+                    </button>
+                    <button
+                        type="button"
+                        class={ step }
+                        disabled={ props.page <= 1 }
+                        aria-label={ t().common.previousPage }
+                        data-testid="page-prev"
+                        onClick={ () => props.onPage(props.page - 1) }
+                    >
+                        <Icon name="chevron-left" size={ 15 } class="rtl:rotate-180" />
+                    </button>
+                    <For each={ slots } key={ (slot, index) => `${ slot }-${ index }` } let={ slot }>
+                        <span class="contents">
+                            <Show
+                                when={ slot !== 'gap' }
+                                fallback={ <span class="px-1 text-xs text-faint">…</span> }
+                            >
+                                <button
+                                    type="button"
+                                    class={ numberClass(slot === props.page) }
+                                    aria-label={ `${ t().common.page } ${ slot }` }
+                                    aria-current={ slot === props.page ? 'page' : undefined }
+                                    data-testid={ `page-${ slot }` }
+                                    onClick={ () => props.onPage(slot as number) }
+                                >
+                                    { fmtNumber(slot as number, 0) }
+                                </button>
+                            </Show>
+                        </span>
+                    </For>
+                    <button
+                        type="button"
+                        class={ step }
+                        disabled={ props.page >= props.pages }
+                        aria-label={ t().common.nextPage }
+                        data-testid="page-next"
+                        onClick={ () => props.onPage(props.page + 1) }
+                    >
+                        <Icon name="chevron-right" size={ 15 } class="rtl:rotate-180" />
+                    </button>
+                    <button
+                        type="button"
+                        class={ step }
+                        disabled={ props.page >= props.pages }
+                        aria-label={ t().common.lastPage }
+                        data-testid="page-last"
+                        onClick={ () => props.onPage(props.pages) }
+                    >
+                        <Icon name="chevrons-right" size={ 15 } class="rtl:rotate-180" />
+                    </button>
+                </div>
+            </Show>
+        </nav>
+    </Show>
+}

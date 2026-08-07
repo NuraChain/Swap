@@ -1,0 +1,75 @@
+import { Portal } from 'azerothjs';
+import type { Child } from 'azerothjs';
+
+import { t } from '../../lib/i18n.ts';
+
+import Icon from './icon.component.azeroth';
+
+// Every close path routes through requestClose: the exit animation plays first
+// (`.is-closing` flips the layers into their out keyframes), then the parent's
+// onClose unmounts. Parents keep the plain mount/unmount API.
+
+const CLOSE_MS = 170;
+
+export default component Modal(props: { title: string; onClose: () => void; children?: Child })
+{
+    state closing = false;
+
+    let panel: HTMLElement | null = null;
+
+    const requestClose = (): void =>
+    {
+        if (closing)
+        {
+            return;
+        }
+        closing = true;
+        setTimeout(() => props.onClose(), CLOSE_MS);
+    };
+
+    const onKey = (event: KeyboardEvent): void =>
+    {
+        if (event.key === 'Escape')
+        {
+            requestClose();
+        }
+    };
+
+    mount
+    {
+        document.addEventListener('keydown', onKey);
+        panel?.focus();
+    }
+
+    cleanup
+    {
+        document.removeEventListener('keydown', onKey);
+    }
+
+    <Portal>
+        <div class="fixed inset-0 z-50 flex items-center justify-center p-4" class:is-closing={ closing }>
+            <div class="anim-overlay absolute inset-0 bg-black/60" onClick={ requestClose } />
+            <section
+                ref={ (element) => { panel = element; } }
+                tabindex="-1"
+                role="dialog"
+                aria-modal="true"
+                aria-label={ props.title }
+                class="anim-pop card-pop relative w-full max-w-md p-5"
+            >
+                <header class="mb-4 flex items-center justify-between gap-4">
+                    <h2 class="font-display text-sm font-medium tracking-wide">{ props.title }</h2>
+                    <button
+                        type="button"
+                        class="rounded-md p-1 text-faint hover:text-ink"
+                        aria-label={ t().common.close }
+                        onClick={ requestClose }
+                    >
+                        <Icon name="x" size={ 18 } />
+                    </button>
+                </header>
+                { props.children }
+            </section>
+        </div>
+    </Portal>
+}

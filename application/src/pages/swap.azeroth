@@ -1,0 +1,719 @@
+import { minOutForSlippage, priceImpactBps } from '@nuraswap/shared/math';
+import { formatTokenAmount, parseTokenAmount } from '@nuraswap/shared/digits';
+
+import { client } from '../api.ts';
+import type { DeploymentInfo, TokenRef } from '../api.ts';
+import { ERC20_ABI, FACTORY_ABI, PAIR_ABI, ROUTER_ABI, WBNB_ABI, deployment, ensureDeployment, publicClient } from '../lib/chain.ts';
+import type { Address } from '../lib/chain.ts';
+import { fmtPercentBps } from '../lib/format.ts';
+import { t } from '../lib/i18n.ts';
+import {
+    account,
+    balances,
+    nativeBalance,
+    onRightChain,
+    requiredWallet,
+    sendTx,
+    switchChain,
+    txEpoch,
+    watchTokens
+} from '../lib/wallet/store.ts';
+
+import AmountField from '../components/market/amount-field.component.azeroth';
+import PriceChart from '../components/market/price-chart.component.azeroth';
+import TokenSelect from '../components/market/token-select.component.azeroth';
+import TxList from '../components/market/tx-list.component.azeroth';
+import WalletModal from '../components/market/wallet-modal.component.azeroth';
+import Button from '../components/ui/button.component.azeroth';
+import Icon from '../components/ui/icon.component.azeroth';
+import Tooltip from '../components/ui/tooltip.component.azeroth';
+
+// The native pseudo-token: swaps route through the router's ETH entrypoints and
+// WBNB<->BNB is a direct wrap. Everything else treats it as WBNB.
+const NATIVE: TokenRef = { address: 'bnb', symbol: 'BNB', name: 'BNB', decimals: 18 };
+const MAX_UINT256 = (1n << 256n) - 1n;
+const HIGH_IMPACT_BPS = 1500;
+
+interface QuoteState
+{
+    out: bigint;
+    impactBps: number;
+    path: Address[];
+}
+
+export default component Swap()
+{
+    state info: DeploymentInfo | null = null;
+    state tokenIn: TokenRef = NATIVE;
+    state tokenOut: TokenRef | null = null;
+    state amountText = '';
+    state quote: QuoteState | null = null;
+    state noRoute = false;
+    state quoting = false;
+    state allowance = 0n;
+    state busy = false;
+    state pickerFor: 'in' | 'out' | null = null;
+    state walletOpen = false;
+    state settingsOpen = false;
+    state confirmedHighImpact = false;
+    state slippageBps = 50;
+    state deadlineMinutes = 20;
+    state infiniteApprove = false;
+
+    state tokenList: TokenRef[] = [NATIVE];
+
+    mount
+    {
+        try
+        {
+            const stored = JSON.parse(window.localStorage.getItem('nuraswap.swap-settings') ?? '{}') as
+                { slippageBps?: number; deadlineMinutes?: number; infiniteApprove?: boolean };
+            if (typeof stored.slippageBps === 'number' && stored.slippageBps > 0 && stored.slippageBps <= 5000)
+            {
+                slippageBps = stored.slippageBps;
+            }
+            if (typeof stored.deadlineMinutes === 'number' && stored.deadlineMinutes > 0 && stored.deadlineMinutes <= 4320)
+            {
+                deadlineMinutes = stored.deadlineMinutes;
+            }
+            if (typeof stored.infiniteApprove === 'boolean')
+            {
+                infiniteApprove = stored.infiniteApprove;
+            }
+        }
+        catch
+        {
+            // Defaults stand.
+        }
+        void (async () =>
+        {
+            info = await ensureDeployment();
+            const served = await client.market.tokens();
+            tokenList = [NATIVE, ...served];
+            tokenOut = served.find((token) => token.symbol === 'NURA') ?? served[0] ?? null;
+            watchTokens(served.map((token) => token.address as Address));
+        })();
+    }
+
+    effect (slippageBps, deadlineMinutes, infiniteApprove) with { skipInitial: true }
+    {
+        try
+        {
+            window.localStorage.setItem(
+                'nuraswap.swap-settings',
+                JSON.stringify({ slippageBps, deadlineMinutes, infiniteApprove })
+            );
+        }
+        catch
+        {
+            // Preference lives for the session only.
+        }
+    }
+
+    const wbnbAddress = (): Address => (deployment()?.contracts.wbnb ?? '0x') as Address;
+    const routerAddress = (): Address => (deployment()?.contracts.router ?? '0x') as Address;
+    const isNative = (token: TokenRef): boolean => token.address === 'bnb';
+    const hopAddress = (token: TokenRef): Address =>
+        (isNative(token) ? wbnbAddress() : token.address) as Address;
+
+    derived parsedIn = parseTokenAmount(amountText, tokenIn.decimals);
+
+    // The charted pool: the active pair when it exists, else the out-token's
+    // WBNB pool - there is always a price story next to the trade.
+    state chartPair: Address | null = null;
+    let chartLookup = 0;
+
+    // Every address is captured BEFORE the first await: a reactive read inside an
+    // async continuation happens outside the effect's tracking scope, so the
+    // resolved pair never landed after a re-run and the chart stayed blank. The
+    // last resolved pair also stays on screen while a new one resolves, so
+    // flipping direction never blanks the chart.
+    effect (tokenIn, tokenOut, info)
+    {
+        const out = tokenOut;
+        const current = info;
+        if (current === null || out === null)
+        {
+            chartPair = null;
+            return;
+        }
+        const factory = (current as DeploymentInfo).contracts.factory as Address;
+        const wbnb = wbnbAddress();
+        const from = hopAddress(tokenIn);
+        const to = hopAddress(out);
+        // Only the newest lookup may write: two runs in flight can resolve out of
+        // order, and a stale one would overwrite the live pair with its own answer.
+        chartLookup++;
+        const generation = chartLookup;
+        void (async () =>
+        {
+            const zero = '0x0000000000000000000000000000000000000000';
+            const direct = await publicClient().readContract({
+                address: factory, abi: FACTORY_ABI, functionName: 'getPair', args: [from, to]
+            }).catch(() => zero) as Address;
+            if (generation !== chartLookup)
+            {
+                return;
+            }
+            if (direct !== zero)
+            {
+                chartPair = direct;
+                return;
+            }
+            const viaWbnb = await publicClient().readContract({
+                address: factory, abi: FACTORY_ABI, functionName: 'getPair', args: [to, wbnb]
+            }).catch(() => zero) as Address;
+            if (generation === chartLookup)
+            {
+                chartPair = viaWbnb === zero ? null : viaWbnb;
+            }
+        })();
+    }
+
+    derived isWrapPair = tokenOut !== null
+        && ((isNative(tokenIn) && hopAddress(tokenOut as TokenRef) === wbnbAddress() && !isNative(tokenOut as TokenRef))
+            || (isNative(tokenOut as TokenRef) && hopAddress(tokenIn) === wbnbAddress() && !isNative(tokenIn)));
+
+    derived balanceIn = isNative(tokenIn)
+        ? nativeBalance()
+        : balances()[tokenIn.address.toLowerCase()] ?? 0n;
+
+    derived balanceOut = tokenOut === null
+        ? null
+        : isNative(tokenOut as TokenRef)
+            ? nativeBalance()
+            : balances()[(tokenOut as TokenRef).address.toLowerCase()] ?? 0n;
+
+    // Quote: authoritative amounts from the router, impact from per-hop reserves.
+    // Reruns on every input change and after every confirmed transaction.
+    effect (amountText, tokenIn, tokenOut, txEpoch(), info)
+    {
+        quote = null;
+        noRoute = false;
+        confirmedHighImpact = false;
+        const out = tokenOut;
+        const amount = parsedIn;
+        if (info === null || out === null || amount === null || amount <= 0n)
+        {
+            return;
+        }
+        if (isWrapPair)
+        {
+            quote = { out: amount, impactBps: 0, path: [] };
+            return;
+        }
+        quoting = true;
+        const requestToken = amountText + out.address + tokenIn.address;
+        void (async () =>
+        {
+            try
+            {
+                const reader = publicClient();
+                const factory = (info as DeploymentInfo).contracts.factory as Address;
+                const from = hopAddress(tokenIn);
+                const to = hopAddress(out);
+                const direct = await reader.readContract({
+                    address: factory,
+                    abi: FACTORY_ABI,
+                    functionName: 'getPair',
+                    args: [from, to]
+                }) as Address;
+                let path: Address[];
+                if (direct !== '0x0000000000000000000000000000000000000000')
+                {
+                    path = [from, to];
+                }
+                else
+                {
+                    const wbnb = wbnbAddress();
+                    const legIn = await reader.readContract({
+                        address: factory, abi: FACTORY_ABI, functionName: 'getPair', args: [from, wbnb]
+                    }) as Address;
+                    const legOut = await reader.readContract({
+                        address: factory, abi: FACTORY_ABI, functionName: 'getPair', args: [wbnb, to]
+                    }) as Address;
+                    if (legIn === '0x0000000000000000000000000000000000000000'
+                        || legOut === '0x0000000000000000000000000000000000000000')
+                    {
+                        noRoute = true;
+                        quoting = false;
+                        return;
+                    }
+                    path = [from, wbnb, to];
+                }
+
+                const amounts = await reader.readContract({
+                    address: routerAddress(),
+                    abi: ROUTER_ABI,
+                    functionName: 'getAmountsOut',
+                    args: [amount, path]
+                }) as bigint[];
+
+                // Per-hop impact from live reserves, compounded over the route.
+                let impact = 0;
+                for (let hop = 0; hop < path.length - 1; hop++)
+                {
+                    const pair = await reader.readContract({
+                        address: factory, abi: FACTORY_ABI, functionName: 'getPair', args: [path[hop], path[hop + 1]]
+                    }) as Address;
+                    const [reserve0, reserve1] = await reader.readContract({
+                        address: pair, abi: PAIR_ABI, functionName: 'getReserves'
+                    }) as [bigint, bigint, number];
+                    const token0 = await reader.readContract({
+                        address: pair, abi: PAIR_ABI, functionName: 'token0'
+                    }) as Address;
+                    const [reserveIn, reserveOut] = token0.toLowerCase() === path[hop].toLowerCase()
+                        ? [reserve0, reserve1]
+                        : [reserve1, reserve0];
+                    impact += priceImpactBps(amounts[hop], amounts[hop + 1], reserveIn, reserveOut);
+                }
+
+                if (requestToken === amountText + (tokenOut as TokenRef).address + tokenIn.address)
+                {
+                    quote = { out: amounts[amounts.length - 1], impactBps: impact, path };
+                }
+            }
+            catch
+            {
+                noRoute = true;
+            }
+            quoting = false;
+        })();
+    }
+
+    // Allowance follows the input token, the account, and every confirmed tx.
+    effect (tokenIn, account(), txEpoch(), info)
+    {
+        allowance = MAX_UINT256;
+        const owner = account();
+        if (info === null || owner === null || isNative(tokenIn))
+        {
+            return;
+        }
+        void publicClient().readContract({
+            address: tokenIn.address as Address,
+            abi: ERC20_ABI,
+            functionName: 'allowance',
+            args: [owner, routerAddress()]
+        }).then((value) => { allowance = value as bigint; }).catch(() => undefined);
+    }
+
+    // Holes under a <Show> re-evaluate while the guard is reacting, so markup
+    // never reads `quote` members directly - only these null-safe projections.
+    derived quoteOut = quote?.out ?? 0n;
+    derived quoteImpact = quote?.impactBps ?? 0;
+
+    // Wrapping never needs an allowance: deposit() takes native value and
+    // withdraw() burns the caller's OWN balance - neither moves tokens through
+    // the router, so demanding approval here would cost a pointless transaction.
+    derived needsApprove = !isWrapPair
+        && !isNative(tokenIn)
+        && parsedIn !== null
+        && allowance < (parsedIn as bigint);
+
+    derived insufficient = parsedIn !== null && (parsedIn as bigint) > balanceIn;
+
+    derived highImpact = quote !== null && (quote as QuoteState).impactBps >= HIGH_IMPACT_BPS;
+
+    // Chain time, not wall time: the local chain's clock is offset by the seed
+    // tape and a user's clock can skew. And on an automining chain the LATEST
+    // block lags the node's clock by the whole idle gap - the pending block is
+    // the referee the router will actually consult.
+    const deadline = async (): Promise<bigint> =>
+    {
+        const reader = publicClient();
+        const block = await reader.getBlock({ blockTag: 'pending' }).catch(() => reader.getBlock());
+        return block.timestamp + BigInt(deadlineMinutes * 60);
+    };
+
+    // Batched: written one at a time, the halfway state has the SAME token on both
+    // sides, and the quote and chart effects run against a pair that cannot exist.
+    const flip = (): void =>
+    {
+        if (tokenOut === null)
+        {
+            return;
+        }
+        const nextIn = tokenOut as TokenRef;
+        batch
+        {
+            tokenOut = tokenIn;
+            tokenIn = nextIn;
+            amountText = '';
+        }
+    };
+
+    const approve = async (): Promise<void> =>
+    {
+        const amount = parsedIn;
+        if (amount === null)
+        {
+            return;
+        }
+        busy = true;
+        await sendTx(
+            `${ t().swap.approve } ${ tokenIn.symbol }`,
+            () => requiredWallet().writeContract({
+                address: tokenIn.address as Address,
+                abi: ERC20_ABI,
+                functionName: 'approve',
+                args: [routerAddress(), infiniteApprove ? MAX_UINT256 : amount]
+            } as never)
+        );
+        busy = false;
+    };
+
+    const swap = async (): Promise<void> =>
+    {
+        const out = tokenOut;
+        const amount = parsedIn;
+        const current = quote;
+        if (out === null || amount === null)
+        {
+            return;
+        }
+        busy = true;
+        const owner = account() as Address;
+        if (isWrapPair)
+        {
+            await sendTx(
+                isNative(tokenIn) ? t().swap.wrap : t().swap.unwrap,
+                () => (isNative(tokenIn)
+                    ? requiredWallet().writeContract({
+                        address: wbnbAddress(), abi: WBNB_ABI, functionName: 'deposit', value: amount
+                    } as never)
+                    : requiredWallet().writeContract({
+                        address: wbnbAddress(), abi: WBNB_ABI, functionName: 'withdraw', args: [amount]
+                    } as never))
+            );
+        }
+        else if (current !== null)
+        {
+            const minOut = minOutForSlippage(current.out, slippageBps);
+            const when = await deadline();
+            // FSI/PDI isolate the Latin pair so the toast renders deterministically in RTL.
+            const label = `${ t().swap.swapAction } ⁨${ tokenIn.symbol } → ${ out.symbol }⁩`;
+            if (isNative(tokenIn))
+            {
+                await sendTx(label, () => requiredWallet().writeContract({
+                    address: routerAddress(),
+                    abi: ROUTER_ABI,
+                    functionName: 'swapExactETHForTokens',
+                    args: [minOut, current.path, owner, when],
+                    value: amount
+                } as never));
+            }
+            else if (isNative(out))
+            {
+                await sendTx(label, () => requiredWallet().writeContract({
+                    address: routerAddress(),
+                    abi: ROUTER_ABI,
+                    functionName: 'swapExactTokensForETH',
+                    args: [amount, minOut, current.path, owner, when]
+                } as never));
+            }
+            else
+            {
+                await sendTx(label, () => requiredWallet().writeContract({
+                    address: routerAddress(),
+                    abi: ROUTER_ABI,
+                    functionName: 'swapExactTokensForTokens',
+                    args: [amount, minOut, current.path, owner, when]
+                } as never));
+            }
+            amountText = '';
+        }
+        busy = false;
+    };
+
+    <section class="mx-auto grid max-w-6xl gap-6 px-4 py-8 sm:py-12 lg:grid-cols-[1fr_minmax(24rem,26rem)]">
+        <div class="order-2 flex min-w-0 flex-col gap-6 lg:order-1">
+            <Show when={ chartPair } let={ pair }>
+                <PriceChart pairAddress={ pair } />
+            </Show>
+            <TxList limit={ 8 } filterable />
+        </div>
+        <div class="order-1 w-full max-w-md justify-self-center lg:order-2 lg:justify-self-auto">
+            <div class="card-pop p-4 sm:p-5">
+                <div class="mb-4 flex items-center justify-between">
+                    <h1 class="font-display text-base font-medium">{ t().swap.title }</h1>
+                    <button
+                        type="button"
+                        class="rounded-lg p-2 text-faint hover:text-ink"
+                        aria-label={ t().common.settings }
+                        aria-expanded={ settingsOpen }
+                        onClick={ () => { settingsOpen = !settingsOpen; } }
+                    >
+                        <Icon name="settings-2" size={ 18 } />
+                    </button>
+                </div>
+
+                <Show when={ settingsOpen }>
+                    <div class="mb-4 flex flex-col gap-4 rounded-xl border border-line bg-raised p-4">
+                        <div>
+                            <div class="flex items-center gap-1.5 text-xs text-faint">
+                                <span>{ t().swap.slippage }</span>
+                                <Tooltip label={ t().swap.slippageHint }>
+                                    <Icon name="triangle-alert" size={ 12 } class="text-faint" />
+                                </Tooltip>
+                            </div>
+                            <div class="mt-2 flex gap-2">
+                                <button
+                                    type="button"
+                                    class={ slippageBps === 50 ? 'btn-ice h-8 px-3 text-xs' : 'btn-ghost h-8 px-3 text-xs' }
+                                    onClick={ () => { slippageBps = 50; } }
+                                >
+                                { t().swap.auto }
+                                </button>
+                                <button
+                                    type="button"
+                                    class={ slippageBps === 10 ? 'btn-ice h-8 px-3 text-xs' : 'btn-ghost h-8 px-3 text-xs' }
+                                    onClick={ () => { slippageBps = 10; } }
+                                >
+                                0.1%
+                                </button>
+                                <button
+                                    type="button"
+                                    class={ slippageBps === 100 ? 'btn-ice h-8 px-3 text-xs' : 'btn-ghost h-8 px-3 text-xs' }
+                                    onClick={ () => { slippageBps = 100; } }
+                                >
+                                1%
+                                </button>
+                                <button
+                                    type="button"
+                                    class={ slippageBps === 300 ? 'btn-ice h-8 px-3 text-xs' : 'btn-ghost h-8 px-3 text-xs' }
+                                    onClick={ () => { slippageBps = 300; } }
+                                >
+                                3%
+                                </button>
+                            </div>
+                        </div>
+                        <div class="flex items-center justify-between gap-3">
+                            <div class="flex items-center gap-1.5 text-xs text-faint">
+                                <span>{ t().swap.deadline }</span>
+                                <Tooltip label={ t().swap.deadlineHint }>
+                                    <Icon name="triangle-alert" size={ 12 } class="text-faint" />
+                                </Tooltip>
+                            </div>
+                            <label class="flex items-center gap-2 text-xs">
+                                <input
+                                    class="w-14 rounded-md border border-line bg-panel px-2 py-1 text-end font-mono outline-none focus:border-ice"
+                                    value={ String(deadlineMinutes) }
+                                    inputmode="numeric"
+                                    data-ltr
+                                    onInput={ (event) =>
+                                {
+                                    const parsed = Number.parseInt((event.currentTarget as HTMLInputElement).value, 10);
+                                    if (Number.isFinite(parsed) && parsed > 0 && parsed <= 4320)
+                                    {
+                                        deadlineMinutes = parsed;
+                                    }
+                                } }
+                            />
+                                <span class="text-faint">{ t().swap.minutes }</span>
+                            </label>
+                        </div>
+                        <label class="flex items-start gap-2.5 text-xs">
+                            <input
+                                type="checkbox"
+                                class="mt-0.5 accent-(--ice)"
+                                checked={ infiniteApprove }
+                                onChange={ (event) => { infiniteApprove = (event.currentTarget as HTMLInputElement).checked; } }
+                        />
+                            <span>
+                                <span class="block font-medium text-ink">{ t().swap.infiniteApprove }</span>
+                                <span class="mt-0.5 block leading-relaxed text-faint">{ t().swap.infiniteApproveHint }</span>
+                            </span>
+                        </label>
+                    </div>
+                </Show>
+
+                <div class="flex flex-col gap-2">
+                    <AmountField
+                        label={ t().swap.from }
+                        amount={ amountText }
+                        onAmount={ (value) => { amountText = value; } }
+                        token={ tokenIn }
+                        onPickToken={ () => { pickerFor = 'in'; } }
+                        balance={ balanceIn }
+                        onMax={ () => { amountText = formatTokenAmount(balanceIn, tokenIn.decimals); } }
+                        testId="amount-in"
+                />
+                    <div class="relative z-10 -my-4 flex justify-center">
+                        <button
+                            type="button"
+                            class="card-pop flex h-9 w-9 items-center justify-center rounded-full text-faint hover:text-ice"
+                            aria-label={ t().swap.switchDirection }
+                            data-testid="flip"
+                            onClick={ flip }
+                        >
+                            <Icon name="arrow-up-down" size={ 15 } />
+                        </button>
+                    </div>
+                    <AmountField
+                        label={ t().swap.to }
+                        amount={ quote === null ? '' : formatTokenAmount(quoteOut, (tokenOut as TokenRef | null)?.decimals ?? 18, 8) }
+                        readOnly
+                        token={ tokenOut }
+                        onPickToken={ () => { pickerFor = 'out'; } }
+                        balance={ balanceOut }
+                        testId="amount-out"
+                />
+                </div>
+
+                <Show when={ quote !== null && tokenOut !== null && !isWrapPair }>
+                    <dl class="mt-4 flex flex-col gap-1.5 rounded-xl border border-line bg-raised p-3.5 text-xs">
+                        <div class="flex items-center justify-between">
+                            <dt class="text-faint">{ t().swap.rate }</dt>
+                            <dd class="font-mono text-val" data-ltr>
+                            { `1 ${ tokenIn.symbol } = ${
+                                parsedIn === null || quoteOut === 0n
+                                    ? '-'
+                                    : formatTokenAmount(
+                                        quoteOut * 10n ** BigInt(tokenIn.decimals) / (parsedIn as bigint),
+                                        (tokenOut as TokenRef).decimals,
+                                        6
+                                    )
+                            } ${ (tokenOut as TokenRef | null)?.symbol ?? '' }` }
+                            </dd>
+                        </div>
+                        <div class="flex items-center justify-between">
+                            <dt class="flex items-center gap-1.5 text-faint">
+                                <span>{ t().swap.priceImpact }</span>
+                                <Tooltip label={ t().swap.impactHint }>
+                                    <Icon name="triangle-alert" size={ 12 } class="text-faint" />
+                                </Tooltip>
+                            </dt>
+                            <dd
+                                class="font-mono"
+                                class:text-rise={ quoteImpact < 100 }
+                                class:text-val={ quoteImpact >= 100 && quoteImpact < HIGH_IMPACT_BPS }
+                                class:text-fall={ quoteImpact >= HIGH_IMPACT_BPS }
+                                data-ltr
+                            >
+                            { fmtPercentBps(quoteImpact) }
+                            </dd>
+                        </div>
+                        <div class="flex items-center justify-between">
+                            <dt class="text-faint">{ t().swap.minReceived }</dt>
+                            <dd class="font-mono" data-ltr>
+                            { formatTokenAmount(minOutForSlippage(quoteOut, slippageBps), (tokenOut as TokenRef | null)?.decimals ?? 18, 8) }
+                            { ' ' }
+                            { (tokenOut as TokenRef | null)?.symbol ?? '' }
+                            </dd>
+                        </div>
+                        <div class="flex items-center justify-between">
+                            <dt class="text-faint">{ t().swap.fee }</dt>
+                            <dd class="font-mono text-faint" data-ltr>0.30%</dd>
+                        </div>
+                    </dl>
+                </Show>
+
+                <Show when={ noRoute }>
+                    <div class="mt-4 rounded-xl border border-line bg-raised p-4 text-center text-sm">
+                        <p class="font-medium">{ t().swap.noRoute }</p>
+                        <p class="mt-1 text-xs text-faint">{ t().swap.beFirstLp }</p>
+                    </div>
+                </Show>
+
+                <Show when={ highImpact && !confirmedHighImpact }>
+                    <div class="mt-4 rounded-xl border border-fall/50 bg-fall/8 p-4 text-xs leading-relaxed text-fall">
+                    { t().swap.highImpact }
+                    </div>
+                </Show>
+
+                <div class="mt-4">
+                    <Show
+                        when={ account() }
+                        fallback={
+                        <Button block size="lg" testId="connect" onClick={ () => { walletOpen = true; } }>
+                            { t().common.connect }
+                        </Button>
+                    }
+                    >
+                        <Show
+                            when={ onRightChain() }
+                            fallback={
+                            <Button block size="lg" variant="danger" onClick={ () => void switchChain() }>
+                                { t().wallet.switchNetwork }
+                            </Button>
+                        }
+                        >
+                            <Show
+                                when={ parsedIn !== null && tokenOut !== null }
+                                fallback={
+                                <Button block size="lg" disabled>
+                                    { tokenOut === null ? t().swap.selectToken : t().swap.enterAmount }
+                                </Button>
+                            }
+                            >
+                                <Show
+                                    when={ !insufficient }
+                                    fallback={
+                                    <Button block size="lg" disabled>
+                                        { `${ t().swap.insufficient } (${ tokenIn.symbol })` }
+                                    </Button>
+                                }
+                                >
+                                    <Show
+                                        when={ !needsApprove }
+                                        fallback={
+                                        <Button block size="lg" busy={ busy } testId="approve" onClick={ () => void approve() }>
+                                            { `${ t().swap.approve } ${ tokenIn.symbol }` }
+                                        </Button>
+                                    }
+                                    >
+                                        <Show
+                                            when={ highImpact && !confirmedHighImpact }
+                                            fallback={
+                                            <Button
+                                                block
+                                                size="lg"
+                                                busy={ busy || quoting }
+                                                disabled={ quote === null && !isWrapPair }
+                                                testId="swap"
+                                                onClick={ () => void swap() }
+                                            >
+                                                { isWrapPair
+                                                    ? (isNative(tokenIn) ? t().swap.wrap : t().swap.unwrap)
+                                                    : t().swap.swapAction }
+                                            </Button>
+                                        }
+                                        >
+                                            <Button block size="lg" variant="danger" testId="swap-anyway" onClick={ () => { confirmedHighImpact = true; } }>
+                                            { t().swap.confirmHighImpact }
+                                            </Button>
+                                        </Show>
+                                    </Show>
+                                </Show>
+                            </Show>
+                        </Show>
+                    </Show>
+                </div>
+            </div>
+        </div>
+
+        <Show when={ pickerFor !== null }>
+            <TokenSelect
+                tokens={ tokenList }
+                exclude={ pickerFor === 'in' ? (tokenOut as TokenRef | null)?.address : tokenIn.address }
+                onClose={ () => { pickerFor = null; } }
+                onSelect={ (token) =>
+                {
+                    if (pickerFor === 'in')
+                    {
+                        tokenIn = token;
+                    }
+                    else
+                    {
+                        tokenOut = token;
+                    }
+                    pickerFor = null;
+                } }
+            />
+        </Show>
+        <Show when={ walletOpen }>
+            <WalletModal onClose={ () => { walletOpen = false; } } />
+        </Show>
+    </section>
+}

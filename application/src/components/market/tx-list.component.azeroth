@@ -1,0 +1,118 @@
+import { client } from '../../api.ts';
+import type { TxItem } from '../../api.ts';
+import { fmtAmount, fmtTime } from '../../lib/format.ts';
+import { t } from '../../lib/i18n.ts';
+import { txEpoch } from '../../lib/wallet/store.ts';
+
+import Badge from '../ui/badge.component.azeroth';
+import EmptyState from '../ui/empty-state.component.azeroth';
+import Pagination from '../ui/pagination.component.azeroth';
+import Tooltip from '../ui/tooltip.component.azeroth';
+import TokenIcon from './token-icon.component.azeroth';
+
+const KIND_TONE = { swap: 'ice', mint: 'rise', burn: 'fall' } as const;
+type Kind = 'swap' | 'mint' | 'burn';
+
+const KINDS: Kind[] = ['swap', 'mint', 'burn'];
+
+export default component TxList(props: {
+    limit?: number;
+    account?: string;
+    title?: string;
+    filterable?: boolean;
+    paginate?: boolean;
+})
+{
+    state txs: TxItem[] = [];
+    state kind: Kind | 'all' = 'all';
+    state page = 1;
+
+    const pageSize = (): number => props.limit ?? 8;
+
+    effect (txEpoch(), props.account)
+    {
+        void client.market.txs({ query: props.account === undefined ? {} : { account: props.account } })
+            .then((list) => { txs = list; })
+            .catch(() => undefined);
+    }
+
+    derived filtered = kind === 'all' ? txs : txs.filter((tx) => tx.kind === kind);
+
+    derived pages = Math.max(1, Math.ceil(filtered.length / pageSize()));
+
+    derived visible = props.paginate
+        ? filtered.slice((page - 1) * pageSize(), page * pageSize())
+        : filtered.slice(0, pageSize());
+
+    effect (kind)
+    {
+        page = 1;
+    }
+
+    const chip = (active: boolean): string =>
+        active
+            ? 'rounded-full bg-ice/15 px-3 py-1 text-[11px] font-semibold text-ice'
+            : 'rounded-full border border-line px-3 py-1 text-[11px] text-faint hover:text-ink';
+
+    <div class="card p-4">
+        <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <h2 class="text-xs font-medium uppercase tracking-widest text-faint">
+                { props.title ?? t().swap.recentTrades }
+            </h2>
+            <Show when={ props.filterable }>
+                <div class="flex gap-1.5">
+                    <button type="button" class={ chip(kind === 'all') } onClick={ () => { kind = 'all'; } }>
+                        { t().common.all }
+                    </button>
+                    <For each={ KINDS } key={ (item) => item } let={ item }>
+                        <button
+                            type="button"
+                            class={ chip(kind === item) }
+                            data-testid={ `tx-filter-${ item }` }
+                            onClick={ () => { kind = item; } }
+                        >
+                            { item }
+                        </button>
+                    </For>
+                </div>
+            </Show>
+        </div>
+        <Show
+            when={ visible.length > 0 }
+            fallback={ <EmptyState title={ props.account === undefined ? t().swap.chartEmpty : t().portfolio.noHistory } /> }
+        >
+            <ul class="flex flex-col">
+                <For each={ visible } key={ (tx) => tx.txHash + tx.timestamp } let={ tx }>
+                    <li class="flex items-center gap-3 border-b border-line py-2.5 last:border-b-0">
+                        <span class="flex -space-x-2" data-ltr>
+                            <TokenIcon symbol={ tx.tokenA.symbol } address={ tx.tokenA.address } size={ 22 } />
+                            <TokenIcon symbol={ tx.tokenB.symbol } address={ tx.tokenB.address } size={ 22 } />
+                        </span>
+                        <span class="min-w-0 flex-1">
+                            <span class="block truncate font-mono text-xs" data-ltr>
+                                { `${ fmtAmount(BigInt(tx.amountA), tx.tokenA.decimals) } ${ tx.tokenA.symbol }` }
+                                { ' → ' }
+                                { `${ fmtAmount(BigInt(tx.amountB), tx.tokenB.decimals) } ${ tx.tokenB.symbol }` }
+                            </span>
+                            <span class="block text-[10px] text-faint">{ fmtTime(tx.timestamp) }</span>
+                        </span>
+                        <Tooltip label={ tx.txHash }>
+                            <Badge tone={ KIND_TONE[tx.kind as keyof typeof KIND_TONE] }>{ tx.kind }</Badge>
+                        </Tooltip>
+                    </li>
+                </For>
+            </ul>
+            <Show when={ props.paginate }>
+                <div class="mt-4">
+                    <Pagination
+                        page={ page }
+                        pages={ pages }
+                        total={ filtered.length }
+                        pageSize={ pageSize() }
+                        onPage={ (next) => { page = next; } }
+                    />
+                </div>
+            </Show>
+        </Show>
+    </div>
+}

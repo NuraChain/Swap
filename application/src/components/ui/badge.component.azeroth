@@ -1,0 +1,11 @@
+import type { Child } from 'azerothjs';
+
+import { badgeClass } from './variants.ts';
+import type { BadgeTone } from './variants.ts';
+
+export default component Badge(props: { tone?: BadgeTone; ltr?: boolean; children?: Child })
+{
+    <span class={ badgeClass(props.tone ?? 'muted') } data-ltr={ props.ltr ? '' : undefined }>
+        { props.children }
+    </span>
+}

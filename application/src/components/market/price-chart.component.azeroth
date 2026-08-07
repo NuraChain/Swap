@@ -1,0 +1,163 @@
+import { formatTokenAmount } from '@nuraswap/shared/digits';
+
+import { client } from '../../api.ts';
+import type { Candle, TokenRef } from '../../api.ts';
+import { fmtNumber, t } from '../../lib/i18n.ts';
+import { txEpoch } from '../../lib/wallet/store.ts';
+
+// Hourly close of token1-per-token0 as a single-series area chart: 2px brand
+// line, soft fill, three recessive gridlines, crosshair + tooltip on hover.
+// The plot is an LTR island; labels use ink tokens, never the series color.
+
+const WIDTH = 560;
+const HEIGHT = 220;
+const PAD_X = 8;
+const PAD_TOP = 12;
+const PAD_BOTTOM = 24;
+
+export default component PriceChart(props: { pairAddress: string })
+{
+    state candles: Candle[] = [];
+    state base: TokenRef | null = null;
+    state quoteToken: TokenRef | null = null;
+    state hover: number | null = null;
+
+    effect (props.pairAddress, txEpoch())
+    {
+        void client.market.pool({ params: { address: props.pairAddress } })
+            .then((detail) => { candles = detail.candles; base = detail.token0; quoteToken = detail.token1; })
+            .catch(() => { candles = []; });
+    }
+
+    derived points = candles.map((candle) =>
+    {
+        const raw = Number(formatTokenAmount(BigInt(candle.close), 18, 12));
+        return { time: candle.hourStart, value: raw };
+    });
+
+    derived domain = (() =>
+    {
+        if (points.length === 0)
+        {
+            return { min: 0, max: 1 };
+        }
+        let min = Infinity;
+        let max = -Infinity;
+        for (const point of points)
+        {
+            min = Math.min(min, point.value);
+            max = Math.max(max, point.value);
+        }
+        const pad = (max - min || max || 1) * 0.12;
+        return { min: Math.max(0, min - pad), max: max + pad };
+    })();
+
+    const x = (index: number): number =>
+        points.length < 2
+            ? PAD_X
+            : PAD_X + (index * (WIDTH - PAD_X * 2)) / (points.length - 1);
+
+    const y = (value: number): number =>
+    {
+        const span = domain.max - domain.min || 1;
+        return PAD_TOP + (1 - (value - domain.min) / span) * (HEIGHT - PAD_TOP - PAD_BOTTOM);
+    };
+
+    derived linePath = points.length < 2
+        ? ''
+        : points.map((point, index) => `${ index === 0 ? 'M' : 'L' }${ x(index).toFixed(1) },${ y(point.value).toFixed(1) }`).join(' ');
+
+    derived areaPath = linePath === ''
+        ? ''
+        : `${ linePath } L${ x(points.length - 1).toFixed(1) },${ HEIGHT - PAD_BOTTOM } L${ PAD_X },${ HEIGHT - PAD_BOTTOM } Z`;
+
+    const onMove = (event: MouseEvent): void =>
+    {
+        if (points.length < 2)
+        {
+            return;
+        }
+        const rect = (event.currentTarget as SVGSVGElement).getBoundingClientRect();
+        const ratio = (event.clientX - rect.left) / rect.width;
+        hover = Math.min(points.length - 1, Math.max(0, Math.round(ratio * (points.length - 1))));
+    };
+
+    const timeLabel = (timestamp: number): string =>
+        new Intl.DateTimeFormat('en', { hour: '2-digit', month: 'short', day: 'numeric' }).format(timestamp * 1000);
+
+    <div class="card p-4" data-ltr>
+        <div class="mb-2 flex items-baseline justify-between gap-3">
+            <span class="text-xs text-faint">
+                { `${ base?.symbol ?? '' } / ${ quoteToken?.symbol ?? '' }` }
+            </span>
+            <Show when={ points.length > 0 }>
+                <span class="font-mono text-lg text-val">
+                    { fmtNumber(points[points.length - 1]?.value ?? 0, 6) }
+                </span>
+            </Show>
+        </div>
+        <Show
+            when={ points.length >= 2 }
+            fallback={ <p class="py-16 text-center text-sm text-faint">{ t().swap.chartEmpty }</p> }
+        >
+            <svg
+                viewBox={ `0 0 ${ WIDTH } ${ HEIGHT }` }
+                class="h-auto w-full"
+                role="img"
+                aria-label={ `${ base?.symbol ?? '' } / ${ quoteToken?.symbol ?? '' }` }
+                onMousemove={ onMove }
+                onMouseleave={ () => { hover = null; } }
+            >
+                <defs>
+                    <linearGradient id="chart-fill" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0" stop-color="var(--ice)" stop-opacity="0.28" />
+                        <stop offset="1" stop-color="var(--ice)" stop-opacity="0" />
+                    </linearGradient>
+                </defs>
+                <g stroke="var(--line)" stroke-width="1">
+                    <line x1={ PAD_X } y1={ y(domain.min + (domain.max - domain.min) * 0.25) } x2={ WIDTH - PAD_X } y2={ y(domain.min + (domain.max - domain.min) * 0.25) } />
+                    <line x1={ PAD_X } y1={ y(domain.min + (domain.max - domain.min) * 0.5) } x2={ WIDTH - PAD_X } y2={ y(domain.min + (domain.max - domain.min) * 0.5) } />
+                    <line x1={ PAD_X } y1={ y(domain.min + (domain.max - domain.min) * 0.75) } x2={ WIDTH - PAD_X } y2={ y(domain.min + (domain.max - domain.min) * 0.75) } />
+                </g>
+                <path d={ areaPath } fill="url(#chart-fill)" />
+                <path d={ linePath } fill="none" stroke="var(--ice)" stroke-width="2" stroke-linejoin="round" />
+                <Show when={ hover !== null }>
+                    <g>
+                        <line
+                            x1={ x(hover as number) }
+                            y1={ PAD_TOP }
+                            x2={ x(hover as number) }
+                            y2={ HEIGHT - PAD_BOTTOM }
+                            stroke="var(--faint)"
+                            stroke-width="1"
+                            stroke-dasharray="3 3"
+                        />
+                        <circle
+                            cx={ x(hover as number) }
+                            cy={ y(points[hover as number].value) }
+                            r="4"
+                            fill="var(--ice)"
+                            stroke="var(--raised)"
+                            stroke-width="2"
+                        />
+                    </g>
+                </Show>
+            </svg>
+            <div class="mt-1 text-[10px] text-faint">
+                <Show
+                    when={ hover !== null }
+                    fallback={
+                        <span class="flex items-center justify-between">
+                            <span>{ timeLabel(points[0].time) }</span>
+                            <span>{ timeLabel(points[points.length - 1].time) }</span>
+                        </span>
+                    }
+                >
+                    <span class="font-mono">
+                        { `${ timeLabel(points[hover as number].time) } · ${ fmtNumber(points[hover as number].value, 6) } ${ quoteToken?.symbol ?? '' }` }
+                    </span>
+                </Show>
+            </div>
+        </Show>
+    </div>
+}

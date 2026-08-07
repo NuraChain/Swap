@@ -1,0 +1,366 @@
+import { minOutForSlippage, quote as quoteRatio } from '@nuraswap/shared/math';
+import { formatTokenAmount, parseTokenAmount } from '@nuraswap/shared/digits';
+
+import type { DeploymentInfo, TokenRef } from '../../api.ts';
+import { ERC20_ABI, FACTORY_ABI, PAIR_ABI, ROUTER_ABI, deployment, publicClient } from '../../lib/chain.ts';
+import type { Address } from '../../lib/chain.ts';
+import { t } from '../../lib/i18n.ts';
+import { account, balances, nativeBalance, requiredWallet, sendTx, txEpoch } from '../../lib/wallet/store.ts';
+
+import AmountField from './amount-field.component.azeroth';
+import TokenSelect from './token-select.component.azeroth';
+import WalletModal from './wallet-modal.component.azeroth';
+import Button from '../ui/button.component.azeroth';
+import Icon from '../ui/icon.component.azeroth';
+import Modal from '../ui/modal.component.azeroth';
+
+const NATIVE: TokenRef = { address: 'bnb', symbol: 'BNB', name: 'BNB', decimals: 18 };
+const ZERO = '0x0000000000000000000000000000000000000000';
+const MAX_UINT256 = (1n << 256n) - 1n;
+const SLIPPAGE_BPS = 100;
+
+// Add-liquidity flow: pick the pair, amounts ratio-fill from live reserves, both
+// sides approve, and a summary gates the wallet prompt. An empty or missing pair
+// flips into first-provider mode: free ratio, price-setting warning.
+
+export default component AddLiquidity(props: {
+    tokens: TokenRef[];
+    initialA?: TokenRef;
+    initialB?: TokenRef;
+    onClose: () => void;
+})
+{
+    state tokenA: TokenRef | null = props.initialA ?? NATIVE;
+    state tokenB: TokenRef | null = props.initialB ?? null;
+    state amountAText = '';
+    state amountBText = '';
+    state reserves: { a: bigint; b: bigint } | null = null;
+    state allowanceA = 0n;
+    state allowanceB = 0n;
+    state pickerFor: 'a' | 'b' | null = null;
+    state confirming = false;
+    state busy = false;
+    state lastEdited: 'a' | 'b' = 'a';
+    state walletOpen = false;
+
+    const info = (): DeploymentInfo | null => deployment();
+    const isNative = (token: TokenRef | null): boolean => token?.address === 'bnb';
+    const wbnb = (): Address => (info()?.contracts.wbnb ?? ZERO) as Address;
+    const router = (): Address => (info()?.contracts.router ?? ZERO) as Address;
+    const hopAddress = (token: TokenRef): Address =>
+        (isNative(token) ? wbnb() : token.address) as Address;
+
+    const balanceOf = (token: TokenRef | null): bigint =>
+        token === null
+            ? 0n
+            : isNative(token)
+                ? nativeBalance()
+                : balances()[token.address.toLowerCase()] ?? 0n;
+
+    derived parsedA = tokenA === null ? null : parseTokenAmount(amountAText, (tokenA as TokenRef).decimals);
+    derived parsedB = tokenB === null ? null : parseTokenAmount(amountBText, (tokenB as TokenRef).decimals);
+
+    derived firstProvider = reserves !== null
+        && ((reserves as { a: bigint; b: bigint }).a === 0n || (reserves as { a: bigint; b: bigint }).b === 0n);
+
+    // Reserve watch for the selected pair, oriented to (tokenA, tokenB).
+    effect (tokenA, tokenB, txEpoch(), info())
+    {
+        reserves = null;
+        const a = tokenA;
+        const b = tokenB;
+        const current = info();
+        if (a === null || b === null || current === null)
+        {
+            return;
+        }
+        void (async () =>
+        {
+            const pair = await publicClient().readContract({
+                address: current.contracts.factory as Address,
+                abi: FACTORY_ABI,
+                functionName: 'getPair',
+                args: [hopAddress(a), hopAddress(b)]
+            }).catch(() => ZERO) as Address;
+            if (pair === ZERO)
+            {
+                reserves = { a: 0n, b: 0n };
+                return;
+            }
+            const [reserve0, reserve1] = await publicClient().readContract({
+                address: pair, abi: PAIR_ABI, functionName: 'getReserves'
+            }) as [bigint, bigint, number];
+            const token0 = await publicClient().readContract({
+                address: pair, abi: PAIR_ABI, functionName: 'token0'
+            }) as Address;
+            reserves = token0.toLowerCase() === hopAddress(a).toLowerCase()
+                ? { a: reserve0, b: reserve1 }
+                : { a: reserve1, b: reserve0 };
+        })();
+    }
+
+    // Ratio fill: the counterpart field follows the live price unless the pool is
+    // empty (first provider sets any ratio).
+    effect (amountAText, amountBText, reserves)
+    {
+        const pool = reserves as { a: bigint; b: bigint } | null;
+        if (pool === null || firstProvider || tokenA === null || tokenB === null)
+        {
+            return;
+        }
+        if (lastEdited === 'a' && parsedA !== null)
+        {
+            amountBText = formatTokenAmount(
+                quoteRatio(parsedA as bigint, pool.a, pool.b),
+                (tokenB as TokenRef).decimals,
+                8
+            );
+        }
+        else if (lastEdited === 'b' && parsedB !== null)
+        {
+            amountAText = formatTokenAmount(
+                quoteRatio(parsedB as bigint, pool.b, pool.a),
+                (tokenA as TokenRef).decimals,
+                8
+            );
+        }
+    }
+
+    // Allowances for both ERC20 sides.
+    effect (tokenA, tokenB, account(), txEpoch())
+    {
+        allowanceA = MAX_UINT256;
+        allowanceB = MAX_UINT256;
+        const owner = account();
+        if (owner === null)
+        {
+            return;
+        }
+        for (const [token, assign] of [
+            [tokenA, (value: bigint) => { allowanceA = value; }],
+            [tokenB, (value: bigint) => { allowanceB = value; }]
+        ] as Array<[TokenRef | null, (value: bigint) => void]>)
+        {
+            if (token === null || isNative(token))
+            {
+                continue;
+            }
+            void publicClient().readContract({
+                address: token.address as Address,
+                abi: ERC20_ABI,
+                functionName: 'allowance',
+                args: [owner, router()]
+            }).then((value) => assign(value as bigint)).catch(() => undefined);
+        }
+    }
+
+    derived needsApproveA = tokenA !== null && !isNative(tokenA) && parsedA !== null && allowanceA < (parsedA as bigint);
+    derived needsApproveB = tokenB !== null && !isNative(tokenB) && parsedB !== null && allowanceB < (parsedB as bigint);
+
+    derived insufficient = (parsedA !== null && (parsedA as bigint) > balanceOf(tokenA))
+        || (parsedB !== null && (parsedB as bigint) > balanceOf(tokenB));
+
+    derived ready = tokenA !== null && tokenB !== null
+        && parsedA !== null && (parsedA as bigint) > 0n
+        && parsedB !== null && (parsedB as bigint) > 0n
+        && !insufficient;
+
+    const deadline = async (): Promise<bigint> =>
+    {
+        const reader = publicClient();
+        const block = await reader.getBlock({ blockTag: 'pending' }).catch(() => reader.getBlock());
+        return block.timestamp + 1200n;
+    };
+
+    const approveToken = async (token: TokenRef, amount: bigint): Promise<void> =>
+    {
+        busy = true;
+        await sendTx(
+            `${ t().swap.approve } ${ token.symbol }`,
+            () => requiredWallet().writeContract({
+                address: token.address as Address,
+                abi: ERC20_ABI,
+                functionName: 'approve',
+                args: [router(), amount]
+            } as never)
+        );
+        busy = false;
+    };
+
+    const supply = async (): Promise<void> =>
+    {
+        const a = tokenA as TokenRef;
+        const b = tokenB as TokenRef;
+        const amountA = parsedA as bigint;
+        const amountB = parsedB as bigint;
+        const owner = account() as Address;
+        busy = true;
+        const when = await deadline();
+        const minA = firstProvider ? amountA : minOutForSlippage(amountA, SLIPPAGE_BPS);
+        const minB = firstProvider ? amountB : minOutForSlippage(amountB, SLIPPAGE_BPS);
+        const label = `${ t().liquidity.add }: ${ a.symbol }/${ b.symbol }`;
+        let ok: boolean;
+        if (isNative(a) || isNative(b))
+        {
+            const token = isNative(a) ? b : a;
+            const tokenAmount = isNative(a) ? amountB : amountA;
+            const tokenMin = isNative(a) ? minB : minA;
+            const bnbAmount = isNative(a) ? amountA : amountB;
+            const bnbMin = isNative(a) ? minA : minB;
+            ok = await sendTx(label, () => requiredWallet().writeContract({
+                address: router(),
+                abi: ROUTER_ABI,
+                functionName: 'addLiquidityETH',
+                args: [token.address as Address, tokenAmount, tokenMin, bnbMin, owner, when],
+                value: bnbAmount
+            } as never));
+        }
+        else
+        {
+            ok = await sendTx(label, () => requiredWallet().writeContract({
+                address: router(),
+                abi: ROUTER_ABI,
+                functionName: 'addLiquidity',
+                args: [a.address as Address, b.address as Address, amountA, amountB, minA, minB, owner, when]
+            } as never));
+        }
+        busy = false;
+        if (ok)
+        {
+            props.onClose();
+        }
+    };
+
+    <Modal title={ t().liquidity.add } onClose={ props.onClose }>
+        <div class="flex flex-col gap-2.5">
+            <AmountField
+                label={ t().liquidity.amountA }
+                amount={ amountAText }
+                onAmount={ (value) => { lastEdited = 'a'; amountAText = value; } }
+                token={ tokenA }
+                onPickToken={ () => { pickerFor = 'a'; } }
+                balance={ balanceOf(tokenA) }
+                onMax={ () =>
+                {
+                    lastEdited = 'a';
+                    amountAText = tokenA === null ? '' : formatTokenAmount(balanceOf(tokenA), (tokenA as TokenRef).decimals);
+                } }
+                testId="liq-a"
+            />
+            <div class="flex justify-center text-faint">
+                <Icon name="plus" size={ 16 } />
+            </div>
+            <AmountField
+                label={ t().liquidity.amountB }
+                amount={ amountBText }
+                onAmount={ (value) => { lastEdited = 'b'; amountBText = value; } }
+                token={ tokenB }
+                onPickToken={ () => { pickerFor = 'b'; } }
+                balance={ balanceOf(tokenB) }
+                onMax={ () =>
+                {
+                    lastEdited = 'b';
+                    amountBText = tokenB === null ? '' : formatTokenAmount(balanceOf(tokenB), (tokenB as TokenRef).decimals);
+                } }
+                testId="liq-b"
+            />
+
+            <Show when={ firstProvider }>
+                <p class="rounded-xl border border-val/40 bg-val/8 p-3 text-xs leading-relaxed text-val">
+                    { t().liquidity.firstProvider }
+                </p>
+            </Show>
+
+            <Show when={ needsApproveA || needsApproveB }>
+                <p class="text-center text-xs text-faint">{ t().liquidity.approveBoth }</p>
+            </Show>
+
+            <Show
+                when={ !confirming }
+                fallback={
+                    <div class="flex flex-col gap-3">
+                        <dl class="rounded-xl border border-line bg-raised p-3.5 text-xs">
+                            <div class="flex justify-between py-0.5">
+                                <dt class="text-faint">{ (tokenA as TokenRef | null)?.symbol }</dt>
+                                <dd class="font-mono" data-ltr>{ amountAText }</dd>
+                            </div>
+                            <div class="flex justify-between py-0.5">
+                                <dt class="text-faint">{ (tokenB as TokenRef | null)?.symbol }</dt>
+                                <dd class="font-mono" data-ltr>{ amountBText }</dd>
+                            </div>
+                        </dl>
+                        <div class="flex gap-2">
+                            <Button variant="ghost" block onClick={ () => { confirming = false; } }>
+                                { t().common.cancel }
+                            </Button>
+                            <Button block busy={ busy } testId="supply" onClick={ () => void supply() }>
+                                { t().liquidity.confirmAdd }
+                            </Button>
+                        </div>
+                    </div>
+                }
+            >
+                <Show
+                    when={ account() !== null }
+                    fallback={
+                        <Button block size="lg" testId="add-connect" onClick={ () => { walletOpen = true; } }>
+                            { t().common.connect }
+                        </Button>
+                    }
+                >
+                    <Show
+                        when={ needsApproveA }
+                        fallback={
+                        <Show
+                            when={ needsApproveB }
+                            fallback={
+                                <Button
+                                    block
+                                    size="lg"
+                                    disabled={ !ready }
+                                    testId="add-review"
+                                    onClick={ () => { confirming = true; } }
+                                >
+                                    { insufficient ? t().swap.insufficient : t().liquidity.add }
+                                </Button>
+                            }
+                        >
+                            <Button block size="lg" busy={ busy } onClick={ () => void approveToken(tokenB as TokenRef, parsedB as bigint) }>
+                                { `${ t().swap.approve } ${ (tokenB as TokenRef).symbol }` }
+                            </Button>
+                        </Show>
+                    }
+                    >
+                        <Button block size="lg" busy={ busy } onClick={ () => void approveToken(tokenA as TokenRef, parsedA as bigint) }>
+                        { `${ t().swap.approve } ${ (tokenA as TokenRef).symbol }` }
+                        </Button>
+                    </Show>
+                </Show>
+            </Show>
+        </div>
+
+        <Show when={ walletOpen }>
+            <WalletModal onClose={ () => { walletOpen = false; } } />
+        </Show>
+
+        <Show when={ pickerFor !== null }>
+            <TokenSelect
+                tokens={ props.tokens }
+                exclude={ pickerFor === 'a' ? (tokenB as TokenRef | null)?.address : (tokenA as TokenRef | null)?.address }
+                onClose={ () => { pickerFor = null; } }
+                onSelect={ (token) =>
+                {
+                    if (pickerFor === 'a')
+                    {
+                        tokenA = token;
+                    }
+                    else
+                    {
+                        tokenB = token;
+                    }
+                    pickerFor = null;
+                } }
+            />
+        </Show>
+    </Modal>
+}

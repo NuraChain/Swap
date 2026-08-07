@@ -1,0 +1,193 @@
+import { minOutForSlippage } from '@nuraswap/shared/math';
+import { formatTokenAmount } from '@nuraswap/shared/digits';
+
+import type { Pool } from '../../api.ts';
+import { ERC20_ABI, PAIR_ABI, ROUTER_ABI, deployment, publicClient } from '../../lib/chain.ts';
+import type { Address } from '../../lib/chain.ts';
+import { fmtAmount } from '../../lib/format.ts';
+import { t } from '../../lib/i18n.ts';
+import { account, requiredWallet, sendTx, txEpoch } from '../../lib/wallet/store.ts';
+
+import Button from '../ui/button.component.azeroth';
+import Modal from '../ui/modal.component.azeroth';
+import TokenIcon from './token-icon.component.azeroth';
+
+const SLIPPAGE_BPS = 100;
+
+// Remove-liquidity flow: percent slider, live estimate of both amounts from the
+// pool share, LP approval, and a confirm summary before the wallet prompt.
+// Withdrawal returns the pool's real assets (WBNB stays wrapped - unwrap on the
+// swap page); one flow, no special native casing.
+
+export default component RemoveLiquidity(props: { pool: Pool; onClose: () => void })
+{
+    state percent = 50;
+    state lpBalance = 0n;
+    state totalSupply = 0n;
+    state lpAllowance = 0n;
+    state confirming = false;
+    state busy = false;
+
+    const router = (): Address => (deployment()?.contracts.router ?? '0x') as Address;
+    const pair = (): Address => props.pool.address as Address;
+
+    effect (account(), txEpoch())
+    {
+        const owner = account();
+        if (owner === null)
+        {
+            return;
+        }
+        void (async () =>
+        {
+            const reader = publicClient();
+            lpBalance = await reader.readContract({
+                address: pair(), abi: PAIR_ABI, functionName: 'balanceOf', args: [owner]
+            }) as bigint;
+            totalSupply = await reader.readContract({
+                address: pair(), abi: PAIR_ABI, functionName: 'totalSupply'
+            }) as bigint;
+            lpAllowance = await reader.readContract({
+                address: pair(), abi: ERC20_ABI, functionName: 'allowance', args: [owner, router()]
+            }) as bigint;
+        })();
+    }
+
+    derived burn = (lpBalance * BigInt(percent)) / 100n;
+
+    derived estimate = totalSupply === 0n
+        ? { a: 0n, b: 0n }
+        : {
+            a: (burn * BigInt(props.pool.reserve0)) / totalSupply,
+            b: (burn * BigInt(props.pool.reserve1)) / totalSupply
+        };
+
+    derived needsApprove = burn > 0n && lpAllowance < burn;
+
+    const withdraw = async (): Promise<void> =>
+    {
+        const owner = account() as Address;
+        busy = true;
+        const reader = publicClient();
+        const block = await reader.getBlock({ blockTag: 'pending' }).catch(() => reader.getBlock());
+        const ok = await sendTx(
+            `${ t().liquidity.remove }: ${ props.pool.token0.symbol }/${ props.pool.token1.symbol }`,
+            () => requiredWallet().writeContract({
+                address: router(),
+                abi: ROUTER_ABI,
+                functionName: 'removeLiquidity',
+                args: [
+                    props.pool.token0.address as Address,
+                    props.pool.token1.address as Address,
+                    burn,
+                    minOutForSlippage(estimate.a, SLIPPAGE_BPS),
+                    minOutForSlippage(estimate.b, SLIPPAGE_BPS),
+                    owner,
+                    block.timestamp + 1200n
+                ]
+            } as never)
+        );
+        busy = false;
+        if (ok)
+        {
+            props.onClose();
+        }
+    };
+
+    const approveLp = async (): Promise<void> =>
+    {
+        busy = true;
+        await sendTx(
+            `${ t().swap.approve } LP`,
+            () => requiredWallet().writeContract({
+                address: pair(),
+                abi: ERC20_ABI,
+                functionName: 'approve',
+                args: [router(), burn]
+            } as never)
+        );
+        busy = false;
+    };
+
+    <Modal title={ `${ t().liquidity.remove }: ${ props.pool.token0.symbol }/${ props.pool.token1.symbol }` } onClose={ props.onClose }>
+        <div class="flex flex-col gap-4">
+            <div class="rounded-xl border border-line bg-raised p-4">
+                <div class="flex items-center justify-between text-xs text-faint">
+                    <span>{ t().liquidity.removeAmount }</span>
+                    <span class="font-mono" data-ltr>{ `${ percent }%` }</span>
+                </div>
+                <input
+                    type="range"
+                    min="1"
+                    max="100"
+                    value={ String(percent) }
+                    class="mt-3 w-full accent-(--ice)"
+                    data-ltr
+                    aria-label={ t().liquidity.removeAmount }
+                    onInput={ (event) => { percent = Number.parseInt((event.currentTarget as HTMLInputElement).value, 10); } }
+                />
+                <div class="mt-2 flex gap-2" data-ltr>
+                    <button type="button" class="btn-ghost h-7 flex-1 text-xs" onClick={ () => { percent = 25; } }>25%</button>
+                    <button type="button" class="btn-ghost h-7 flex-1 text-xs" onClick={ () => { percent = 50; } }>50%</button>
+                    <button type="button" class="btn-ghost h-7 flex-1 text-xs" onClick={ () => { percent = 75; } }>75%</button>
+                    <button type="button" class="btn-ghost h-7 flex-1 text-xs" onClick={ () => { percent = 100; } }>100%</button>
+                </div>
+            </div>
+
+            <dl class="rounded-xl border border-line bg-raised p-4 text-sm">
+                <div class="mb-1 text-xs text-faint">{ t().liquidity.receiveEstimate }</div>
+                <div class="flex items-center justify-between py-1">
+                    <dt class="flex items-center gap-2">
+                        <TokenIcon symbol={ props.pool.token0.symbol } address={ props.pool.token0.address } size={ 20 } />
+                        <span data-ltr>{ props.pool.token0.symbol }</span>
+                    </dt>
+                    <dd class="font-mono text-val">{ fmtAmount(estimate.a, props.pool.token0.decimals) }</dd>
+                </div>
+                <div class="flex items-center justify-between py-1">
+                    <dt class="flex items-center gap-2">
+                        <TokenIcon symbol={ props.pool.token1.symbol } address={ props.pool.token1.address } size={ 20 } />
+                        <span data-ltr>{ props.pool.token1.symbol }</span>
+                    </dt>
+                    <dd class="font-mono text-val">{ fmtAmount(estimate.b, props.pool.token1.decimals) }</dd>
+                </div>
+                <div class="mt-1 flex items-center justify-between border-t border-line pt-2 text-xs text-faint">
+                    <dt>{ t().liquidity.lpTokens }</dt>
+                    <dd class="font-mono" data-ltr>{ formatTokenAmount(burn, 18, 8) }</dd>
+                </div>
+            </dl>
+
+            <Show
+                when={ !confirming }
+                fallback={
+                    <div class="flex gap-2">
+                        <Button variant="ghost" block onClick={ () => { confirming = false; } }>
+                            { t().common.cancel }
+                        </Button>
+                        <Button block busy={ busy } variant="danger" testId="withdraw" onClick={ () => void withdraw() }>
+                            { t().liquidity.confirmRemove }
+                        </Button>
+                    </div>
+                }
+            >
+                <Show
+                    when={ !needsApprove }
+                    fallback={
+                        <Button block size="lg" busy={ busy } testId="approve-lp" onClick={ () => void approveLp() }>
+                            { `${ t().swap.approve } LP` }
+                        </Button>
+                    }
+                >
+                    <Button
+                        block
+                        size="lg"
+                        disabled={ burn === 0n }
+                        testId="remove-review"
+                        onClick={ () => { confirming = true; } }
+                    >
+                        { t().liquidity.remove }
+                    </Button>
+                </Show>
+            </Show>
+        </div>
+    </Modal>
+}

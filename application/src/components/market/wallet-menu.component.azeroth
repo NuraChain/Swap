@@ -1,0 +1,93 @@
+import { Portal } from 'azerothjs';
+
+import { deployment, explorerAddressUrl } from '../../lib/chain.ts';
+import { addressGradient, fmtAmount, shortAddress } from '../../lib/format.ts';
+import { t } from '../../lib/i18n.ts';
+import { pushToast } from '../../lib/toast.ts';
+import { connectedVia, disconnect, nativeBalance } from '../../lib/wallet/store.ts';
+
+import Icon from '../ui/icon.component.azeroth';
+
+// The connected-account sheet: identity, copy, explorer, disconnect. Disconnect
+// lives BEHIND this menu deliberately - it used to fire on the address button
+// itself, so a click meant to inspect the account ended the session.
+
+export default component WalletMenu(props: { address: string; onClose: () => void })
+{
+    const copy = async (): Promise<void> =>
+    {
+        try
+        {
+            await navigator.clipboard.writeText(props.address);
+            pushToast('success', t().common.copied);
+        }
+        catch
+        {
+            pushToast('error', t().errors.unknown);
+        }
+        props.onClose();
+    };
+
+    const explorer = (): string | null => explorerAddressUrl(props.address);
+
+    <Portal>
+        <div class="fixed inset-0 z-50" onClick={ () => props.onClose() }>
+            <div
+                class="anim-pop absolute end-4 top-16 w-64 rounded-xl border border-line-strong bg-raised p-2 shadow-2xl"
+                role="dialog"
+                aria-label={ t().common.connect }
+                onClick={ (event) => event.stopPropagation() }
+            >
+                <div class="flex items-center gap-2.5 border-b border-line px-2 pb-3 pt-1">
+                    <span
+                        class="h-8 w-8 shrink-0 rounded-full"
+                        style={ `background:${ addressGradient(props.address) }` }
+                        aria-hidden="true"
+                    />
+                    <span class="min-w-0">
+                        <span class="block font-mono text-sm" data-ltr>{ shortAddress(props.address) }</span>
+                        <span class="block text-[11px] text-faint">
+                            { connectedVia() ?? deployment()?.networkName ?? '' }
+                        </span>
+                    </span>
+                </div>
+                <div class="px-2 py-2 text-xs text-faint">
+                    <span class="flex items-center justify-between">
+                        <span>{ t().common.balance }</span>
+                        <span class="font-mono text-val">{ `${ fmtAmount(nativeBalance(), 18) } BNB` }</span>
+                    </span>
+                </div>
+                <button
+                    type="button"
+                    class="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-start text-sm hover:bg-ink/6"
+                    data-testid="wallet-copy"
+                    onClick={ () => void copy() }
+                >
+                    <Icon name="copy" size={ 15 } class="text-faint" />
+                    <span>{ t().common.copy }</span>
+                </button>
+                <Show when={ explorer() } let={ url }>
+                    <a
+                        href={ url }
+                        target="_blank"
+                        rel="noreferrer"
+                        class="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-sm hover:bg-ink/6"
+                        onClick={ () => props.onClose() }
+                    >
+                        <Icon name="external-link" size={ 15 } class="text-faint" />
+                        <span>{ t().common.viewExplorer }</span>
+                    </a>
+                </Show>
+                <button
+                    type="button"
+                    class="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-start text-sm text-fall hover:bg-fall/10"
+                    data-testid="wallet-disconnect"
+                    onClick={ () => { disconnect(); props.onClose(); } }
+                >
+                    <Icon name="x" size={ 15 } />
+                    <span>{ t().common.disconnect }</span>
+                </button>
+            </div>
+        </div>
+    </Portal>
+}

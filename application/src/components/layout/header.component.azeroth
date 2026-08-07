@@ -1,0 +1,177 @@
+import { Link, Portal, useRoute } from 'azerothjs';
+
+import { currentLang, setLang, t } from '../../lib/i18n.ts';
+import { currentTheme, toggleTheme } from '../../lib/theme.ts';
+
+import ConnectButton from '../market/connect-button.component.azeroth';
+import Icon from '../ui/icon.component.azeroth';
+import Shamseh from '../ui/shamseh.component.azeroth';
+
+// Mobile-first: the bar carries logo + connect + hamburger; nav links and the
+// language/theme toggles live in a slide-over drawer below sm and inline above.
+
+const DRAWER_CLOSE_MS = 230;
+
+export default component Header()
+{
+    state drawerOpen = false;
+    state drawerClosing = false;
+
+    // Every close path plays the slide-out first, then unmounts.
+    const closeDrawer = (): void =>
+    {
+        if (!drawerOpen || drawerClosing)
+        {
+            return;
+        }
+        drawerClosing = true;
+        setTimeout(() =>
+        {
+            drawerOpen = false;
+            drawerClosing = false;
+        }, DRAWER_CLOSE_MS);
+    };
+
+    // Navigation closes the drawer even when the click lands on the active link.
+    const location = useRoute();
+    effect (location().pathname)
+    {
+        closeDrawer();
+    }
+
+    const onKey = (event: KeyboardEvent): void =>
+    {
+        if (event.key === 'Escape')
+        {
+            closeDrawer();
+        }
+    };
+
+    mount
+    {
+        document.addEventListener('keydown', onKey);
+    }
+
+    cleanup
+    {
+        document.removeEventListener('keydown', onKey);
+    }
+
+    const navLink = 'rounded-lg px-3 py-2 text-sm text-faint hover:text-ink [&.active]:bg-panel [&.active]:text-ice';
+
+    <header class="sticky top-0 z-40 border-b border-line bg-bg/95 backdrop-blur-sm">
+        <div class="mx-auto flex max-w-6xl items-center gap-2 px-4 py-3 sm:gap-6">
+            <Link to="/" class="flex min-w-0 items-center gap-2.5 text-ink" aria-label={ t().nav.home }>
+                <Shamseh size={ 26 } class="shrink-0 text-ice" />
+                <span class="font-display truncate text-base font-bold tracking-wide max-[380px]:hidden">
+                    { t().nav.home }
+                </span>
+            </Link>
+            <nav class="hidden flex-1 gap-1 sm:flex">
+                <Link to="/swap" activeClass="active" class={ navLink }>{ t().nav.swap }</Link>
+                <Link to="/liquidity" activeClass="active" class={ navLink }>{ t().nav.liquidity }</Link>
+                <Link to="/portfolio" activeClass="active" class={ navLink }>{ t().nav.portfolio }</Link>
+            </nav>
+            <div class="ms-auto flex items-center gap-1.5">
+                <button
+                    type="button"
+                    class="hidden rounded-lg p-2 text-faint hover:text-ink sm:block"
+                    aria-label={ t().common.language }
+                    onClick={ () => setLang(currentLang() === 'en' ? 'fa' : 'en') }
+                >
+                    <Icon name="languages" size={ 18 } />
+                </button>
+                <button
+                    type="button"
+                    class="hidden rounded-lg p-2 text-faint hover:text-ink sm:block"
+                    aria-label={ t().common.theme }
+                    onClick={ () => toggleTheme() }
+                >
+                    <Icon name={ currentTheme() === 'dark' ? 'sun' : 'moon' } size={ 18 } />
+                </button>
+                <ConnectButton />
+                <button
+                    type="button"
+                    class="flex min-h-11 min-w-11 items-center justify-center rounded-lg text-ink sm:hidden"
+                    aria-label={ t().nav.home }
+                    aria-expanded={ drawerOpen }
+                    data-testid="drawer-open"
+                    onClick={ () => { drawerOpen = true; } }
+                >
+                    <Icon name="menu" size={ 20 } />
+                </button>
+            </div>
+        </div>
+
+        <Show when={ drawerOpen }>
+            <Portal>
+                <div class="fixed inset-0 z-50 sm:hidden" class:is-closing={ drawerClosing }>
+                    <div class="anim-overlay absolute inset-0 bg-black/60" onClick={ closeDrawer } />
+                    <aside
+                        class="anim-drawer absolute inset-y-0 end-0 flex w-72 max-w-[85vw] flex-col gap-1 border-s border-line bg-panel p-4 shadow-2xl"
+                        role="dialog"
+                        aria-modal="true"
+                        aria-label={ t().nav.home }
+                    >
+                        <div class="mb-3 flex items-center justify-between">
+                            <span class="flex items-center gap-2">
+                                <Shamseh size={ 22 } class="text-ice" />
+                                <span class="font-display text-sm font-bold">{ t().nav.home }</span>
+                            </span>
+                            <button
+                                type="button"
+                                class="flex min-h-11 min-w-11 items-center justify-center rounded-lg text-faint hover:text-ink"
+                                aria-label={ t().common.close }
+                                onClick={ closeDrawer }
+                            >
+                                <Icon name="x" size={ 18 } />
+                            </button>
+                        </div>
+                        <Link
+                            to="/swap"
+                            activeClass="active"
+                            class={ `${ navLink } flex min-h-11 items-center` }
+                            onClick={ closeDrawer }
+                        >
+                            { t().nav.swap }
+                        </Link>
+                        <Link
+                            to="/liquidity"
+                            activeClass="active"
+                            class={ `${ navLink } flex min-h-11 items-center` }
+                            onClick={ closeDrawer }
+                        >
+                            { t().nav.liquidity }
+                        </Link>
+                        <Link
+                            to="/portfolio"
+                            activeClass="active"
+                            class={ `${ navLink } flex min-h-11 items-center` }
+                            onClick={ closeDrawer }
+                        >
+                            { t().nav.portfolio }
+                        </Link>
+                        <div class="mt-4 flex gap-2 border-t border-line pt-4">
+                            <button
+                                type="button"
+                                class="flex min-h-11 flex-1 items-center justify-center gap-2 rounded-lg border border-line px-3 text-sm text-faint hover:text-ink"
+                                onClick={ () => setLang(currentLang() === 'en' ? 'fa' : 'en') }
+                            >
+                                <Icon name="languages" size={ 16 } />
+                                <span>{ currentLang() === 'en' ? 'فارسی' : 'English' }</span>
+                            </button>
+                            <button
+                                type="button"
+                                class="flex min-h-11 flex-1 items-center justify-center gap-2 rounded-lg border border-line px-3 text-sm text-faint hover:text-ink"
+                                aria-label={ t().common.theme }
+                                onClick={ () => toggleTheme() }
+                            >
+                                <Icon name={ currentTheme() === 'dark' ? 'sun' : 'moon' } size={ 16 } />
+                            </button>
+                        </div>
+                    </aside>
+                </div>
+            </Portal>
+        </Show>
+    </header>
+}

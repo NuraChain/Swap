@@ -1,0 +1,4 @@
+export default component Skeleton(props: { class?: string })
+{
+    <span class={ `block animate-pulse rounded-md bg-ink/8 ${ props.class ?? 'h-4 w-24' }` } aria-hidden="true" />
+}
