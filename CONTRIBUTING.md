@@ -41,12 +41,17 @@ npx azeroth build                 # client, SSR bundle, prerender
 - New UI takes its parts from `application/src/components/ui/` before inventing
   local ones.
 
-## Icon and coin sprites
+## Icon, coin and flag sprites
 
-`application/scripts/build-icons.mjs`, `build-coins.mjs` and `build-wallets.mjs`
-generate `public/icons.svg`, `public/coins.svg` and `public/wallets/*.svg` from
-lucide-static, cryptocurrency-icons and @web3icons/core. Edit the lists there and
+`application/scripts/build-icons.mjs`, `build-coins.mjs`, `build-wallets.mjs` and
+`build-flags.mjs` generate `public/icons.svg`, `public/coins.svg`,
+`public/wallets/*.svg` and `public/flags/*.svg` from lucide-static,
+cryptocurrency-icons, @web3icons/core and circle-flags. Edit the lists there and
 rerun; the outputs are committed so the app needs no CDN and the CSP stays closed.
+
+Flag codes are ISO 3166-1 alpha-2 COUNTRIES, and the country-to-language pairing
+is editorial - the flag is a recognition aid next to the endonym, never the label
+itself.
 
 Adding a wallet to the connect roster: append it to `WALLET_BRANDS` in
 `application/src/lib/wallet/brands.ts` with its EIP-6963 rdns and install URL. If
