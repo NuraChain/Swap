@@ -31,9 +31,14 @@ npx azeroth build                 # client, SSR bundle, prerender
 - The deployment artifact is the only contract-side input: its shape is pinned by
   `shared/src/deployments.ts` and validated by `server/src/schemas.ts`. Contract
   changes reach this repo as a new artifact, never as an import.
-- Every user-facing string goes through the typed dictionary in
-  `application/src/lib/i18n.ts`, in BOTH languages - a missing Persian key is a
-  compile error by design.
+- Every user-facing string goes through the typed dictionaries in
+  `application/src/lib/locales/`, in ALL TEN languages - `en.ts` is the source of
+  truth and every other locale is typed `Dict`, so a missing key anywhere is a
+  compile error by design. Adding a language: write `locales/<code>.ts`, add its
+  row to `LANGS` in `src/lib/i18n.ts`, add its flag to `FLAGS` in
+  `scripts/build-flags.mjs`, and extend the language regex in the pre-paint
+  script in `index.html` (which then needs a new `THEME_SCRIPT_HASH` - the CSP
+  spec prints the value).
 - RTL: logical utilities only (`ms-`/`me-`/`ps-`/`pe-`/`start-`/`end-`);
   numbers, addresses, and charts sit in `data-ltr` islands.
 - On-chain amounts are bigint end to end; raw amounts never pass through

@@ -16,7 +16,7 @@
  * costs a blocking round trip. It is therefore allowed by hash. `csp.spec.ts`
  * recomputes this from the built HTML and fails if the script drifts.
  */
-export const THEME_SCRIPT_HASH = 'sha256-M3dnWLheo/czg5c6qByWrOUsU/EL/qtmvluWjEXd+Js=';
+export const THEME_SCRIPT_HASH = 'sha256-ZvA34KK+GDusS+kQqwQf696fV093O8+sX5OD4d2MA08=';
 
 function originOf(url: string): string | null
 {

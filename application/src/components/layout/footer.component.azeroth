@@ -7,7 +7,7 @@ import Shamseh from '../ui/shamseh.component.azeroth';
 export default component Footer()
 {
     <footer class="mt-auto border-t border-line bg-panel">
-        <div class="mx-auto grid max-w-6xl gap-10 px-4 py-12 sm:grid-cols-[1fr_auto_auto] sm:gap-16">
+        <div class="mx-auto grid max-w-6xl gap-10 px-4 py-12 sm:grid-cols-[1fr_auto] sm:gap-16">
             <div class="max-w-xs">
                 <span class="flex items-center gap-2.5">
                     <Shamseh size={ 24 } class="text-ice" />
@@ -21,31 +21,6 @@ export default component Footer()
                     <li><Link to="/swap" class="text-faint hover:text-ice">{ t().nav.swap }</Link></li>
                     <li><Link to="/liquidity" class="text-faint hover:text-ice">{ t().nav.liquidity }</Link></li>
                     <li><Link to="/portfolio" class="text-faint hover:text-ice">{ t().nav.portfolio }</Link></li>
-                </ul>
-            </nav>
-            <nav aria-label={ t().footer.resources }>
-                <h2 class="eyebrow">{ t().footer.resources }</h2>
-                <ul class="mt-4 flex flex-col gap-2.5 text-sm">
-                    <li>
-                        <a
-                            href="https://github.com/AzerothJS/AzerothJS"
-                            target="_blank"
-                            rel="noreferrer"
-                            class="text-faint hover:text-ice"
-                        >
-                            { t().footer.framework }
-                        </a>
-                    </li>
-                    <li>
-                        <a
-                            href="https://github.com/AzerothJS"
-                            target="_blank"
-                            rel="noreferrer"
-                            class="text-faint hover:text-ice"
-                        >
-                            { t().footer.source }
-                        </a>
-                    </li>
                 </ul>
             </nav>
         </div>
