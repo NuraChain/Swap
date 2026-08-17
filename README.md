@@ -19,7 +19,7 @@ light themes.
 
 [![Built with AzerothJS](https://img.shields.io/badge/built%20with-AzerothJS-5fb3e8)](https://github.com/AzerothJS/AzerothJS)
 [![Node >= 24](https://img.shields.io/badge/node-%3E%3D24-brightgreen)](https://nodejs.org)
-[![License: MIT + GPL-3.0](https://img.shields.io/badge/license-MIT%20%2B%20GPL--3.0-blue)](#license)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](#license)
 
 </div>
 
@@ -27,7 +27,8 @@ light themes.
 
 ## What this is
 
-A complete, production-shaped DEX in one repository:
+The application half of a production-shaped DEX - the exchange contracts live in
+their own repository:
 
 - **Swap** - router-quoted trades with live price impact, slippage and deadline
   control, an approve-then-swap flow, BNB wrap/unwrap, a price chart, and recent
@@ -41,16 +42,23 @@ A complete, production-shaped DEX in one repository:
   silent session restore, address identicons.
 - **The exchange itself** - the canonical UniswapV2 core and periphery, vendored
   verbatim (0.30% fee, audited math untouched) with the pair init-code hash
-  regenerated for this build and proven by tests.
+  regenerated for this build and proven by tests. It lives in the **contracts
+  repository**; this repo consumes its deployment artifact.
 
 ## Architecture
 
 ```
-contracts/     the exchange: vendored UniswapV2 + NURA/mock tokens (Hardhat + viem)
 shared/        bigint AMM math, digit normalization, typed deployment artifacts
 server/        indexer + market API: chain watcher -> sqlite -> REST (@azerothjs/http)
 application/   the site: compiled .azeroth components on vite (AzerothJS)
 ```
+
+The seam with the contracts repository is one file: its deploy script writes a
+typed artifact (chain id, RPC, factory/router/WBNB/multicall addresses, token
+list, start block) that this repo reads from `shared/deployments/<chainId>.json`
+via `shared/src/deployments.ts`. Nothing here imports Solidity or an ABI built
+from it - the ABI fragments the app and indexer need are declared inline
+(`application/src/lib/chain.ts`, `server/src/indexer/decode.ts`).
 
 The server tails the chain (`PairCreated`, `Sync`, `Swap`, `Mint`, `Burn`),
 survives chain resets via a chain-identity guard, and serves `/api/market/*`
@@ -65,6 +73,8 @@ signs with the user's wallet - the site never holds funds or keys.
 - Node.js >= 24 (`node --version`)
 - A browser wallet extension for the trading flows -
   [MetaMask](https://metamask.io/download/) or any EIP-6963 wallet
+- The **contracts repository**, checked out and installed - it runs the local
+  chain and writes the deployment artifact this repo reads
 
 ### Development (local chain)
 
@@ -73,10 +83,10 @@ Four processes, one terminal each, in this order:
 ```sh
 npm install                          # once, at the repository root
 
-# terminal 1 - the chain (keep it running)
-cd contracts && npx hardhat node
+# terminal 1 - the chain (in the contracts repo, keep it running)
+npx hardhat node
 
-# terminal 2 - deploy + seed the exchange (in contracts/)
+# terminal 2 - deploy + seed the exchange (in the contracts repo)
 npm run deploy:local && npm run seed:local
 
 # terminal 3 - the indexer + API on :3000 (in server/)
@@ -85,6 +95,11 @@ node src/main.ts
 # terminal 4 - the app on :5173 (in application/)
 npm run dev
 ```
+
+The deploy step has to land its artifact at `shared/deployments/31337.json` in
+THIS repo - point the contracts repo's output directory here (or copy the file
+across) before starting the server, or it exits with "no deployment artifact for
+this chain".
 
 | Port | What |
 | --- | --- |
@@ -114,7 +129,7 @@ built-in signer, on purpose. The full walkthrough:
    for gas):
 
    ```sh
-   cd contracts && npm run fund -- 0xYourAddress
+   npm run fund -- 0xYourAddress      # in the contracts repo
    ```
 
    This sends local BNB, mints every mock token, and transfers NURA. It works
@@ -130,12 +145,14 @@ tab data, or transactions will fail with a nonce mismatch.
 
 | Suite | Where | Runs |
 | --- | --- | --- |
-| Contracts | `contracts/` | `npx hardhat test` - init-hash proof, LP mint/burn, swap math, guard reverts |
 | Shared math | `shared/` | `npm test` - quote/impact/decimals math, Persian digit normalization |
 | Server | `server/` | `npm test` - indexer core, candles, API via `app.handle()` |
 | Application | `application/` | `npm test` - render tests + the SSR-safety import gate |
 
-`npm test` at the root runs all four suites. `npm run verify` is the full gate -
+The contract suite (init-hash proof, LP mint/burn, swap math, guard reverts) runs
+in the contracts repository.
+
+`npm test` at the root runs all three suites. `npm run verify` is the full gate -
 RTL lint, types and lint, build, then every test - and is what CI runs:
 
 ```sh
@@ -148,16 +165,17 @@ prerendered landing page.
 
 ## Deploy: BSC testnet
 
+In the contracts repository:
+
 ```sh
-cd contracts
 cp .env.example .env            # set DEPLOYER_PRIVATE_KEY (faucet-funded)
-npm run deploy:testnet          # writes shared/deployments/97.json
+npm run deploy:testnet          # writes the 97.json deployment artifact
 npm run seed:testnet            # optional: starter liquidity + trades
 ```
 
-Then point the server at the testnet: `CHAIN_ID=97` in `server/.env`. The
-frontend needs no configuration - it receives the active deployment from the
-server.
+Commit the resulting artifact here as `shared/deployments/97.json`, then point
+the server at the testnet: `CHAIN_ID=97` in `server/.env`. The frontend needs no
+configuration - it receives the active deployment from the server.
 
 ## Deploy: production (VPS)
 
@@ -188,9 +206,9 @@ nuraswap.example {
 
 `/api/healthz` answers orchestrator probes. `/api/market/stats` reports
 `blocksBehind` - alert when it grows. Mainnet is a configuration exercise, not a
-code change: add a chain profile in `contracts/scripts/chains.ts`, deploy, commit
-the artifact - but do not deploy pooled-funds contracts to mainnet without an
-independent audit.
+code change: add a chain profile in the contracts repo's `scripts/chains.ts`,
+deploy, commit the artifact here - but do not deploy pooled-funds contracts to
+mainnet without an independent audit.
 
 ## Security posture
 
@@ -215,10 +233,11 @@ independent audit.
 
 ## License
 
-- `application/`, `server/`, `shared/`: [MIT](LICENSE)
-- `contracts/`: [GPL-3.0](contracts/LICENSE) - required by the vendored Uniswap
-  V2 sources; see `contracts/VENDORED.md` for exact provenance and local
-  modifications.
+[MIT](LICENSE) - `application/`, `server/`, `shared/`.
+
+The exchange contracts are licensed separately (GPL-3.0, required by the
+vendored Uniswap V2 sources) in the contracts repository, alongside their
+provenance notes.
 
 ---
 

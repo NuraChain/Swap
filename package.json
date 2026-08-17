@@ -9,14 +9,13 @@
     "workspaces": [
         "application",
         "server",
-        "contracts",
         "shared"
     ],
     "scripts": {
         "dev": "azeroth dev",
         "check": "azeroth check",
         "build": "azeroth build",
-        "test": "azeroth test && npm test --workspace shared && npm test --workspace contracts",
+        "test": "azeroth test && npm test --workspace shared",
         "start": "npm start --workspace server",
         "test:app": "azeroth test",
         "lint:rtl": "node application/scripts/lint-rtl.mjs",

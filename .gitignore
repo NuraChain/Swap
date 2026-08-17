@@ -9,8 +9,6 @@ data/
 *.db-shm
 *.db-wal
 .playwright-mcp/
-contracts/artifacts/
-contracts/cache/
 shared/deployments/31337.json
 *.tsbuildinfo
 .env
