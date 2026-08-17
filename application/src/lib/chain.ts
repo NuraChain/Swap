@@ -71,11 +71,22 @@ export function deployment(): DeploymentInfo | null
 
 export function ensureDeployment(): Promise<DeploymentInfo>
 {
-    deploymentPromise ??= client.market.deployment().then((info) =>
-    {
-        setDeployment(info);
-        return info;
-    });
+    // The in-flight promise is shared so N callers cost one request - but a
+    // REJECTED one must not be memoized. Caching the failure meant a single bad
+    // first load (API still booting, a blip, a page opened before the server)
+    // poisoned every later call for the life of the tab: the retry returned the
+    // same stale rejection and only a full reload could clear it.
+    deploymentPromise ??= client.market.deployment()
+        .then((info) =>
+        {
+            setDeployment(info);
+            return info;
+        })
+        .catch((error: unknown) =>
+        {
+            deploymentPromise = null;
+            throw error;
+        });
     return deploymentPromise;
 }
 
