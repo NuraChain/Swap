@@ -2,11 +2,14 @@
 
 ## Setup
 
-Node >= 24. `npm install` at the root wires all four workspaces
-(`application`, `server`, `contracts`, `shared`). The full local loop is in the
-README's Quickstart. There is no in-app signer: wallet flows are exercised with
-a real wallet extension against the local chain - `npm run fund -- 0xYourAddress`
-(contracts workspace) funds your own MetaMask address with local BNB and tokens.
+Node >= 24. `npm install` at the root wires all three workspaces
+(`application`, `server`, `shared`). The exchange contracts live in their own
+repository - you need it checked out to run the local chain and produce the
+deployment artifact this repo reads from `shared/deployments/<chainId>.json`.
+The full local loop is in the README's Quickstart. There is no in-app signer:
+wallet flows are exercised with a real wallet extension against the local chain -
+`npm run fund -- 0xYourAddress` (contracts repo) funds your own MetaMask address
+with local BNB and tokens.
 
 ## Before you open a PR
 
@@ -16,16 +19,18 @@ Run the same gates CI runs:
 npx azeroth check                 # types + lint, both app halves
 npx azeroth test                  # server + application suites
 npm test --workspace shared
-cd contracts && npx hardhat test
 npx azeroth build                 # client, SSR bundle, prerender
 ```
 
 ## Ground rules
 
-- The vendored UniswapV2 sources under `contracts/contracts/{core,periphery}`
-  are not edited - ever. The one sanctioned change (the init-code hash) is
-  written by `contracts/scripts/write-init-code-hash.ts`. Provenance lives in
-  `contracts/VENDORED.md`.
+- The ABI fragments in `application/src/lib/chain.ts` and
+  `server/src/indexer/decode.ts` are hand-declared, not generated from build
+  output - that is what keeps this repo free of a Solidity toolchain. Change one
+  only to match a deployed contract, and keep both sides in step.
+- The deployment artifact is the only contract-side input: its shape is pinned by
+  `shared/src/deployments.ts` and validated by `server/src/schemas.ts`. Contract
+  changes reach this repo as a new artifact, never as an import.
 - Every user-facing string goes through the typed dictionary in
   `application/src/lib/i18n.ts`, in BOTH languages - a missing Persian key is a
   compile error by design.
