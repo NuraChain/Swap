@@ -3,7 +3,7 @@
 
 import { formatTokenAmount } from '@nuraswap/shared/digits';
 
-import { currentLang, fmtNumber } from './i18n.ts';
+import { fmtNumber, langInfo } from './i18n.ts';
 
 export function shortAddress(address: string): string
 {
@@ -46,12 +46,12 @@ export function fmtAmount(raw: bigint, decimals: number): string
 export function fmtPercentBps(bps: number): string
 {
     const text = fmtNumber(bps / 100, 2);
-    return currentLang() === 'fa' ? `${ text }٪` : `${ text }%`;
+    return `${ text }${ langInfo().percent }`;
 }
 
 export function fmtTime(timestamp: number): string
 {
-    return new Intl.DateTimeFormat(currentLang() === 'fa' ? 'fa-IR' : 'en-US', {
+    return new Intl.DateTimeFormat(langInfo().locale, {
         hour: '2-digit',
         minute: '2-digit',
         month: 'short',

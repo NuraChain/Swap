@@ -4,7 +4,7 @@
         <meta charset="UTF-8"/>
         <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
         <title>NuraSwap</title>
-        <meta name="description" content="NuraSwap - swap tokens and provide liquidity on an open automated market maker. Self-custody, on-chain, bilingual."/>
+        <meta name="description" content="NuraSwap - swap tokens and provide liquidity on an open automated market maker. Self-custody, on-chain, in ten languages."/>
         <meta property="og:title" content="NuraSwap"/>
         <meta property="og:description" content="Trade straight from your wallet on an open automated market maker."/>
         <meta property="og:type" content="website"/>
@@ -19,7 +19,11 @@
                 var theme = localStorage.getItem('nuraswap.theme');
                 if (theme === 'light' || theme === 'dark') { document.documentElement.classList.add(theme); }
                 var lang = localStorage.getItem('nuraswap.lang');
-                if (lang === 'fa') { document.documentElement.lang = 'fa'; document.documentElement.dir = 'rtl'; }
+                if (lang && /^(en|fa|ar|es|pt|hi|zh|ru|fr|tr)$/.test(lang))
+                {
+                    document.documentElement.lang = lang;
+                    document.documentElement.dir = (lang === 'fa' || lang === 'ar') ? 'rtl' : 'ltr';
+                }
             }
             catch (error) { /* storage unavailable - defaults stand */ }
         </script>

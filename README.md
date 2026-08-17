@@ -5,8 +5,8 @@
 **An open automated market maker. Your keys, your trades.**
 
 Swap tokens, provide liquidity, and track your portfolio on a UniswapV2-class AMM -
-self-custody end to end, bilingual (English / فارسی) with first-class RTL, dark and
-light themes.
+self-custody end to end, in ten languages with first-class RTL, dark and light
+themes.
 
 <div dir="rtl">
 

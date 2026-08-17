@@ -1,0 +1,53 @@
+import { Portal } from 'azerothjs';
+
+import { LANGS, currentLang, flagSrc, setLang, t, type Lang } from '../../lib/i18n.ts';
+
+import Icon from '../ui/icon.component.azeroth';
+
+// Ten languages outgrew the en/fa toggle: a toggle can only ever reach the next
+// language, so the list has to be pickable. Flags are a recognition aid ONLY -
+// the endonym is the label, because a flag names a country, not a language.
+
+export default component LanguageMenu(props: { onClose: () => void })
+{
+    const choose = (lang: Lang): void =>
+    {
+        setLang(lang);
+        props.onClose();
+    };
+
+    <Portal>
+        <div class="fixed inset-0 z-50" onClick={ () => props.onClose() }>
+            <div
+                class="anim-pop absolute end-4 top-16 max-h-[70vh] w-56 overflow-y-auto rounded-xl border border-line-strong bg-raised p-2 shadow-2xl"
+                role="dialog"
+                aria-label={ t().common.language }
+                onClick={ (event) => event.stopPropagation() }
+            >
+                <For each={ LANGS } key={ (entry) => entry.code } let={ entry }>
+                    <button
+                        type="button"
+                        class="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-start text-sm hover:bg-ink/6"
+                        lang={ entry.code }
+                        aria-current={ entry.code === currentLang() }
+                        data-testid={ `lang-${ entry.code }` }
+                        onClick={ () => choose(entry.code) }
+                    >
+                        <img
+                            src={ flagSrc(entry.code) }
+                            alt=""
+                            width="20"
+                            height="20"
+                            loading="lazy"
+                            class="h-5 w-5 shrink-0 rounded-full"
+                        />
+                        <span class="flex-1">{ entry.native }</span>
+                        <Show when={ entry.code === currentLang() }>
+                            <Icon name="check" size={ 15 } class="text-ice" />
+                        </Show>
+                    </button>
+                </For>
+            </div>
+        </div>
+    </Portal>
+}
