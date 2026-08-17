@@ -1,0 +1,43 @@
+import { t } from '../../lib/i18n.ts';
+import { addChainToWallet } from '../../lib/wallet/store.ts';
+
+import Icon from '../ui/icon.component.azeroth';
+
+// "Add Nura Chain to wallet" - the same action in two shapes: icon-only in the
+// header bar, labelled in the footer and the mobile drawer. One component so the
+// wallet call and its copy stay in one place.
+
+export default component AddChainButton(props: { compact?: boolean; onDone?: () => void })
+{
+    const run = (): void =>
+    {
+        void addChainToWallet();
+        props.onDone?.();
+    };
+
+    <Show
+        when={ props.compact }
+        fallback={
+            <button
+                type="button"
+                class="flex min-h-11 items-center gap-2 rounded-lg border border-line px-3 text-sm text-faint hover:text-ink"
+                data-testid="add-chain"
+                onClick={ run }
+            >
+                <Icon name="plus" size={ 15 } />
+                <span>{ t().common.addChain }</span>
+            </button>
+        }
+    >
+        <button
+            type="button"
+            class="hidden rounded-lg p-2 text-faint hover:text-ink sm:block"
+            aria-label={ t().common.addChain }
+            title={ t().common.addChain }
+            data-testid="add-chain-compact"
+            onClick={ run }
+        >
+            <Icon name="wallet" size={ 18 } />
+        </button>
+    </Show>
+}

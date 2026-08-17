@@ -2,6 +2,7 @@ import { Link } from 'azerothjs';
 
 import { t } from '../../lib/i18n.ts';
 
+import AddChainButton from '../market/add-chain-button.component.azeroth';
 import Shamseh from '../ui/shamseh.component.azeroth';
 
 export default component Footer()
@@ -14,6 +15,9 @@ export default component Footer()
                     <span class="font-display text-sm font-bold">{ t().nav.home }</span>
                 </span>
                 <p class="mt-4 text-sm leading-relaxed text-faint">{ t().footer.tagline }</p>
+                <span class="mt-5 flex">
+                    <AddChainButton />
+                </span>
             </div>
             <nav aria-label={ t().footer.product }>
                 <h2 class="eyebrow">{ t().footer.product }</h2>
