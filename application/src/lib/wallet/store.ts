@@ -9,6 +9,7 @@
 import { createSignal } from 'azerothjs';
 import { createWalletClient, custom, type WalletClient } from 'viem';
 
+import type { DeploymentInfo } from '../../api.ts';
 import { ERC20_ABI, chainOf, deployment, ensureDeployment, explorerTxUrl, publicClient, type Address } from '../chain.ts';
 import { t } from '../i18n.ts';
 import { classifyTxError } from '../tx-errors.ts';
@@ -249,7 +250,20 @@ export async function connectInjected(option: WalletOption): Promise<void>
     {
         return;
     }
-    const info = await ensureDeployment();
+    // The deployment has to load BEFORE the wallet prompt: it names the chain we
+    // build the client for. When the API is unreachable this threw out of the
+    // click handler as an unhandled rejection - a dead Connect button and a
+    // developer-facing message in the console, with nothing said to the user.
+    let info: DeploymentInfo;
+    try
+    {
+        info = await ensureDeployment();
+    }
+    catch
+    {
+        pushToast('error', t().errors.apiUnreachable);
+        return;
+    }
     const accounts = await option.provider.request({ method: 'eth_requestAccounts' }) as string[];
     if (accounts.length === 0)
     {
