@@ -301,6 +301,21 @@ export function onRightChain(): boolean
     return info !== null && chainIdSignal() === info.chainId;
 }
 
+// ONE definition of the network, shared by the automatic add (the switch
+// fallback below) and the explicit "add to wallet" button. Wallets key networks
+// by chain id, so two call sites describing the same chain differently is how
+// you end up with a wallet entry whose name depends on which button was pressed.
+function addChainParams(info: NonNullable<ReturnType<typeof deployment>>): object
+{
+    return {
+        chainId: `0x${ info.chainId.toString(16) }`,
+        chainName: `NuraSwap ${ info.networkName }`,
+        nativeCurrency: { name: 'BNB', symbol: 'BNB', decimals: 18 },
+        rpcUrls: [info.rpcUrl],
+        blockExplorerUrls: info.explorerUrl === null ? [] : [info.explorerUrl]
+    };
+}
+
 export async function switchChain(): Promise<void>
 {
     const info = deployment();
@@ -322,16 +337,43 @@ export async function switchChain(): Promise<void>
     {
         await activeProvider.request({
             method: 'wallet_addEthereumChain',
-            params: [{
-                chainId: hexId,
-                chainName: `NuraSwap ${ info.networkName }`,
-                nativeCurrency: { name: 'BNB', symbol: 'BNB', decimals: 18 },
-                rpcUrls: [info.rpcUrl],
-                blockExplorerUrls: info.explorerUrl === null ? [] : [info.explorerUrl]
-            }]
+            params: [addChainParams(info)]
         });
     }
     setChainId(info.chainId);
+}
+
+/**
+ * Registers the exchange's chain in the connected wallet on demand. Unlike
+ * switchChain this never switches first: it is for the person who wants the
+ * network in their wallet list before (or without) trading. A rejected prompt is
+ * a normal outcome, not an error worth a red toast.
+ */
+export async function addChainToWallet(): Promise<void>
+{
+    const info = deployment();
+    if (info === null)
+    {
+        return;
+    }
+    if (activeProvider === null)
+    {
+        pushToast('error', t().common.addChainNoWallet);
+        return;
+    }
+    try
+    {
+        await activeProvider.request({
+            method: 'wallet_addEthereumChain',
+            params: [addChainParams(info)]
+        });
+        pushToast('success', t().common.addChainDone);
+    }
+    catch
+    {
+        // Declined in the wallet, or already present and refused - either way the
+        // user saw their wallet's own prompt and needs nothing further from us.
+    }
 }
 
 // Wraps a transaction: pending toast, receipt wait, resolved toast with explorer
