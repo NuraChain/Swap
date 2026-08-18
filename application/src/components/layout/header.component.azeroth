@@ -79,7 +79,6 @@ export default component Header()
                 <Link to="/portfolio" activeClass="active" class={ navLink }>{ t().nav.portfolio }</Link>
             </nav>
             <div class="ms-auto flex items-center gap-1.5">
-                <AddChainButton compact />
                 <button
                     type="button"
                     class="hidden items-center gap-2 rounded-lg border border-line px-2.5 py-1.5 text-sm text-faint hover:border-ice hover:text-ink sm:flex"
@@ -101,6 +100,7 @@ export default component Header()
                 >
                     <Icon name={ currentTheme() === 'dark' ? 'sun' : 'moon' } size={ 18 } />
                 </button>
+                <AddChainButton compact />
                 <ConnectButton />
                 <button
                     type="button"
