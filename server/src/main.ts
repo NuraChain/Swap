@@ -58,15 +58,17 @@ for (const token of deployment.tokens)
     db.upsertToken({ ...token, address: token.address.toLowerCase() as `0x${ string }` });
 }
 
-// Local chain: instant finality, tight polling. Testnet: public RPC pacing and a
-// two-block reorg cushion.
-const local = config.chainId === 31337;
+// Nura Chain is CometBFT consensus under the EVM: a block that is committed is
+// FINAL - there is no fork choice to wait out, so no confirmation cushion and no
+// reorg to fear (the indexer keeps its rewind path anyway; it costs nothing and
+// covers a node re-genesis). Blocks land every ~3s and the poll is paced to
+// match - polling faster only re-reads the same head.
 const indexer = startIndexer({
     db,
     deployment,
     log,
-    pollingIntervalMs: local ? 1000 : 4000,
-    confirmations: local ? 0 : 2
+    pollingIntervalMs: 3000,
+    confirmations: 0
 });
 
 // In dev, vite serves the client and proxies /api here; in production this server serves
