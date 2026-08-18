@@ -16,7 +16,7 @@ const SLIPPAGE_BPS = 100;
 
 // Remove-liquidity flow: percent slider, live estimate of both amounts from the
 // pool share, LP approval, and a confirm summary before the wallet prompt.
-// Withdrawal returns the pool's real assets (WBNB stays wrapped - unwrap on the
+// Withdrawal returns the pool's real assets (WNURA stays wrapped - unwrap on the
 // swap page); one flow, no special native casing.
 
 export default component RemoveLiquidity(props: { pool: Pool; onClose: () => void })

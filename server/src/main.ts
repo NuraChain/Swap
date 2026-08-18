@@ -27,7 +27,7 @@ catch
 const config = loadConfig({
     port: num('PORT', { default: 3000 }),
     env: oneOf('NODE_ENV', ['development', 'production', 'test'], { default: 'development' }),
-    chainId: num('CHAIN_ID', { default: 31337 }),
+    chainId: num('CHAIN_ID', { default: 1020 }),
     dataDir: str('DATA_DIR', { default: '../data' }),
     clientDir: str('CLIENT_DIR', { default: '../application/dist' }),
     ssrEntry: str('SSR_ENTRY', { default: '../application/dist-server/entry.server.js' })

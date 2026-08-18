@@ -3,7 +3,7 @@ import { formatTokenAmount, parseTokenAmount } from '@nuraswap/shared/digits';
 
 import { client } from '../api.ts';
 import type { DeploymentInfo, TokenRef } from '../api.ts';
-import { ERC20_ABI, FACTORY_ABI, PAIR_ABI, ROUTER_ABI, WBNB_ABI, deployment, ensureDeployment, publicClient } from '../lib/chain.ts';
+import { ERC20_ABI, FACTORY_ABI, PAIR_ABI, ROUTER_ABI, WNURA_ABI, deployment, ensureDeployment, publicClient } from '../lib/chain.ts';
 import type { Address } from '../lib/chain.ts';
 import { fmtPercentBps } from '../lib/format.ts';
 import { t } from '../lib/i18n.ts';
@@ -29,8 +29,8 @@ import Icon from '../components/ui/icon.component.azeroth';
 import Tooltip from '../components/ui/tooltip.component.azeroth';
 
 // The native pseudo-token: swaps route through the router's ETH entrypoints and
-// WBNB<->BNB is a direct wrap. Everything else treats it as WBNB.
-const NATIVE: TokenRef = { address: 'bnb', symbol: 'BNB', name: 'BNB', decimals: 18 };
+// WNURA<->NURA is a direct wrap. Everything else treats it as WNURA.
+const NATIVE: TokenRef = { address: 'nura', symbol: 'NURA', name: 'NURA', decimals: 18 };
 const MAX_UINT256 = (1n << 256n) - 1n;
 const HIGH_IMPACT_BPS = 1500;
 
@@ -110,16 +110,16 @@ export default component Swap()
         }
     }
 
-    const wbnbAddress = (): Address => (deployment()?.contracts.wbnb ?? '0x') as Address;
+    const wnuraAddress = (): Address => (deployment()?.contracts.wnura ?? '0x') as Address;
     const routerAddress = (): Address => (deployment()?.contracts.router ?? '0x') as Address;
-    const isNative = (token: TokenRef): boolean => token.address === 'bnb';
+    const isNative = (token: TokenRef): boolean => token.address === 'nura';
     const hopAddress = (token: TokenRef): Address =>
-        (isNative(token) ? wbnbAddress() : token.address) as Address;
+        (isNative(token) ? wnuraAddress() : token.address) as Address;
 
     derived parsedIn = parseTokenAmount(amountText, tokenIn.decimals);
 
     // The charted pool: the active pair when it exists, else the out-token's
-    // WBNB pool - there is always a price story next to the trade.
+    // WNURA pool - there is always a price story next to the trade.
     state chartPair: Address | null = null;
     let chartLookup = 0;
 
@@ -138,7 +138,7 @@ export default component Swap()
             return;
         }
         const factory = (current as DeploymentInfo).contracts.factory as Address;
-        const wbnb = wbnbAddress();
+        const wnura = wnuraAddress();
         const from = hopAddress(tokenIn);
         const to = hopAddress(out);
         // Only the newest lookup may write: two runs in flight can resolve out of
@@ -160,19 +160,19 @@ export default component Swap()
                 chartPair = direct;
                 return;
             }
-            const viaWbnb = await publicClient().readContract({
-                address: factory, abi: FACTORY_ABI, functionName: 'getPair', args: [to, wbnb]
+            const viaWnura = await publicClient().readContract({
+                address: factory, abi: FACTORY_ABI, functionName: 'getPair', args: [to, wnura]
             }).catch(() => zero) as Address;
             if (generation === chartLookup)
             {
-                chartPair = viaWbnb === zero ? null : viaWbnb;
+                chartPair = viaWnura === zero ? null : viaWnura;
             }
         })();
     }
 
     derived isWrapPair = tokenOut !== null
-        && ((isNative(tokenIn) && hopAddress(tokenOut as TokenRef) === wbnbAddress() && !isNative(tokenOut as TokenRef))
-            || (isNative(tokenOut as TokenRef) && hopAddress(tokenIn) === wbnbAddress() && !isNative(tokenIn)));
+        && ((isNative(tokenIn) && hopAddress(tokenOut as TokenRef) === wnuraAddress() && !isNative(tokenOut as TokenRef))
+            || (isNative(tokenOut as TokenRef) && hopAddress(tokenIn) === wnuraAddress() && !isNative(tokenIn)));
 
     derived balanceIn = isNative(tokenIn)
         ? nativeBalance()
@@ -225,12 +225,12 @@ export default component Swap()
                 }
                 else
                 {
-                    const wbnb = wbnbAddress();
+                    const wnura = wnuraAddress();
                     const legIn = await reader.readContract({
-                        address: factory, abi: FACTORY_ABI, functionName: 'getPair', args: [from, wbnb]
+                        address: factory, abi: FACTORY_ABI, functionName: 'getPair', args: [from, wnura]
                     }) as Address;
                     const legOut = await reader.readContract({
-                        address: factory, abi: FACTORY_ABI, functionName: 'getPair', args: [wbnb, to]
+                        address: factory, abi: FACTORY_ABI, functionName: 'getPair', args: [wnura, to]
                     }) as Address;
                     if (legIn === '0x0000000000000000000000000000000000000000'
                         || legOut === '0x0000000000000000000000000000000000000000')
@@ -239,7 +239,7 @@ export default component Swap()
                         quoting = false;
                         return;
                     }
-                    path = [from, wbnb, to];
+                    path = [from, wnura, to];
                 }
 
                 const amounts = await reader.readContract({
@@ -380,10 +380,10 @@ export default component Swap()
                 isNative(tokenIn) ? t().swap.wrap : t().swap.unwrap,
                 () => (isNative(tokenIn)
                     ? requiredWallet().writeContract({
-                        address: wbnbAddress(), abi: WBNB_ABI, functionName: 'deposit', value: amount
+                        address: wnuraAddress(), abi: WNURA_ABI, functionName: 'deposit', value: amount
                     } as never)
                     : requiredWallet().writeContract({
-                        address: wbnbAddress(), abi: WBNB_ABI, functionName: 'withdraw', args: [amount]
+                        address: wnuraAddress(), abi: WNURA_ABI, functionName: 'withdraw', args: [amount]
                     } as never))
             );
         }

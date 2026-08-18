@@ -118,7 +118,7 @@ export class IndexerDb
         this.#db.close();
     }
 
-    // Chain identity mismatch (fresh hardhat node, different deployment) makes every
+    // Chain identity mismatch (re-genesised chain, different deployment) makes every
     // stored row a lie about an address space that no longer exists.
     public wipe(): void
     {

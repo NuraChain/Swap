@@ -18,8 +18,8 @@ describe('buildCsp', () =>
 {
     it('lists the chain RPC in connect-src - forgetting it bricks every read', () =>
     {
-        const csp = buildCsp({ rpcUrl: 'https://data-seed-prebsc-1-s1.bnbchain.org:8545', explorerUrl: null });
-        expect(csp).toContain('https://data-seed-prebsc-1-s1.bnbchain.org:8545');
+        const csp = buildCsp({ rpcUrl: 'https://rpc.nurachain.net', explorerUrl: null });
+        expect(csp).toContain('https://rpc.nurachain.net');
         expect(csp).toContain("connect-src 'self'");
     });
 

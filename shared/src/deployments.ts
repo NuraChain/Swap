@@ -24,7 +24,7 @@ export interface Deployment
     {
         factory: Address;
         router: Address;
-        wbnb: Address;
+        wnura: Address;
         multicall3: Address;
     };
     tokens: DeployedToken[];

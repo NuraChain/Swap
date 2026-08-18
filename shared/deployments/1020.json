@@ -1,0 +1,22 @@
+{
+    "chainId": 1020,
+    "networkName": "Nura Chain",
+    "rpcUrl": "https://rpc.nurachain.net",
+    "explorerUrl": "https://explorer.nurachain.net",
+    "faucet": false,
+    "startBlock": 124110,
+    "contracts": {
+        "factory": "0xa812c195c5B683C2FfCd3CCD0E57ee4EE19F85d6",
+        "router": "0xfE126FD0CEcec827112bFc5440d792b3698B3850",
+        "wnura": "0xf0a4eC07916feBa4432121Ed5969887D9b939cD0",
+        "multicall3": "0xf58884FCf45d8F5Cc8A73c618D23EB27b732CA24"
+    },
+    "tokens": [
+        {
+            "address": "0xf0a4eC07916feBa4432121Ed5969887D9b939cD0",
+            "symbol": "WNURA",
+            "name": "Wrapped NURA",
+            "decimals": 18
+        }
+    ]
+}

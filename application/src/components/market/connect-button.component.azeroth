@@ -54,7 +54,7 @@ export default component ConnectButton()
                 />
                 <span class="font-mono" data-ltr>{ shortAddress(address) }</span>
                 <span class="hidden font-mono text-faint sm:inline">
-                    { fmtAmount(nativeBalance(), 18) } BNB
+                    { fmtAmount(nativeBalance(), 18) } NURA
                 </span>
             </button>
             <Show when={ menuOpen }>
