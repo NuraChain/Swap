@@ -7,12 +7,14 @@ import type { PageRenderer, PageRoute } from '@azerothjs/kit';
 import { createLogger, teeSink, terminalSink } from '@azerothjs/logger';
 import { fileSink } from '@azerothjs/logger/node';
 import { loadDeploymentIfPresent } from '@nuraswap/shared/deployments';
+import { createPublicClient, http } from 'viem';
 
 import { manifestOf } from '@azerothjs/http/api';
 
 import { buildApp, createApi } from './app.ts';
 import { buildCsp } from './csp.ts';
 import { IndexerDb } from './indexer/db.ts';
+import { UNKNOWN_TOKEN, readTokenMetadata } from './indexer/erc20.ts';
 import { startIndexer } from './indexer/live.ts';
 
 try
@@ -50,12 +52,32 @@ if (deployment === null)
     process.exit(1);
 }
 
+// The artifact says WHICH tokens this exchange serves; the CONTRACTS say what
+// they are called. Reading symbol/name/decimals off the chain at boot is the
+// difference between a registry and a rumour - a hand-edited or outdated
+// artifact can no longer make the app call a token something it does not call
+// itself. When a token has no metadata to give (or the RPC cannot answer right
+// now), the artifact's line stands: a stale name beats "???" on screen.
+const reader = createPublicClient({ transport: http(deployment.rpcUrl) });
+const tokens = await Promise.all(deployment.tokens.map(async (listed) =>
+{
+    const address = listed.address.toLowerCase() as `0x${ string }`;
+    const onChain = await readTokenMetadata(reader, address);
+    if (onChain.symbol === UNKNOWN_TOKEN.symbol)
+    {
+        log.warn('token names unreadable on chain - keeping the artifact line', { address, symbol: listed.symbol });
+        return { ...listed, address };
+    }
+    return { address, ...onChain };
+}));
+const active = { ...deployment, tokens };
+
 const dataDir = fileURLToPath(new URL(`${ config.dataDir }/`, new URL('..', import.meta.url)));
 mkdirSync(dataDir, { recursive: true });
 const db = new IndexerDb(`${ dataDir }${ config.chainId }.db`);
-for (const token of deployment.tokens)
+for (const token of active.tokens)
 {
-    db.upsertToken({ ...token, address: token.address.toLowerCase() as `0x${ string }` });
+    db.upsertToken(token);
 }
 
 // Nura Chain is CometBFT consensus under the EVM: a block that is committed is
@@ -65,7 +87,7 @@ for (const token of deployment.tokens)
 // match - polling faster only re-reads the same head.
 const indexer = startIndexer({
     db,
-    deployment,
+    deployment: active,
     log,
     pollingIntervalMs: 3000,
     confirmations: 0
@@ -78,7 +100,7 @@ const ssr = isProduction
     ? await import(pathToFileURL(config.ssrEntry).href) as { routes: PageRoute[]; renderPage: PageRenderer }
     : undefined;
 
-const api = createApi({ db, deployment, status: indexer.status });
+const api = createApi({ db, deployment: active, status: indexer.status });
 
 const app = buildApp({
     dev: !isProduction,

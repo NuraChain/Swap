@@ -11,17 +11,13 @@
 
 import type { Logger } from '@azerothjs/logger';
 import type { Deployment } from '@nuraswap/shared/deployments';
-import { createPublicClient, erc20Abi, http, parseAbi } from 'viem';
+import { createPublicClient, http } from 'viem';
 
 import { applyEvent } from './apply.ts';
 import { decodeLog } from './decode.ts';
+import { readTokenMetadata } from './erc20.ts';
 import type { IndexerDb, Address } from './db.ts';
 import type { DomainEvent, RawLog } from './decode.ts';
-
-const ERC20_BYTES32_ABI = parseAbi([
-    'function symbol() view returns (bytes32)',
-    'function name() view returns (bytes32)'
-]);
 
 const REWIND_BLOCKS = 64;
 
@@ -52,48 +48,13 @@ export function startIndexer(options: IndexerOptions): RunningIndexer
     let stopped = false;
     let timer: NodeJS.Timeout | null = null;
 
-    function trimBytes(value: string): string
-    {
-        return value.replace(/\0+$/, '');
-    }
-
     async function registerToken(address: Address): Promise<void>
     {
         if (db.getToken(address) !== null)
         {
             return;
         }
-        let symbol = '???';
-        let name = 'Unknown token';
-        let decimals = 18;
-        try
-        {
-            decimals = await client.readContract({ address, abi: erc20Abi, functionName: 'decimals' });
-        }
-        catch
-        {
-            // No decimals() - keep 18 and mark the token unknown-shaped.
-        }
-        try
-        {
-            symbol = await client.readContract({ address, abi: erc20Abi, functionName: 'symbol' });
-            name = await client.readContract({ address, abi: erc20Abi, functionName: 'name' });
-        }
-        catch
-        {
-            try
-            {
-                const rawSymbol = await client.readContract({ address, abi: ERC20_BYTES32_ABI, functionName: 'symbol' });
-                const rawName = await client.readContract({ address, abi: ERC20_BYTES32_ABI, functionName: 'name' });
-                symbol = trimBytes(Buffer.from(rawSymbol.slice(2), 'hex').toString('utf8'));
-                name = trimBytes(Buffer.from(rawName.slice(2), 'hex').toString('utf8'));
-            }
-            catch
-            {
-                // Neither string nor bytes32 metadata - placeholder stands.
-            }
-        }
-        db.upsertToken({ address, symbol, name, decimals });
+        db.upsertToken({ address, ...await readTokenMetadata(client, address) });
     }
 
     async function fetchLogs(fromBlock: bigint, toBlock: bigint, addresses: Address[]): Promise<RawLog[]>
