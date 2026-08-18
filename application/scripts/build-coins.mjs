@@ -7,7 +7,7 @@ import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const COINS = ['usdt', 'usdc', 'dai', 'wbtc'];
+const COINS = ['bnb', 'usdt', 'usdc', 'dai', 'wbtc'];
 
 const require = createRequire(import.meta.url);
 const svgDir = join(dirname(require.resolve('cryptocurrency-icons/package.json')), 'svg', 'color');

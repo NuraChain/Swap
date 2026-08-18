@@ -14,6 +14,7 @@ const COIN_ID: Record<string, string> = {
     mUSDC: 'usdc',
     mDAI: 'dai',
     mWBTC: 'wbtc',
+    BNB: 'bnb',
     USDT: 'usdt',
     USDC: 'usdc',
     DAI: 'dai',
