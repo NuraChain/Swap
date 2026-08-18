@@ -82,7 +82,7 @@ export default component Header()
                 <AddChainButton compact />
                 <button
                     type="button"
-                    class="hidden items-center justify-center rounded-md p-2 text-faint hover:text-ink sm:flex"
+                    class="hidden items-center gap-2 rounded-lg border border-line px-2.5 py-1.5 text-sm text-faint hover:border-ice hover:text-ink sm:flex"
                     aria-label={ t().common.language }
                     aria-haspopup="dialog"
                     aria-expanded={ langOpen }
@@ -90,6 +90,8 @@ export default component Header()
                     onClick={ () => { langOpen = true; } }
                 >
                     <Flag lang={ currentLang() } size={ 18 } />
+                    <span>{ langInfo().native }</span>
+                    <Icon name="chevron-down" size={ 14 } />
                 </button>
                 <button
                     type="button"
