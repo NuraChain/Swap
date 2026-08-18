@@ -20,4 +20,43 @@ const manifest: Manifest = typeof document === 'undefined'
         .then((response) => response.json() as Promise<Manifest>)
         .catch(() => ({}));
 
-export const client = createClient<Api>(manifest, { baseUrl: '/api' });
+// A group missing from that degraded manifest fails at its own call site by
+// design - but it fails SYNCHRONOUSLY. Every caller here is a
+// `void client.market.x().catch(...)` inside `mount { }`, and a synchronous
+// throw sails straight past that .catch(): the landing page died with an
+// uncaught error the moment the api half was down, instead of just showing no
+// numbers. Rejecting delivers the same failure where the pages already handle it.
+function rejectOnHole<T extends object>(target: T): T
+{
+    const wrapGroup = (group: object): object => new Proxy(group, {
+        get: (methods, name, receiver) =>
+        {
+            const method: unknown = Reflect.get(methods, name, receiver);
+            if (typeof method !== 'function')
+            {
+                return method;
+            }
+            return (...args: unknown[]): unknown =>
+            {
+                try
+                {
+                    return (method as (...call: unknown[]) => unknown)(...args);
+                }
+                catch (error)
+                {
+                    return Promise.reject(error instanceof Error ? error : new Error(String(error)));
+                }
+            };
+        }
+    });
+
+    return new Proxy(target, {
+        get: (groups, name, receiver) =>
+        {
+            const group: unknown = Reflect.get(groups, name, receiver);
+            return typeof group === 'object' && group !== null ? wrapGroup(group) : group;
+        }
+    });
+}
+
+export const client = rejectOnHole(createClient<Api>(manifest, { baseUrl: '/api' }));

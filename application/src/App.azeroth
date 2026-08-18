@@ -25,7 +25,11 @@ export default component App(props: { url?: string; handoff?: LoaderHandoff })
         // deployment fetch warms every page's chain access.
         currentLang();
         currentTheme();
-        void ensureDeployment();
+        // Warm-up only: a failure here is not this component's to report. The
+        // pages that need the deployment await it themselves and show their own
+        // empty state, and Connect says it in words - swallowing the rejection
+        // keeps a down api half out of the console as an unhandled one.
+        void ensureDeployment().catch(() => undefined);
     }
 
     <RouterProvider router={ router }>
