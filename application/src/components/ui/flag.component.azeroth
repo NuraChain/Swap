@@ -1,0 +1,32 @@
+import { flagSrc } from '../../lib/i18n.ts';
+import type { Lang } from '../../lib/i18n.ts';
+
+// A square flag out of round art. The vectors in public/flags are circle-flags:
+// each one is masked to a circle, and under that mask several of them (es, ir,
+// in, ru, pt) are barrel-shaped rather than rectangular - drawn to fill a circle,
+// with nothing in the corners. So squaring them is not a border-radius: the mark
+// here is the circle's INSCRIBED square, scaled by root-2 and clipped. Every
+// design's centre survives the crop, and no corner is left transparent.
+
+const ROOT_TWO = 1.4143;
+
+export default component Flag(props: { lang: Lang; size?: number })
+{
+    const size = (): number => props.size ?? 20;
+
+    <span
+        class="inline-block shrink-0 overflow-hidden rounded-[3px]"
+        style={ `width:${ size() }px;height:${ size() }px` }
+        aria-hidden="true"
+    >
+        <img
+            src={ flagSrc(props.lang) }
+            alt=""
+            width={ size() }
+            height={ size() }
+            loading="lazy"
+            class="h-full w-full"
+            style={ `transform:scale(${ ROOT_TWO })` }
+        />
+    </span>
+}
