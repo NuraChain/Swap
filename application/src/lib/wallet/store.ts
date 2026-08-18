@@ -391,14 +391,24 @@ export async function switchChain(): Promise<void>
  */
 export async function addChainToWallet(): Promise<void>
 {
-    const info = deployment();
-    if (info === null)
-    {
-        return;
-    }
     if (activeProvider === null)
     {
         pushToast('error', t().common.addChainNoWallet);
+        return;
+    }
+    // The chain parameters ARE the deployment - id, name, RPC, explorer - so
+    // there is nothing to hand the wallet without it. It is normally warm by the
+    // time anyone clicks; when the api half is unreachable it never arrives, and
+    // this button used to answer that by doing nothing at all. Ask for it here
+    // and say what happened when it does not come.
+    let info: DeploymentInfo;
+    try
+    {
+        info = await ensureDeployment();
+    }
+    catch
+    {
+        pushToast('error', t().errors.apiUnreachable);
         return;
     }
     try
