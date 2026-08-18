@@ -250,10 +250,41 @@ export async function connectInjected(option: WalletOption): Promise<void>
     {
         return;
     }
-    // The deployment has to load BEFORE the wallet prompt: it names the chain we
-    // build the client for. When the API is unreachable this threw out of the
-    // click handler as an unhandled rejection - a dead Connect button and a
-    // developer-facing message in the console, with nothing said to the user.
+    // The wallet prompt goes FIRST, while the click's user activation is still
+    // live. Awaiting anything before it - the deployment fetch used to sit here -
+    // spends that activation, and a wallet that has lost it may queue its approval
+    // window behind its toolbar icon instead of raising it. To the person clicking,
+    // that is a dead button.
+    let accounts: string[];
+    try
+    {
+        accounts = await option.provider.request({ method: 'eth_requestAccounts' }) as string[];
+    }
+    catch (error)
+    {
+        // 4001 is "user rejected": their own wallet already said so, so we stay
+        // quiet. -32002 is a request ALREADY waiting in the wallet - the one case
+        // where clicking again genuinely looks like nothing happening, so it is
+        // the one that has to be spelled out.
+        const code = (error as { code?: number }).code;
+        if (code === -32002)
+        {
+            pushToast('error', t().wallet.alreadyPending);
+        }
+        else if (code !== 4001)
+        {
+            pushToast('error', t().wallet.connectFailed);
+        }
+        return;
+    }
+    if (accounts.length === 0)
+    {
+        // A locked wallet answers an empty list rather than rejecting.
+        pushToast('error', t().wallet.connectFailed);
+        return;
+    }
+    // The deployment still has to load - it names the chain the client is built
+    // for - it just no longer stands between the click and the wallet.
     let info: DeploymentInfo;
     try
     {
@@ -262,11 +293,6 @@ export async function connectInjected(option: WalletOption): Promise<void>
     catch
     {
         pushToast('error', t().errors.apiUnreachable);
-        return;
-    }
-    const accounts = await option.provider.request({ method: 'eth_requestAccounts' }) as string[];
-    if (accounts.length === 0)
-    {
         return;
     }
     const chainIdHex = await option.provider.request({ method: 'eth_chainId' }) as string;

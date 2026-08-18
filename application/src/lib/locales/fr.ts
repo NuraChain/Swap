@@ -82,6 +82,8 @@ export const fr: Dict = {
         moreWallets: 'N’importe quel portefeuille de navigateur convient - voici ceux que nous pouvons nommer.',
         wrongNetwork: 'Mauvais réseau',
         switchNetwork: 'Changer de réseau',
+        alreadyPending: 'Votre portefeuille a déjà une demande de connexion en attente - ouvrez-le, approuvez, puis réessayez.',
+        connectFailed: 'Impossible de connecter ce portefeuille. Ouvrez-le, déverrouillez-le et réessayez.',
         connectedVia: 'Connecté via',
         pending: 'En attente',
         confirmed: 'Confirmée',

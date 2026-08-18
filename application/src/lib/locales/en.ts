@@ -84,6 +84,8 @@ export const en = {
         moreWallets: 'Any browser wallet works - these are the ones we can name.',
         wrongNetwork: 'Wrong network',
         switchNetwork: 'Switch network',
+        alreadyPending: 'Your wallet already has a connection request waiting - open it, approve, and try again.',
+        connectFailed: 'Could not connect that wallet. Open it, unlock it, and try again.',
         connectedVia: 'Connected via',
         pending: 'Pending',
         confirmed: 'Confirmed',

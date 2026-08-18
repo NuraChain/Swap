@@ -82,6 +82,8 @@ export const ar: Dict = {
         moreWallets: 'أي محفظة متصفح تعمل - هذه هي التي يمكننا تسميتها.',
         wrongNetwork: 'شبكة خاطئة',
         switchNetwork: 'تبديل الشبكة',
+        alreadyPending: 'محفظتك بها طلب اتصال معلّق بالفعل - افتحها ووافق عليه ثم أعد المحاولة.',
+        connectFailed: 'تعذّر الاتصال بهذه المحفظة. افتحها وألغِ قفلها ثم أعد المحاولة.',
         connectedVia: 'متصل عبر',
         pending: 'قيد الانتظار',
         confirmed: 'تم التأكيد',

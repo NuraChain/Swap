@@ -82,6 +82,8 @@ export const tr: Dict = {
         moreWallets: 'Her tarayıcı cüzdanı çalışır - bunlar adını verebildiklerimiz.',
         wrongNetwork: 'Yanlış ağ',
         switchNetwork: 'Ağı değiştir',
+        alreadyPending: 'Cüzdanınızda bekleyen bir bağlantı isteği zaten var - cüzdanı açıp onaylayın, sonra tekrar deneyin.',
+        connectFailed: 'Bu cüzdana bağlanılamadı. Cüzdanı açın, kilidini kaldırın ve tekrar deneyin.',
         connectedVia: 'Şununla bağlı',
         pending: 'Beklemede',
         confirmed: 'Onaylandı',
