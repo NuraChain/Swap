@@ -8,7 +8,7 @@ export const en = {
         swap: 'Swap',
         liquidity: 'Liquidity',
         portfolio: 'Portfolio',
-        home: 'NuraSwap'
+        home: 'Nura Swap'
     },
     common:
     {
@@ -46,7 +46,7 @@ export const en = {
     landing:
     {
         headline: 'Trade straight from your wallet.',
-        sub: 'NuraSwap is an automated market maker: every swap settles on-chain against open liquidity pools. No account, no custody - your keys stay yours.',
+        sub: 'Nura Swap is an automated market maker: every swap settles on-chain against open liquidity pools. No account, no custody - your keys stay yours.',
         cta: 'Start swapping',
         ctaPools: 'Explore pools',
         statTvl: 'Value locked',
@@ -72,7 +72,7 @@ export const en = {
     {
         tagline: 'An open automated market maker. Your keys, your trades.',
         product: 'Product',
-        rights: 'NuraSwap. The contracts are immutable; this site is one window onto them.'
+        rights: 'Nura Swap. The contracts are immutable; this site is one window onto them.'
     },
     wallet:
     {

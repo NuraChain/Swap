@@ -1,6 +1,6 @@
 <div align="center">
 
-# NuraSwap
+# Nura Swap
 
 **An open automated market maker. Your keys, your trades.**
 

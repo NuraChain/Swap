@@ -1,8 +1,8 @@
-# systemd unit for the NuraSwap server (API + SSR pages + built client, one origin).
+# systemd unit for the Nura Swap server (API + SSR pages + built client, one origin).
 # Install: sudo cp deploy/nuraswap.service /etc/systemd/system/
 #          sudo systemctl daemon-reload && sudo systemctl enable --now nuraswap
 [Unit]
-Description=NuraSwap
+Description=Nura Swap
 Documentation=https://github.com/AzerothJS/AzerothJS
 After=network-online.target
 Wants=network-online.target

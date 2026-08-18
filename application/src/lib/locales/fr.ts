@@ -6,7 +6,7 @@ export const fr: Dict = {
         swap: 'Échanger',
         liquidity: 'Liquidité',
         portfolio: 'Portefeuille',
-        home: 'NuraSwap'
+        home: 'Nura Swap'
     },
     common:
     {
@@ -44,7 +44,7 @@ export const fr: Dict = {
     landing:
     {
         headline: 'Tradez directement depuis votre portefeuille.',
-        sub: 'NuraSwap est un teneur de marché automatisé : chaque échange se règle on-chain face à des pools de liquidité ouverts. Sans compte ni conservation - vos clés restent les vôtres.',
+        sub: 'Nura Swap est un teneur de marché automatisé : chaque échange se règle on-chain face à des pools de liquidité ouverts. Sans compte ni conservation - vos clés restent les vôtres.',
         cta: 'Commencer à échanger',
         ctaPools: 'Explorer les pools',
         statTvl: 'Valeur verrouillée',
@@ -70,7 +70,7 @@ export const fr: Dict = {
     {
         tagline: 'Un teneur de marché automatisé et ouvert. Vos clés, vos transactions.',
         product: 'Produit',
-        rights: 'NuraSwap. Les contrats sont immuables ; ce site n’est qu’une fenêtre ouverte sur eux.'
+        rights: 'Nura Swap. Les contrats sont immuables ; ce site n’est qu’une fenêtre ouverte sur eux.'
     },
     wallet:
     {
