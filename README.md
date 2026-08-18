@@ -188,15 +188,8 @@ cd server
 NODE_ENV=production CHAIN_ID=97 DATA_DIR=/var/lib/nuraswap node src/main.ts
 ```
 
-Or the container:
-
-```sh
-docker build -f server/Dockerfile -t nuraswap .    # from the repo ROOT
-docker run -p 3000:3000 -e NODE_ENV=production -e CHAIN_ID=97 \
-  -v /var/lib/nuraswap:/data -e DATA_DIR=/data nuraswap
-```
-
-Put a TLS reverse proxy in front (Caddy shown; nginx works the same way):
+`deploy/nuraswap.service` runs that same command under systemd, and
+`deploy/deploy.sh` ships a build to the box. Put a TLS reverse proxy in front (Caddy shown; nginx works the same way):
 
 ```
 nuraswap.example {
