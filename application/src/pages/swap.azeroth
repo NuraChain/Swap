@@ -1,3 +1,5 @@
+import { onCleanup } from 'azerothjs';
+
 import { minOutForSlippage, priceImpactBps } from '@nuraswap/shared/math';
 import { formatTokenAmount, parseTokenAmount } from '@nuraswap/shared/digits';
 
@@ -34,6 +36,12 @@ const NATIVE: TokenRef = { address: 'nura', symbol: 'NURA', name: 'NURA', decima
 const MAX_UINT256 = (1n << 256n) - 1n;
 const HIGH_IMPACT_BPS = 1500;
 
+// The route and the price age on their own: the pool moves under trades nobody
+// on this page made. Half a minute is short enough that a displayed price is
+// still the one the router would honour, and long enough not to hammer a public
+// RPC with a full re-quote (pair lookups, getAmountsOut, per-hop reserves).
+const QUOTE_REFRESH_MS = 30_000;
+
 interface QuoteState
 {
     out: bigint;
@@ -56,6 +64,7 @@ export default component Swap()
     state walletOpen = false;
     state settingsOpen = false;
     state confirmedHighImpact = false;
+    state quoteTick = 0;
     state slippageBps = 50;
     state deadlineMinutes = 20;
     state infiniteApprove = false;
@@ -93,6 +102,24 @@ export default component Swap()
             tokenOut = served.find((token) => token.symbol === 'NURA') ?? served[0] ?? null;
             watchTokens(served.map((token) => token.address as Address));
         })();
+
+        // A tab nobody is looking at stops asking - the same gate the wallet
+        // store's balance poll uses - and re-quotes the moment it is looked at
+        // again, because the first thing a returning trader reads is the price.
+        const onVisible = (): void =>
+        {
+            if (!document.hidden)
+            {
+                quoteTick++;
+            }
+        };
+        const refresh = setInterval(onVisible, QUOTE_REFRESH_MS);
+        document.addEventListener('visibilitychange', onVisible);
+        onCleanup(() =>
+        {
+            clearInterval(refresh);
+            document.removeEventListener('visibilitychange', onVisible);
+        });
     }
 
     effect (slippageBps, deadlineMinutes, infiniteApprove) with { skipInitial: true }
@@ -185,14 +212,31 @@ export default component Swap()
             : balances()[(tokenOut as TokenRef).address.toLowerCase()] ?? 0n;
 
     // Quote: authoritative amounts from the router, impact from per-hop reserves.
-    // Reruns on every input change and after every confirmed transaction.
-    effect (amountText, tokenIn, tokenOut, txEpoch(), info)
+    // Reruns on every input change and on the QUOTE_REFRESH_MS tick - it used to
+    // ride the wallet store's txEpoch, which meant a connected wallet re-quoted
+    // every 5 seconds and a page with no wallet never re-quoted at all. The route
+    // is re-read with the price: a pair that did not exist a minute ago is a
+    // route now, and one that drained is not.
+    //
+    // A tick with the SAME inputs is a refresh, and a refresh keeps what is on
+    // screen: the numbers stay, the button stays live, and the new answer
+    // replaces the old one when it lands. Blanking a filled-in trade every half
+    // minute reads as a glitch.
+    let quoteKey = '';
+
+    effect (amountText, tokenIn, tokenOut, quoteTick, info)
     {
-        quote = null;
-        noRoute = false;
-        confirmedHighImpact = false;
         const out = tokenOut;
         const amount = parsedIn;
+        const key = `${ amountText }|${ tokenIn.address }|${ out?.address ?? '' }`;
+        const refreshing = key === quoteKey && quote !== null;
+        quoteKey = key;
+        if (!refreshing)
+        {
+            quote = null;
+            noRoute = false;
+            confirmedHighImpact = false;
+        }
         if (info === null || out === null || amount === null || amount <= 0n)
         {
             return;
@@ -202,7 +246,10 @@ export default component Swap()
             quote = { out: amount, impactBps: 0, path: [] };
             return;
         }
-        quoting = true;
+        // A high-impact trade was confirmed at ITS impact. If the refresh comes
+        // back worse, that consent does not carry over to the new price.
+        const confirmedAt = refreshing ? (quote as QuoteState).impactBps : 0;
+        quoting = !refreshing;
         const requestToken = amountText + out.address + tokenIn.address;
         void (async () =>
         {
@@ -235,6 +282,8 @@ export default component Swap()
                     if (legIn === '0x0000000000000000000000000000000000000000'
                         || legOut === '0x0000000000000000000000000000000000000000')
                     {
+                        // The route a refresh was re-reading is gone; so is its price.
+                        quote = null;
                         noRoute = true;
                         quoting = false;
                         return;
@@ -271,10 +320,18 @@ export default component Swap()
                 if (requestToken === amountText + (tokenOut as TokenRef).address + tokenIn.address)
                 {
                     quote = { out: amounts[amounts.length - 1], impactBps: impact, path };
+                    if (impact > confirmedAt)
+                    {
+                        confirmedHighImpact = false;
+                    }
                 }
             }
             catch
             {
+                // A refresh that fails drops the price it was refreshing: an
+                // unreachable RPC is not a reason to keep quoting an old number
+                // as if the router had just said it.
+                quote = null;
                 noRoute = true;
             }
             quoting = false;
