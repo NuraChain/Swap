@@ -31,7 +31,7 @@ The application half of a production-shaped DEX - the exchange contracts live in
 their own repository:
 
 - **Swap** - router-quoted trades with live price impact, slippage and deadline
-  control, an approve-then-swap flow, BNB wrap/unwrap, a price chart, and recent
+  control, an approve-then-swap flow, NURA wrap/unwrap, a price chart, and recent
   trades. High-impact trades demand explicit confirmation.
 - **Liquidity** - pools table (TVL, 24h volume, fee APR), your positions, add
   liquidity with ratio auto-fill and a first-provider price warning, remove with
@@ -53,9 +53,17 @@ server/        indexer + market API: chain watcher -> sqlite -> REST (@azerothjs
 application/   the site: compiled .azeroth components on vite (AzerothJS)
 ```
 
+The exchange runs on **Nura Chain** (chain id 1020, Cosmos EVM):
+
+| | |
+| --- | --- |
+| RPC | `https://rpc.nurachain.net` |
+| Explorer | `https://explorer.nurachain.net` |
+| Native coin | NURA (18 decimals), wrapped as WNURA |
+
 The seam with the contracts repository is one file: its deploy script writes a
-typed artifact (chain id, RPC, factory/router/WBNB/multicall addresses, token
-list, start block) that this repo reads from `shared/deployments/<chainId>.json`
+typed artifact (chain id, RPC, factory/router/WNURA/multicall addresses, token
+list, start block) that this repo reads from `shared/deployments/1020.json`
 via `shared/src/deployments.ts`. Nothing here imports Solidity or an ABI built
 from it - the ABI fragments the app and indexer need are declared inline
 (`application/src/lib/chain.ts`, `server/src/indexer/decode.ts`).
@@ -73,39 +81,36 @@ signs with the user's wallet - the site never holds funds or keys.
 - Node.js >= 24 (`node --version`)
 - A browser wallet extension for the trading flows -
   [MetaMask](https://metamask.io/download/) or any EIP-6963 wallet
-- The **contracts repository**, checked out and installed - it runs the local
-  chain and writes the deployment artifact this repo reads
+- An address holding a little NURA for gas, to sign anything
 
-### Development (local chain)
+Nothing else: the deployment artifact for Nura Chain is committed, so there is
+no chain to start and no contract to deploy before the app runs.
 
-Four processes, one terminal each, in this order:
+### Development
+
+Two processes, one terminal each:
 
 ```sh
 npm install                          # once, at the repository root
 
-# terminal 1 - the chain (in the contracts repo, keep it running)
-npx hardhat node
-
-# terminal 2 - deploy + seed the exchange (in the contracts repo)
-npm run deploy:local && npm run seed:local
-
-# terminal 3 - the indexer + API on :3000 (in server/)
+# terminal 1 - the indexer + API on :3000 (in server/)
 node src/main.ts
 
-# terminal 4 - the app on :5173 (in application/)
+# terminal 2 - the app on :5173 (in application/)
 npm run dev
 ```
 
-The deploy step has to land its artifact at `shared/deployments/31337.json` in
-THIS repo - point the contracts repo's output directory here (or copy the file
-across) before starting the server, or it exits with "no deployment artifact for
-this chain".
+The server reads `shared/deployments/1020.json`, indexes Nura Chain from the
+factory's deployment block, and exits with "no deployment artifact for this
+chain" if `CHAIN_ID` names a chain with no artifact next to it.
 
 | Port | What |
 | --- | --- |
-| 8545 | hardhat chain (chain id 31337) |
 | 3000 | indexer + `/api/market/*` |
 | 5173 | the app (vite, proxies `/api` to 3000) |
+
+The chain itself is remote - `https://rpc.nurachain.net`, read by both the
+indexer and the browser.
 
 ### Production build
 
@@ -114,32 +119,23 @@ npx azeroth build                    # client + SSR bundle + prerendered landing
 cd server && NODE_ENV=production node src/main.ts
 ```
 
-One origin serves everything on :3000 - pages, API, and the strict CSP. Set
-`CHAIN_ID` to pick the deployment artifact (default 31337; `97` after a testnet
-deploy). The VPS story (Caddy, systemd, `deploy/deploy.sh`) is further down.
+One origin serves everything on :3000 - pages, API, and the strict CSP.
+`CHAIN_ID` picks the deployment artifact and defaults to 1020. The VPS story
+(Caddy, systemd, `deploy/deploy.sh`) is further down.
 
 Open http://localhost:5173 and connect a real wallet extension - there is no
 built-in signer, on purpose. The full walkthrough:
 
 1. Install [MetaMask](https://metamask.io/download/) (or any EIP-6963 wallet -
    the connect sheet lists the ones we can name, with install links).
-2. Click "Connect wallet" and pick your wallet. On first use the app offers to
-   add the "NuraSwap localhost" network (chain id 31337) in one click - accept.
-3. Fund your own address from the deployer (a fresh account has no local BNB
-   for gas):
-
-   ```sh
-   npm run fund -- 0xYourAddress      # in the contracts repo
-   ```
-
-   This sends local BNB, mints every mock token, and transfers NURA. It works
-   on dev chains only and never touches a real network.
-4. Swap, add liquidity, use the faucet - every flow runs against your wallet,
-   exactly as it will in production.
-
-Note for hardhat restarts: MetaMask caches nonces per chain id. After you
-restart `hardhat node`, clear them via Settings > Advanced > Clear activity
-tab data, or transactions will fail with a nonce mismatch.
+2. Click "Connect wallet" and pick your wallet. The "Add Nura Chain to wallet"
+   button in the header registers the network (chain id 1020, the RPC and
+   explorer above) in one prompt - the app never switches your wallet behind
+   your back.
+3. Hold some NURA in that address: every transaction pays gas in it, and a
+   fresh account has none. This chain has no faucet in the app (`faucet` is
+   false in the artifact); fund the address the way you fund any real chain.
+4. Swap, add liquidity, remove it - every flow runs against your own wallet.
 
 ## Tests
 
@@ -163,19 +159,21 @@ npm run verify
 `npx azeroth build` produces the client bundle, the SSR bundle, and the
 prerendered landing page.
 
-## Deploy: BSC testnet
+## Redeploying the exchange
 
-In the contracts repository:
+The addresses in `shared/deployments/1020.json` are the live ones; you only redo
+this if the contracts themselves change. In the contracts repository:
 
 ```sh
-cp .env.example .env            # set DEPLOYER_PRIVATE_KEY (faucet-funded)
-npm run deploy:testnet          # writes the 97.json deployment artifact
-npm run seed:testnet            # optional: starter liquidity + trades
+cp .env.example .env            # set DEPLOYER_PRIVATE_KEY (funded with NURA)
+npm run deploy -- --network nura
 ```
 
-Commit the resulting artifact here as `shared/deployments/97.json`, then point
-the server at the testnet: `CHAIN_ID=97` in `server/.env`. The frontend needs no
-configuration - it receives the active deployment from the server.
+Commit the artifact it writes over `shared/deployments/1020.json` - addresses,
+`startBlock`, and the token list in one file. Wipe the indexer database for that
+chain (`data/1020.db`) so it re-indexes against the new factory, or let the
+chain-identity guard notice the mismatch and do it for you. The frontend needs
+no configuration either way: it receives the active deployment from the server.
 
 ## Deploy: production (VPS)
 
@@ -185,7 +183,7 @@ built client. No CORS, no separate static host.
 ```sh
 npx azeroth build                                  # client + SSR bundle + prerender
 cd server
-NODE_ENV=production CHAIN_ID=97 DATA_DIR=/var/lib/nuraswap node src/main.ts
+NODE_ENV=production CHAIN_ID=1020 DATA_DIR=/var/lib/nuraswap node src/main.ts
 ```
 
 `deploy/nuraswap.service` runs that same command under systemd, and
@@ -198,10 +196,11 @@ nuraswap.example {
 ```
 
 `/api/healthz` answers orchestrator probes. `/api/market/stats` reports
-`blocksBehind` - alert when it grows. Mainnet is a configuration exercise, not a
-code change: add a chain profile in the contracts repo's `scripts/chains.ts`,
-deploy, commit the artifact here - but do not deploy pooled-funds contracts to
-mainnet without an independent audit.
+`blocksBehind` - alert when it grows. Nura Chain is CometBFT under the EVM, so a
+committed block is final: the indexer waits zero confirmations and a growing
+`blocksBehind` means the RPC or the loop is unwell, never a fork. Note that these
+are pooled-funds contracts on a live chain - do not put them in front of users'
+money without an independent audit.
 
 ## Security posture
 
@@ -215,7 +214,7 @@ mainnet without an independent audit.
   no custody.
 - Coin brands are a trust signal and are earned by **address** from the served
   deployment, never by the symbol a token declares. An imported token claiming
-  to be `mUSDT` gets the generic monogram and an explicit warning - it can never
+  to be `USDT` gets the generic monogram and an explicit warning - it can never
   borrow the real mark. Pinned by `application/tests/token-trust.spec.ts`.
 - Production responses carry a strict CSP (`server/src/csp.ts`): no
   `unsafe-inline` or `unsafe-eval` for scripts, `object-src`/`frame-ancestors`
