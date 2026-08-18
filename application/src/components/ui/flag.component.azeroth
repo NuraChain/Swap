@@ -1,32 +1,24 @@
 import { flagSrc } from '../../lib/i18n.ts';
 import type { Lang } from '../../lib/i18n.ts';
 
-// A square flag out of round art. The vectors in public/flags are circle-flags:
-// each one is masked to a circle, and under that mask several of them (es, ir,
-// in, ru, pt) are barrel-shaped rather than rectangular - drawn to fill a circle,
-// with nothing in the corners. So squaring them is not a border-radius: the mark
-// here is the circle's INSCRIBED square, scaled by root-2 and clipped. Every
-// design's centre survives the crop, and no corner is left transparent.
-
-const ROOT_TWO = 1.4143;
+// The flag as a flag: a 4:3 rectangle with softened corners, the same shape the
+// Nura landing page uses, so the language picker reads the same across the two
+// sites. `size` is the HEIGHT - the width follows the ratio, because a flag
+// squeezed into a square is a different flag.
 
 export default component Flag(props: { lang: Lang; size?: number })
 {
-    const size = (): number => props.size ?? 20;
+    const height = (): number => props.size ?? 18;
+    const width = (): number => Math.round(height() * 4 / 3);
 
-    <span
-        class="inline-block shrink-0 overflow-hidden rounded-[3px]"
-        style={ `width:${ size() }px;height:${ size() }px` }
+    <img
+        src={ flagSrc(props.lang) }
+        alt=""
+        width={ width() }
+        height={ height() }
+        loading="lazy"
+        class="shrink-0 rounded-[4px] object-cover"
+        style={ `width:${ width() }px;height:${ height() }px` }
         aria-hidden="true"
-    >
-        <img
-            src={ flagSrc(props.lang) }
-            alt=""
-            width={ size() }
-            height={ size() }
-            loading="lazy"
-            class="h-full w-full"
-            style={ `transform:scale(${ ROOT_TWO })` }
-        />
-    </span>
+    />
 }
