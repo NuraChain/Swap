@@ -50,22 +50,22 @@ export default component Portfolio()
         void client.market.tokens().then((list) => { tokens = list; }).catch(() => undefined);
     }
 
-    // Native BNB rides the WBNB price; ERC20 balances come from the wallet store.
+    // Native NURA rides the WNURA price; ERC20 balances come from the wallet store.
     derived holdings = (() =>
     {
         const rows: Holding[] = [];
-        const wbnbPrice = tokens.find((token) => token.symbol === 'WBNB')?.priceUsd ?? 0;
+        const wnuraPrice = tokens.find((token) => token.symbol === 'WNURA')?.priceUsd ?? 0;
         if (nativeBalance() > 0n)
         {
             const amount = Number(formatTokenAmount(nativeBalance(), 18, 8));
             rows.push({
-                symbol: 'BNB',
-                name: 'BNB',
-                address: 'bnb',
+                symbol: 'NURA',
+                name: 'NURA',
+                address: 'nura',
                 decimals: 18,
                 balance: nativeBalance(),
-                priceUsd: wbnbPrice,
-                valueUsd: amount * wbnbPrice
+                priceUsd: wnuraPrice,
+                valueUsd: amount * wnuraPrice
             });
         }
         for (const token of tokens)

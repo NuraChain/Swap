@@ -82,7 +82,7 @@ export const deploymentInfo = object({
     contracts: object({
         factory: string(),
         router: string(),
-        wbnb: string(),
+        wnura: string(),
         multicall3: string()
     }),
     tokens: array(tokenRef)

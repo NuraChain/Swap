@@ -14,7 +14,7 @@ import Button from '../ui/button.component.azeroth';
 import Icon from '../ui/icon.component.azeroth';
 import Modal from '../ui/modal.component.azeroth';
 
-const NATIVE: TokenRef = { address: 'bnb', symbol: 'BNB', name: 'BNB', decimals: 18 };
+const NATIVE: TokenRef = { address: 'nura', symbol: 'NURA', name: 'NURA', decimals: 18 };
 const ZERO = '0x0000000000000000000000000000000000000000';
 const MAX_UINT256 = (1n << 256n) - 1n;
 const SLIPPAGE_BPS = 100;
@@ -44,11 +44,11 @@ export default component AddLiquidity(props: {
     state walletOpen = false;
 
     const info = (): DeploymentInfo | null => deployment();
-    const isNative = (token: TokenRef | null): boolean => token?.address === 'bnb';
-    const wbnb = (): Address => (info()?.contracts.wbnb ?? ZERO) as Address;
+    const isNative = (token: TokenRef | null): boolean => token?.address === 'nura';
+    const wnura = (): Address => (info()?.contracts.wnura ?? ZERO) as Address;
     const router = (): Address => (info()?.contracts.router ?? ZERO) as Address;
     const hopAddress = (token: TokenRef): Address =>
-        (isNative(token) ? wbnb() : token.address) as Address;
+        (isNative(token) ? wnura() : token.address) as Address;
 
     const balanceOf = (token: TokenRef | null): bigint =>
         token === null
@@ -205,14 +205,14 @@ export default component AddLiquidity(props: {
             const token = isNative(a) ? b : a;
             const tokenAmount = isNative(a) ? amountB : amountA;
             const tokenMin = isNative(a) ? minB : minA;
-            const bnbAmount = isNative(a) ? amountA : amountB;
-            const bnbMin = isNative(a) ? minA : minB;
+            const nuraAmount = isNative(a) ? amountA : amountB;
+            const nuraMin = isNative(a) ? minA : minB;
             ok = await sendTx(label, () => requiredWallet().writeContract({
                 address: router(),
                 abi: ROUTER_ABI,
                 functionName: 'addLiquidityETH',
-                args: [token.address as Address, tokenAmount, tokenMin, bnbMin, owner, when],
-                value: bnbAmount
+                args: [token.address as Address, tokenAmount, tokenMin, nuraMin, owner, when],
+                value: nuraAmount
             } as never));
         }
         else

@@ -18,7 +18,7 @@ import Icon from '../components/ui/icon.component.azeroth';
 import Input from '../components/ui/input.component.azeroth';
 import Pagination from '../components/ui/pagination.component.azeroth';
 
-const NATIVE: TokenRef = { address: 'bnb', symbol: 'BNB', name: 'BNB', decimals: 18 };
+const NATIVE: TokenRef = { address: 'nura', symbol: 'NURA', name: 'NURA', decimals: 18 };
 const PAGE_SIZE = 10;
 
 export default component Liquidity()

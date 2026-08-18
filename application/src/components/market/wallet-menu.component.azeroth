@@ -54,7 +54,7 @@ export default component WalletMenu(props: { address: string; onClose: () => voi
                 <div class="px-2 py-2 text-xs text-faint">
                     <span class="flex items-center justify-between">
                         <span>{ t().common.balance }</span>
-                        <span class="font-mono text-val">{ `${ fmtAmount(nativeBalance(), 18) } BNB` }</span>
+                        <span class="font-mono text-val">{ `${ fmtAmount(nativeBalance(), 18) } NURA` }</span>
                     </span>
                 </div>
                 <button

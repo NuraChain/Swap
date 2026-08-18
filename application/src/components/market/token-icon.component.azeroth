@@ -9,8 +9,7 @@ import { deployment } from '../../lib/chain.ts';
 
 const COIN_ID: Record<string, string> = {
     NURA: 'nura',
-    BNB: 'bnb',
-    WBNB: 'bnb',
+    WNURA: 'nura',
     mUSDT: 'usdt',
     mUSDC: 'usdc',
     mDAI: 'dai',
@@ -27,9 +26,9 @@ export default component TokenIcon(props: { symbol: string; address: string; siz
     // The native pseudo-token has no contract to check - it IS the chain.
     const trustedCoin = (): string | null =>
     {
-        if (props.address === 'bnb')
+        if (props.address === 'nura')
         {
-            return 'bnb';
+            return 'nura';
         }
         const info = deployment();
         if (info === null)

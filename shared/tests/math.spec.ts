@@ -143,18 +143,18 @@ describe('decimal scaling and pricing', () =>
 
     it('priceFromReserves crosses decimals correctly (the 1e12 landmine)', () =>
     {
-        // 1000 WBNB (18dp) against 850,000 mUSDT (6dp) -> 850 USD per WBNB.
+        // 1000 WNURA (18dp) against 850,000 USDT (6dp) -> 850 USD per WNURA.
         const price = priceFromReserves(1000n * WAD, 18, 850_000n * pow10(6), 6);
         expect(price).toBe(850n * WAD);
-        // And inverted: 1/850 USD-per-mUSDT-in-WBNB terms.
+        // And inverted: 1/850 USD-per-USDT-in-WNURA terms.
         const inverse = priceFromReserves(850_000n * pow10(6), 6, 1000n * WAD, 18);
         expect(inverse).toBe(WAD * 1000n / 850_000n);
     });
 
     it('usdValue prices raw amounts of any decimals', () =>
     {
-        const bnbPrice = 850n * WAD;
-        expect(usdValue(2n * WAD, 18, bnbPrice)).toBe(1700n * WAD);
+        const nuraPrice = 850n * WAD;
+        expect(usdValue(2n * WAD, 18, nuraPrice)).toBe(1700n * WAD);
         // 0.5 mWBTC (8dp) at $60,000.
         expect(usdValue(50_000_000n, 8, 60_000n * WAD)).toBe(30_000n * WAD);
     });

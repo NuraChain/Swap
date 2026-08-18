@@ -323,8 +323,8 @@ function addChainParams(info: NonNullable<ReturnType<typeof deployment>>): objec
 {
     return {
         chainId: `0x${ info.chainId.toString(16) }`,
-        chainName: `NuraSwap ${ info.networkName }`,
-        nativeCurrency: { name: 'BNB', symbol: 'BNB', decimals: 18 },
+        chainName: info.networkName,
+        nativeCurrency: { name: 'NURA', symbol: 'NURA', decimals: 18 },
         rpcUrls: [info.rpcUrl],
         blockExplorerUrls: info.explorerUrl === null ? [] : [info.explorerUrl]
     };

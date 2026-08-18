@@ -1,7 +1,7 @@
 // USD pricing derived purely from pool reserves. The stable (mUSDT) anchors at
 // $1; the wrapped native prices through its stable pair; every other token prices
 // through its deepest pool against an already-priced token. Two passes cover
-// chains where a token only pools against something that itself prices via WBNB.
+// chains where a token only pools against something that itself prices via WNURA.
 
 import { WAD, priceFromReserves, scaleToWad, usdValue } from '@nuraswap/shared/math';
 

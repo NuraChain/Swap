@@ -8,8 +8,7 @@ import { describe, expect, it } from 'vitest';
 
 const COIN_ID: Record<string, string> = {
     NURA: 'nura',
-    BNB: 'bnb',
-    WBNB: 'bnb',
+    WNURA: 'nura',
     mUSDT: 'usdt',
     mUSDC: 'usdc',
     mDAI: 'dai',
@@ -21,9 +20,9 @@ interface Listed { address: string; symbol: string }
 // The exact resolution TokenIcon performs.
 function resolveBrand(address: string, listedTokens: Listed[]): string | null
 {
-    if (address === 'bnb')
+    if (address === 'nura')
     {
-        return 'bnb';
+        return 'nura';
     }
     const listed = listedTokens.find((token) => token.address.toLowerCase() === address.toLowerCase());
     return listed === undefined ? null : COIN_ID[listed.symbol] ?? null;
@@ -61,7 +60,7 @@ describe('token brand trust', () =>
 
     it('keeps the native pseudo-token branded - it has no contract to impersonate', () =>
     {
-        expect(resolveBrand('bnb', [])).toBe('bnb');
+        expect(resolveBrand('nura', [])).toBe('nura');
     });
 
     it('gives no mark when the deployment has not loaded', () =>

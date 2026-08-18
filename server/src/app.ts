@@ -41,8 +41,8 @@ export function createApi(state: ApiState)
 {
     const { db, deployment } = state;
     const refs = {
-        stable: deployment.tokens.find((token) => token.symbol === 'mUSDT')?.address.toLowerCase() ?? '',
-        wrappedNative: deployment.contracts.wbnb.toLowerCase()
+        stable: deployment.tokens.find((token) => token.symbol === 'USDT')?.address.toLowerCase() ?? '',
+        wrappedNative: deployment.contracts.wnura.toLowerCase()
     };
 
     function tokenRefOf(address: string): TokenRef

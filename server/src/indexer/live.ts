@@ -1,10 +1,10 @@
 // The live indexer: one polling loop drives both historical catch-up and the live
 // tail through the same chunked eth_getLogs scan. No filter-based watchers -
-// public BSC RPCs drop them; polling is the path that works everywhere.
+// public RPCs drop them; polling is the path that works everywhere.
 //
 // Restart safety, in order of severity:
 // - identity mismatch (different chainId/factory, or the startBlock's hash
-//   changed - a fresh hardhat node): wipe and re-index from startBlock.
+//   changed - a re-genesised chain): wipe and re-index from startBlock.
 // - cursor beyond head (chain shorter than our cursor): same wipe.
 // - cursor block hash mismatch (reorg): rewind REWIND_BLOCKS and rescan; event
 //   inserts are idempotent so replay cannot double-count candles.

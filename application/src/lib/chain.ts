@@ -54,7 +54,7 @@ export const ROUTER_ABI = parseAbi([
     'function removeLiquidityETH(address token, uint256 liquidity, uint256 amountTokenMin, uint256 amountETHMin, address to, uint256 deadline) returns (uint256 amountToken, uint256 amountETH)'
 ]);
 
-export const WBNB_ABI = parseAbi([
+export const WNURA_ABI = parseAbi([
     'function deposit() payable',
     'function withdraw(uint256 wad)'
 ]);
@@ -95,7 +95,7 @@ export function chainOf(info: DeploymentInfo): Chain
     chainCache ??= defineChain({
         id: info.chainId,
         name: info.networkName,
-        nativeCurrency: { name: 'BNB', symbol: 'BNB', decimals: 18 },
+        nativeCurrency: { name: 'NURA', symbol: 'NURA', decimals: 18 },
         rpcUrls: { default: { http: [info.rpcUrl] } },
         blockExplorers: info.explorerUrl === null
             ? undefined
