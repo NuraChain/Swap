@@ -1,6 +1,11 @@
-// Extracts the circular country flags for the language picker from circle-flags
-// (MIT) into public/flags - self-hosted like the wallet vectors, so the picker
-// needs no CDN and the strict CSP stays closed.
+// Extracts the 4:3 country flags for the language picker from flag-icons (MIT)
+// into public/flags - self-hosted like the wallet vectors, so the picker needs no
+// CDN and the strict CSP stays closed. Same vectors the Nura landing page ships,
+// which is why the two language pickers look like one product.
+//
+// flag-icons is NOT a dependency of this repo: the output is committed, and this
+// script is the record of where it came from. Install it (npm i -D flag-icons)
+// only when the list below changes.
 //
 // The codes are ISO 3166-1 alpha-2 COUNTRIES, not language tags: a flag is a
 // country's, and the mapping to a language is editorial (see LANGS in
@@ -18,12 +23,12 @@ const FLAGS = ['gb', 'ir', 'sa', 'es', 'pt', 'in', 'cn', 'ru', 'fr', 'tr'];
 // same resolution dance as build-wallets.mjs.
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const flagsDir = [
-    join(root, 'node_modules', 'circle-flags', 'flags'),
-    join(root, 'application', 'node_modules', 'circle-flags', 'flags')
+    join(root, 'node_modules', 'flag-icons', 'flags', '4x3'),
+    join(root, 'application', 'node_modules', 'flag-icons', 'flags', '4x3')
 ].find((candidate) => existsSync(candidate));
 if (flagsDir === undefined)
 {
-    throw new Error('circle-flags is not installed - run npm install first');
+    throw new Error('flag-icons is not installed - npm i -D flag-icons to regenerate');
 }
 
 const out = join(dirname(fileURLToPath(import.meta.url)), '..', 'public', 'flags');
@@ -35,7 +40,7 @@ for (const code of FLAGS)
     const source = join(flagsDir, `${ code }.svg`);
     if (!existsSync(source))
     {
-        throw new Error(`circle-flags has no ${ code }.svg - check the ISO 3166-1 alpha-2 code`);
+        throw new Error(`flag-icons has no ${ code }.svg - check the ISO 3166-1 alpha-2 code`);
     }
     const svg = readFileSync(source, 'utf8').trim();
     bytes += svg.length;
