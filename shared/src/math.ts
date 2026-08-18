@@ -1,4 +1,4 @@
-// All NuraSwap quote and pricing math, bigint end to end. Raw on-chain amounts
+// All Nura Swap quote and pricing math, bigint end to end. Raw on-chain amounts
 // never pass through Number: an 18-decimal reserve overflows the float mantissa
 // long before it overflows a pool.
 

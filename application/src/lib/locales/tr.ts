@@ -6,7 +6,7 @@ export const tr: Dict = {
         swap: 'Takas',
         liquidity: 'Likidite',
         portfolio: 'Portföy',
-        home: 'NuraSwap'
+        home: 'Nura Swap'
     },
     common:
     {
@@ -44,7 +44,7 @@ export const tr: Dict = {
     landing:
     {
         headline: 'Doğrudan cüzdanınızdan işlem yapın.',
-        sub: 'NuraSwap bir otomatik piyasa yapıcıdır: her takas, açık likidite havuzlarına karşı zincir üzerinde kapanır. Hesap yok, saklama yok - anahtarlarınız sizde kalır.',
+        sub: 'Nura Swap bir otomatik piyasa yapıcıdır: her takas, açık likidite havuzlarına karşı zincir üzerinde kapanır. Hesap yok, saklama yok - anahtarlarınız sizde kalır.',
         cta: 'Takasa başla',
         ctaPools: 'Havuzları keşfet',
         statTvl: 'Kilitli değer',
@@ -70,7 +70,7 @@ export const tr: Dict = {
     {
         tagline: 'Açık bir otomatik piyasa yapıcı. Anahtarlarınız, işlemleriniz.',
         product: 'Ürün',
-        rights: 'NuraSwap. Sözleşmeler değiştirilemez; bu site onlara açılan bir penceredir.'
+        rights: 'Nura Swap. Sözleşmeler değiştirilemez; bu site onlara açılan bir penceredir.'
     },
     wallet:
     {

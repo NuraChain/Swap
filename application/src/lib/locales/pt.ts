@@ -6,7 +6,7 @@ export const pt: Dict = {
         swap: 'Trocar',
         liquidity: 'Liquidez',
         portfolio: 'Carteira',
-        home: 'NuraSwap'
+        home: 'Nura Swap'
     },
     common:
     {
@@ -44,7 +44,7 @@ export const pt: Dict = {
     landing:
     {
         headline: 'Negoceie diretamente a partir da sua carteira.',
-        sub: 'A NuraSwap é um criador de mercado automatizado: cada troca é liquidada na cadeia contra pools de liquidez abertos. Sem conta e sem custódia - as suas chaves continuam suas.',
+        sub: 'A Nura Swap é um criador de mercado automatizado: cada troca é liquidada na cadeia contra pools de liquidez abertos. Sem conta e sem custódia - as suas chaves continuam suas.',
         cta: 'Começar a trocar',
         ctaPools: 'Explorar pools',
         statTvl: 'Valor bloqueado',
@@ -70,7 +70,7 @@ export const pt: Dict = {
     {
         tagline: 'Um criador de mercado automatizado e aberto. As suas chaves, as suas negociações.',
         product: 'Produto',
-        rights: 'NuraSwap. Os contratos são imutáveis; este site é uma janela para eles.'
+        rights: 'Nura Swap. Os contratos são imutáveis; este site é uma janela para eles.'
     },
     wallet:
     {

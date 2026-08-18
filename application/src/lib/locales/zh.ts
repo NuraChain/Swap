@@ -6,7 +6,7 @@ export const zh: Dict = {
         swap: '兑换',
         liquidity: '流动性',
         portfolio: '资产',
-        home: 'NuraSwap'
+        home: 'Nura Swap'
     },
     common:
     {
@@ -44,7 +44,7 @@ export const zh: Dict = {
     landing:
     {
         headline: '直接用你的钱包交易。',
-        sub: 'NuraSwap 是一个自动做市商：每笔兑换都在链上与开放的流动性池结算。无需账户，无需托管——你的私钥始终属于你。',
+        sub: 'Nura Swap 是一个自动做市商：每笔兑换都在链上与开放的流动性池结算。无需账户，无需托管——你的私钥始终属于你。',
         cta: '开始兑换',
         ctaPools: '浏览资金池',
         statTvl: '锁仓价值',
@@ -70,7 +70,7 @@ export const zh: Dict = {
     {
         tagline: '一个开放的自动做市商。你的密钥，你的交易。',
         product: '产品',
-        rights: 'NuraSwap。合约不可更改；本站只是通往它们的一扇窗口。'
+        rights: 'Nura Swap。合约不可更改；本站只是通往它们的一扇窗口。'
     },
     wallet:
     {
