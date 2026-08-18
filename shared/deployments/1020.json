@@ -17,6 +17,18 @@
             "symbol": "WNURA",
             "name": "Wrapped NURA",
             "decimals": 18
+        },
+        {
+            "address": "0xD4221Ad9772BF5bA7423a044bBBEe6af2154A5Fc",
+            "symbol": "BNB",
+            "name": "Bridge BNB",
+            "decimals": 18
+        },
+        {
+            "address": "0x4E0DB0B1Da408faF5637202CF48b0bc7733bE6dC",
+            "symbol": "USDT",
+            "name": "Bridge USDT",
+            "decimals": 18
         }
     ]
 }
