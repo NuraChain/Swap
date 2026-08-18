@@ -1,0 +1,45 @@
+import { LANGS, currentLang, setLang, t } from '../../lib/i18n.ts';
+import type { Lang } from '../../lib/i18n.ts';
+
+import Flag from '../ui/flag.component.azeroth';
+import Icon from '../ui/icon.component.azeroth';
+import Modal from '../ui/modal.component.azeroth';
+
+// Ten languages outgrew the en/fa toggle: a toggle can only ever reach the next
+// language, so the list has to be pickable. Flags are a recognition aid ONLY -
+// the endonym is the label, because a flag names a country, not a language.
+//
+// It opens as a centred modal rather than a dropdown under the header button:
+// the same picker is reached from the mobile drawer, where an anchored panel had
+// to point at a button that is itself inside a slide-over. Centre belongs to
+// nothing and reads the same in both directions.
+
+export default component LanguageModal(props: { onClose: () => void })
+{
+    const choose = (lang: Lang): void =>
+    {
+        setLang(lang);
+        props.onClose();
+    };
+
+    <Modal title={ t().common.language } onClose={ props.onClose }>
+        <div class="grid max-h-[60vh] grid-cols-1 gap-1 overflow-y-auto sm:grid-cols-2">
+            <For each={ LANGS } key={ (entry) => entry.code } let={ entry }>
+                <button
+                    type="button"
+                    class="flex min-h-11 items-center gap-2.5 rounded-lg px-2.5 text-start text-sm hover:bg-ink/6 aria-[current=true]:bg-panel aria-[current=true]:text-ice"
+                    lang={ entry.code }
+                    aria-current={ entry.code === currentLang() }
+                    data-testid={ `lang-${ entry.code }` }
+                    onClick={ () => choose(entry.code) }
+                >
+                    <Flag lang={ entry.code } size={ 20 } />
+                    <span class="flex-1 truncate">{ entry.native }</span>
+                    <Show when={ entry.code === currentLang() }>
+                        <Icon name="check" size={ 15 } class="text-ice" />
+                    </Show>
+                </button>
+            </For>
+        </div>
+    </Modal>
+}

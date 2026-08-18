@@ -1,13 +1,14 @@
 import { Link, Portal, useRoute } from 'azerothjs';
 
-import { currentLang, flagSrc, langInfo, t } from '../../lib/i18n.ts';
+import { currentLang, langInfo, t } from '../../lib/i18n.ts';
 import { currentTheme, toggleTheme } from '../../lib/theme.ts';
 
 import AddChainButton from '../market/add-chain-button.component.azeroth';
 import ConnectButton from '../market/connect-button.component.azeroth';
+import Flag from '../ui/flag.component.azeroth';
 import Icon from '../ui/icon.component.azeroth';
 import Shamseh from '../ui/shamseh.component.azeroth';
-import LanguageMenu from './language-menu.component.azeroth';
+import LanguageModal from './language-modal.component.azeroth';
 
 // Mobile-first: the bar carries logo + connect + hamburger; nav links and the
 // language/theme toggles live in a slide-over drawer below sm and inline above.
@@ -42,11 +43,12 @@ export default component Header()
         closeDrawer();
     }
 
+    // The language picker is a Modal and closes itself on Escape; only the
+    // drawer needs the key handled here.
     const onKey = (event: KeyboardEvent): void =>
     {
         if (event.key === 'Escape')
         {
-            langOpen = false;
             closeDrawer();
         }
     };
@@ -80,21 +82,14 @@ export default component Header()
                 <AddChainButton compact />
                 <button
                     type="button"
-                    class="hidden items-center gap-1.5 rounded-lg p-2 text-faint hover:text-ink sm:flex"
+                    class="hidden items-center justify-center rounded-md p-2 text-faint hover:text-ink sm:flex"
                     aria-label={ t().common.language }
                     aria-haspopup="dialog"
                     aria-expanded={ langOpen }
                     data-testid="lang-open"
                     onClick={ () => { langOpen = true; } }
                 >
-                    <img
-                        src={ flagSrc(currentLang()) }
-                        alt=""
-                        width="18"
-                        height="18"
-                        class="h-[18px] w-[18px] rounded-full"
-                    />
-                    <Icon name="chevron-down" size={ 14 } />
+                    <Flag lang={ currentLang() } size={ 18 } />
                 </button>
                 <button
                     type="button"
@@ -177,13 +172,7 @@ export default component Header()
                                     data-testid="lang-open-drawer"
                                     onClick={ () => { langOpen = true; } }
                                 >
-                                    <img
-                                        src={ flagSrc(currentLang()) }
-                                        alt=""
-                                        width="18"
-                                        height="18"
-                                        class="h-[18px] w-[18px] rounded-full"
-                                    />
+                                    <Flag lang={ currentLang() } size={ 18 } />
                                     <span>{ langInfo().native }</span>
                                 </button>
                                 <button
@@ -203,7 +192,7 @@ export default component Header()
         </Show>
 
         <Show when={ langOpen }>
-            <LanguageMenu onClose={ () => { langOpen = false; } } />
+            <LanguageModal onClose={ () => { langOpen = false; } } />
         </Show>
     </header>
 }
