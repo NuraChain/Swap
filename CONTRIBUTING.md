@@ -3,13 +3,14 @@
 ## Setup
 
 Node >= 24. `npm install` at the root wires all three workspaces
-(`application`, `server`, `shared`). The exchange contracts live in their own
-repository - you need it checked out to run the local chain and produce the
-deployment artifact this repo reads from `shared/deployments/<chainId>.json`.
-The full local loop is in the README's Quickstart. There is no in-app signer:
-wallet flows are exercised with a real wallet extension against the local chain -
-`npm run fund -- 0xYourAddress` (contracts repo) funds your own MetaMask address
-with local BNB and tokens.
+(`application`, `server`, `shared`). This repo targets ONE chain - Nura Chain
+(id 1020) - and its deployment artifact is committed at
+`shared/deployments/1020.json`, so nothing needs deploying to run the app: the
+server indexes the public RPC and the browser reads the same chain directly.
+The exchange contracts live in their own repository; you only need it checked
+out to deploy new contracts, which rewrites that artifact. There is no in-app
+signer - wallet flows are exercised with a real wallet extension against Nura
+Chain, so an address with a little NURA for gas is the price of testing them.
 
 ## Before you open a PR
 
