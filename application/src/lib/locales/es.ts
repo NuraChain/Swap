@@ -82,6 +82,8 @@ export const es: Dict = {
         moreWallets: 'Sirve cualquier cartera de navegador; estas son las que podemos nombrar.',
         wrongNetwork: 'Red incorrecta',
         switchNetwork: 'Cambiar de red',
+        alreadyPending: 'Tu cartera ya tiene una solicitud de conexión esperando: ábrela, apruébala e inténtalo de nuevo.',
+        connectFailed: 'No se pudo conectar esa cartera. Ábrela, desbloquéala e inténtalo de nuevo.',
         connectedVia: 'Conectado con',
         pending: 'Pendiente',
         confirmed: 'Confirmada',

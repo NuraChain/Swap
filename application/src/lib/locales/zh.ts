@@ -82,6 +82,8 @@ export const zh: Dict = {
         moreWallets: '任何浏览器钱包都可使用——这些是我们能列出名字的。',
         wrongNetwork: '网络错误',
         switchNetwork: '切换网络',
+        alreadyPending: '你的钱包中已有一个等待处理的连接请求 - 请打开钱包批准后再试一次。',
+        connectFailed: '无法连接该钱包。请打开并解锁钱包后重试。',
         connectedVia: '连接方式',
         pending: '待确认',
         confirmed: '已确认',
