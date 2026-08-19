@@ -1,4 +1,4 @@
-import { onCleanup } from 'azerothjs';
+import { onCleanup, useQuery } from 'azerothjs';
 
 import { minOutForSlippage, priceImpactBps } from '@nuraswap/shared/math';
 import { formatTokenAmount, parseTokenAmount } from '@nuraswap/shared/digits';
@@ -71,6 +71,9 @@ export default component Swap()
 
     state tokenList: TokenRef[] = [NATIVE];
 
+    // Read on mount only - see the pair link in mount below.
+    const query = useQuery();
+
     mount
     {
         try
@@ -101,6 +104,40 @@ export default component Swap()
             tokenList = [NATIVE, ...served];
             tokenOut = served.find((token) => token.symbol === 'NURA') ?? served[0] ?? null;
             watchTokens(served.map((token) => token.address as Address));
+
+            // A link can name the pair: /swap?in=<address|nura>&out=<address|nura>.
+            // The portfolio's wrap/unwrap actions are the first callers - they land
+            // here with both sides chosen and the page recognises the wrap itself.
+            // Read once, on mount: after that the pickers belong to whoever is using
+            // them, not to the address bar.
+            const named = (value: unknown): TokenRef | null =>
+            {
+                if (typeof value !== 'string' || value === '')
+                {
+                    return null;
+                }
+                if (value.toLowerCase() === NATIVE.address)
+                {
+                    return NATIVE;
+                }
+                return served.find((token) => token.address.toLowerCase() === value.toLowerCase()) ?? null;
+            };
+            const asked = query();
+            const wantedIn = named(asked.in);
+            const wantedOut = named(asked.out);
+            // Both sides at once, and never the same token twice: a pair that names
+            // one token on both sides is not a trade.
+            batch
+            {
+                if (wantedIn !== null && wantedIn.address !== wantedOut?.address)
+                {
+                    tokenIn = wantedIn;
+                }
+                if (wantedOut !== null && wantedOut.address !== tokenIn.address)
+                {
+                    tokenOut = wantedOut;
+                }
+            }
         })();
 
         // A tab nobody is looking at stops asking - the same gate the wallet

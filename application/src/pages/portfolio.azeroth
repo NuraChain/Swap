@@ -1,8 +1,10 @@
+import { Link } from 'azerothjs';
+
 import { formatTokenAmount } from '@nuraswap/shared/digits';
 
 import { client } from '../api.ts';
 import type { Pool, TokenWithPrice } from '../api.ts';
-import { ensureDeployment } from '../lib/chain.ts';
+import { deployment, ensureDeployment } from '../lib/chain.ts';
 import type { Address } from '../lib/chain.ts';
 import { fmtAmount } from '../lib/format.ts';
 import { fmtNumber, fmtUsd, t } from '../lib/i18n.ts';
@@ -15,6 +17,7 @@ import TxList from '../components/market/tx-list.component.azeroth';
 import WalletModal from '../components/market/wallet-modal.component.azeroth';
 import Button from '../components/ui/button.component.azeroth';
 import EmptyState from '../components/ui/empty-state.component.azeroth';
+import Icon from '../components/ui/icon.component.azeroth';
 
 interface Holding
 {
@@ -83,6 +86,29 @@ export default component Portfolio()
 
     derived totalUsd = holdings.reduce((sum, holding) => sum + holding.valueUsd, 0);
 
+    // NURA and WNURA are the same value in two shapes - the coin the chain pays
+    // gas in, and the ERC20 the pools can actually hold. Going between them is a
+    // deposit or a withdraw on the WNURA contract, not a trade, and the swap page
+    // already recognises that pair and skips the router. These two links are the
+    // way in: the row you are looking at, already filled in on the other page.
+    const wrappedAddress = (): string => (deployment()?.contracts.wnura ?? '').toLowerCase();
+
+    const conversion = (holding: Holding): { to: string; label: string } | null =>
+    {
+        const wrapped = wrappedAddress();
+        if (wrapped === '')
+        {
+            return null;
+        }
+        if (holding.address === 'nura')
+        {
+            return { to: `/swap?in=nura&out=${ wrapped }`, label: t().swap.wrap };
+        }
+        return holding.address.toLowerCase() === wrapped
+            ? { to: `/swap?in=${ wrapped }&out=nura`, label: t().swap.unwrap }
+            : null;
+    };
+
     <section class="mx-auto max-w-6xl px-4 py-8 sm:py-12">
         <div class="flex flex-wrap items-end justify-between gap-4">
             <h1 class="font-display text-xl font-medium">{ t().portfolio.title }</h1>
@@ -125,6 +151,7 @@ export default component Portfolio()
                                     <th class="px-4 py-3 text-end font-normal">{ t().portfolio.amount }</th>
                                     <th class="px-4 py-3 text-end font-normal">{ t().portfolio.price }</th>
                                     <th class="px-4 py-3 text-end font-normal">{ t().portfolio.value }</th>
+                                    <th class="px-4 py-3"><span class="sr-only">{ t().swap.title }</span></th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -147,6 +174,18 @@ export default component Portfolio()
                                         </td>
                                         <td class="px-4 py-3 text-end font-mono text-val">
                                             <span>{ fmtUsd(holding.valueUsd) }</span>
+                                        </td>
+                                        <td class="px-4 py-3 text-end">
+                                            <Show when={ conversion(holding) } let={ action }>
+                                                <Link
+                                                    to={ action.to }
+                                                    class="inline-flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 text-xs text-faint hover:border-ice hover:text-ink"
+                                                    data-testid={ `convert-${ holding.symbol }` }
+                                                >
+                                                    <Icon name="arrow-up-down" size={ 13 } />
+                                                    <span>{ action.label }</span>
+                                                </Link>
+                                            </Show>
                                         </td>
                                     </tr>
                                 </For>
