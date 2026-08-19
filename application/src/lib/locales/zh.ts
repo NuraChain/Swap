@@ -53,7 +53,7 @@ export const zh: Dict = {
         featureSwapTitle: '无需订单簿的兑换',
         featureSwapBody: '价格由池内储备的恒定乘积公式得出。报价随资金池变动而更新，你的滑点上限由合约强制执行，而非依赖信任。',
         featureEarnTitle: '提供流动性，赚取手续费',
-        featureEarnBody: '每笔交易向所属资金池支付 0.30%。存入两种代币即可获得 LP 代币，你在每笔交易中的份额会持续累积到仓位中，直到你提取。',
+        featureEarnBody: '每笔交易向所属资金池支付一笔手续费。存入两种代币即可获得 LP 代币，你在每笔交易中的份额会持续累积到仓位中，直到你提取。',
         featureCustodyTitle: '全程自托管',
         featureCustodyBody: '该交易所是一组经过审计且不可更改的合约。本站只是它们的一扇窗口——从不保管资金、私钥或会话。',
         howTitle: '一笔兑换如何结算',

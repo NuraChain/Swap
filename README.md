@@ -40,10 +40,13 @@ their own repository:
   activity.
 - **Wallets** - every EIP-6963 injected wallet (MetaMask, Rabby, Trust, ...),
   silent session restore, address identicons.
-- **The exchange itself** - the canonical UniswapV2 core and periphery, vendored
-  verbatim (0.30% fee, audited math untouched) with the pair init-code hash
-  regenerated for this build and proven by tests. It lives in the **contracts
-  repository**; this repo consumes its deployment artifact.
+- **The exchange itself** - UniswapV2 core and periphery with the audited math
+  untouched, save for one deliberate change: the swap fee is a factory parameter
+  in basis points (`swapFee`, retunable by `feeToSetter` up to `MAX_SWAP_FEE`)
+  instead of the hardcoded 997/1000. Nothing in this repo assumes a fee - the
+  server reads it at boot, serves it on `/api/market/stats`, and the swap card
+  prints what the factory says. It lives in the **contracts repository**; this
+  repo consumes its deployment artifact.
 
 ## Architecture
 

@@ -31,7 +31,11 @@ export const MOCK_TOKEN_ABI = parseAbi([
 
 export const FACTORY_ABI = parseAbi([
     'function getPair(address tokenA, address tokenB) view returns (address)',
-    'function createPair(address tokenA, address tokenB) returns (address)'
+    'function createPair(address tokenA, address tokenB) returns (address)',
+    // Basis points, and NOT the 30 that stock UniswapV2 hardcodes: this factory
+    // holds the fee and feeToSetter can retune it, so the number on screen and
+    // the number in the impact maths are both read from here.
+    'function swapFee() view returns (uint32)'
 ]);
 
 export const PAIR_ABI = parseAbi([

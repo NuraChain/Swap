@@ -27,6 +27,8 @@ export interface ApiState
 {
     db: IndexerDb;
     deployment: Deployment;
+    /** The factory's live swapFee in basis points - read from the chain at boot. */
+    swapFeeBps: number;
     status: () => IndexerStatus;
 }
 
@@ -39,7 +41,7 @@ const UNKNOWN_TOKEN: Omit<TokenRef, 'address'> = { symbol: '???', name: 'Unknown
 // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
 export function createApi(state: ApiState)
 {
-    const { db, deployment } = state;
+    const { db, deployment, swapFeeBps } = state;
     const refs = {
         stable: deployment.tokens.find((token) => token.symbol === 'USDT')?.address.toLowerCase() ?? '',
         wrappedNative: deployment.contracts.wnura.toLowerCase()
@@ -76,7 +78,7 @@ export function createApi(state: ApiState)
             ).toString(),
             tvlUsd: toUsdNumber(tvlUsd),
             volume24hUsd: toUsdNumber(volume24hUsd),
-            feeAprBps: feeAprBps(volume24hUsd, tvlUsd)
+            feeAprBps: feeAprBps(volume24hUsd, tvlUsd, swapFeeBps)
         };
     }
 
@@ -131,6 +133,7 @@ export function createApi(state: ApiState)
                 return {
                     chainId: deployment.chainId,
                     pairCount: pairs.length,
+                    swapFeeBps,
                     tvlUsd: toUsdNumber(tvlUsd),
                     volume24hUsd: toUsdNumber(volume24hUsd),
                     indexedBlock: status.indexedBlock,

@@ -53,7 +53,7 @@ export const tr: Dict = {
         featureSwapTitle: 'Emir defteri olmadan takas',
         featureSwapBody: 'Fiyatlar, havuz rezervleri üzerindeki sabit çarpım formülünden gelir. Havuz hareket ettikçe teklif güncellenir ve kayma sınırınızı güven değil, sözleşme uygular.',
         featureEarnTitle: 'Likidite sağlayın, ücreti kazanın',
-        featureEarnBody: 'Her işlem kendi havuzuna %0,30 öder. İki token yatırın, LP token alın; her işlemden düşen payınız siz çekene kadar pozisyonunuzda birikir.',
+        featureEarnBody: 'Her işlem kendi havuzuna bir ücret öder. İki token yatırın, LP token alın; her işlemden düşen payınız siz çekene kadar pozisyonunuzda birikir.',
         featureCustodyTitle: 'Baştan sona kendi saklamanız',
         featureCustodyBody: 'Borsa, denetlenmiş ve değiştirilemez sözleşmelerden oluşur. Bu site onlara açılan bir penceredir - asla para, anahtar veya oturum tutmaz.',
         howTitle: 'Bir takas nasıl kapanır',

@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 
 import { buildApp, createApi } from '../src/app.ts';
 import { applyEvent } from '../src/indexer/apply.ts';
-import { buildPriceMap } from '../src/indexer/pricing.ts';
+import { buildPriceMap, feeAprBps } from '../src/indexer/pricing.ts';
 import { IndexerDb } from '../src/indexer/db.ts';
 import type { ApplyContext } from '../src/indexer/apply.ts';
 import type { Address } from '../src/indexer/db.ts';
@@ -73,7 +73,8 @@ function seededDb(): IndexerDb
 function testApp()
 {
     const db = seededDb();
-    const api = createApi({ db, deployment: DEPLOYMENT, status: () => ({ headBlock: 12, indexedBlock: 10 }) });
+    // The fee the factory would report; the api never invents one.
+    const api = createApi({ db, deployment: DEPLOYMENT, swapFeeBps: 25, status: () => ({ headBlock: 12, indexedBlock: 10 }) });
     const app = buildApp({ dev: false, api });
     return {
         get: (path: string): Promise<Response> => app.handle(new Request(`http://local${ path }`))
@@ -105,6 +106,8 @@ describe('market api', () =>
         expect(body.tvlUsd).toBeCloseTo(1_900_000, 0);
         expect(body.volume24hUsd).toBeGreaterThan(0);
         expect(body.blocksBehind).toBe(2);
+        // The chain's fee travels on the wire, so no client has to assume one.
+        expect(body.swapFeeBps).toBe(25);
     });
 
     it('GET /api/market/pools lists both pools with prices and APR fields', async () =>
@@ -117,6 +120,12 @@ describe('market api', () =>
         expect(alphaPool.priceWad).toBe((25n * 10n ** 17n).toString());
         expect(alphaPool.tvlUsd).toBeCloseTo(200_000, 0);
         expect(typeof alphaPool.feeAprBps).toBe('number');
+        // APR follows the fee it is given: a tenth of TVL traded daily at 25 bps
+        // annualises to 9.12%, and the same volume at 100 bps to 36.5%. A pool
+        // nobody trades earns nothing at any fee.
+        expect(feeAprBps(1_000n, 10_000n, 25)).toBe(912);
+        expect(feeAprBps(1_000n, 10_000n, 100)).toBe(3650);
+        expect(feeAprBps(0n, 10_000n, 25)).toBe(0);
     });
 
     it('GET /api/market/pools/:address returns candles, 404s unknown pools', async () =>

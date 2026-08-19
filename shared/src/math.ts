@@ -2,8 +2,12 @@
 // never pass through Number: an 18-decimal reserve overflows the float mantissa
 // long before it overflows a pool.
 
-export const FEE_NUMERATOR = 997n;
-export const FEE_DENOMINATOR = 1000n;
+// The swap fee is a CHAIN value, not a constant of this codebase: the factory
+// holds it in basis points (UniswapV2Factory.swapFee, retunable by feeToSetter
+// up to MAX_SWAP_FEE) and every pair reads it at swap time. Stock UniswapV2
+// hardcodes 997/1000; this one does not, so nothing here may assume 30 bps -
+// callers pass what the factory says, and a wrong guess would misreport both
+// the price impact and the fee on screen.
 export const WAD = 10n ** 18n;
 export const BPS = 10_000n;
 
@@ -14,25 +18,25 @@ export function pow10(exponent: number): bigint
 
 // Mirrors UniswapV2Library.getAmountOut. Returns 0n instead of reverting on an
 // empty pool so callers can render "no route" without try/catch.
-export function getAmountOut(amountIn: bigint, reserveIn: bigint, reserveOut: bigint): bigint
+export function getAmountOut(amountIn: bigint, reserveIn: bigint, reserveOut: bigint, feeBps: number): bigint
 {
     if (amountIn <= 0n || reserveIn <= 0n || reserveOut <= 0n)
     {
         return 0n;
     }
-    const amountInWithFee = amountIn * FEE_NUMERATOR;
-    return (amountInWithFee * reserveOut) / (reserveIn * FEE_DENOMINATOR + amountInWithFee);
+    const amountInWithFee = amountIn * (BPS - BigInt(feeBps));
+    return (amountInWithFee * reserveOut) / (reserveIn * BPS + amountInWithFee);
 }
 
 // Mirrors UniswapV2Library.getAmountIn (rounds up). 0n when unachievable.
-export function getAmountIn(amountOut: bigint, reserveIn: bigint, reserveOut: bigint): bigint
+export function getAmountIn(amountOut: bigint, reserveIn: bigint, reserveOut: bigint, feeBps: number): bigint
 {
     if (amountOut <= 0n || reserveIn <= 0n || reserveOut <= amountOut)
     {
         return 0n;
     }
-    const numerator = reserveIn * amountOut * FEE_DENOMINATOR;
-    const denominator = (reserveOut - amountOut) * FEE_NUMERATOR;
+    const numerator = reserveIn * amountOut * BPS;
+    const denominator = (reserveOut - amountOut) * (BPS - BigInt(feeBps));
     return numerator / denominator + 1n;
 }
 
@@ -47,15 +51,15 @@ export function quote(amountA: bigint, reserveA: bigint, reserveB: bigint): bigi
 }
 
 // Price impact of a swap in basis points, measured against the fee-free mid
-// price. Comparing against the raw execution price would report the 0.3% fee as
-// phantom impact on every quote.
-export function priceImpactBps(amountIn: bigint, amountOut: bigint, reserveIn: bigint, reserveOut: bigint): number
+// price. Comparing against the raw execution price would report the fee itself
+// as phantom impact on every quote - which is why this needs the real fee.
+export function priceImpactBps(amountIn: bigint, amountOut: bigint, reserveIn: bigint, reserveOut: bigint, feeBps: number): number
 {
     if (amountIn <= 0n || amountOut <= 0n || reserveIn <= 0n || reserveOut <= 0n)
     {
         return 0;
     }
-    const feeAdjustedIn = (amountIn * FEE_NUMERATOR) / FEE_DENOMINATOR;
+    const feeAdjustedIn = (amountIn * (BPS - BigInt(feeBps))) / BPS;
     const midOut = (feeAdjustedIn * reserveOut) / reserveIn;
     if (midOut <= amountOut)
     {

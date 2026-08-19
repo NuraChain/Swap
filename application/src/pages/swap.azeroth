@@ -65,6 +65,10 @@ export default component Swap()
     state settingsOpen = false;
     state confirmedHighImpact = false;
     state quoteTick = 0;
+    // The pool's fee, in basis points, straight from the factory. Null until it
+    // answers, and nothing quotes before then: an impact figure computed against
+    // a guessed fee reports the guess, not the trade.
+    state feeBps: number | null = null;
     state slippageBps = 50;
     state deadlineMinutes = 20;
     state infiniteApprove = false;
@@ -100,6 +104,11 @@ export default component Swap()
         void (async () =>
         {
             info = await ensureDeployment();
+            void publicClient().readContract({
+                address: (info as DeploymentInfo).contracts.factory as Address,
+                abi: FACTORY_ABI,
+                functionName: 'swapFee'
+            }).then((bps) => { feeBps = Number(bps); }).catch(() => undefined);
             const served = await client.market.tokens();
             tokenList = [NATIVE, ...served];
             tokenOut = served.find((token) => token.symbol === 'NURA') ?? served[0] ?? null;
@@ -270,7 +279,7 @@ export default component Swap()
     // minute reads as a glitch.
     let quoteKey = '';
 
-    effect (amountText, tokenIn, tokenOut, quoteTick, info)
+    effect (amountText, tokenIn, tokenOut, quoteTick, feeBps, info)
     {
         const out = tokenOut;
         const amount = parsedIn;
@@ -283,7 +292,7 @@ export default component Swap()
             noRoute = false;
             confirmedHighImpact = false;
         }
-        if (info === null || out === null || amount === null || amount <= 0n)
+        if (info === null || feeBps === null || out === null || amount === null || amount <= 0n)
         {
             return;
         }
@@ -360,7 +369,7 @@ export default component Swap()
                     const [reserveIn, reserveOut] = token0.toLowerCase() === path[hop].toLowerCase()
                         ? [reserve0, reserve1]
                         : [reserve1, reserve0];
-                    impact += priceImpactBps(amounts[hop], amounts[hop + 1], reserveIn, reserveOut);
+                    impact += priceImpactBps(amounts[hop], amounts[hop + 1], reserveIn, reserveOut, feeBps as number);
                 }
 
                 if (requestToken === amountText + (tokenOut as TokenRef).address + tokenIn.address)
@@ -707,7 +716,7 @@ export default component Swap()
                         </div>
                         <div class="flex items-center justify-between">
                             <dt class="text-faint">{ t().swap.fee }</dt>
-                            <dd class="font-mono text-faint" data-ltr>0.30%</dd>
+                            <dd class="font-mono text-faint" data-ltr>{ fmtPercentBps(feeBps ?? 0) }</dd>
                         </div>
                     </dl>
                 </Show>
