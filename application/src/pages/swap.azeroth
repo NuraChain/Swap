@@ -197,9 +197,18 @@ export default component Swap()
         })();
     }
 
+    // Case-insensitively, because the two sides of this comparison come from
+    // different places: the token list is served lowercased out of the indexer's
+    // db, while contracts.wnura keeps whatever case the deployment artifact was
+    // written in. Compared literally, WNURA never equalled WNURA - so picking
+    // WNURA and NURA looked like a pair with no pool, and offered to approve the
+    // router for a trade that is a withdraw.
+    const sameToken = (left: string, right: string): boolean =>
+        left.toLowerCase() === right.toLowerCase();
+
     derived isWrapPair = tokenOut !== null
-        && ((isNative(tokenIn) && hopAddress(tokenOut as TokenRef) === wnuraAddress() && !isNative(tokenOut as TokenRef))
-            || (isNative(tokenOut as TokenRef) && hopAddress(tokenIn) === wnuraAddress() && !isNative(tokenIn)));
+        && ((isNative(tokenIn) && sameToken(hopAddress(tokenOut as TokenRef), wnuraAddress()) && !isNative(tokenOut as TokenRef))
+            || (isNative(tokenOut as TokenRef) && sameToken(hopAddress(tokenIn), wnuraAddress()) && !isNative(tokenIn)));
 
     derived balanceIn = isNative(tokenIn)
         ? nativeBalance()
