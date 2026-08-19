@@ -55,7 +55,7 @@ export const en = {
         featureSwapTitle: 'Swaps without an order book',
         featureSwapBody: 'Prices come from the constant-product formula over pooled reserves. Quotes update as the pool moves, and your slippage limit is enforced by the contract, not by trust.',
         featureEarnTitle: 'Provide liquidity, earn the fee',
-        featureEarnBody: 'Every trade pays 0.30% to its pool. Deposit two tokens, receive LP tokens, and your share of every trade accrues to your position until you withdraw.',
+        featureEarnBody: 'Every trade pays a fee to its pool. Deposit two tokens, receive LP tokens, and your share of every trade accrues to your position until you withdraw.',
         featureCustodyTitle: 'Self-custody, end to end',
         featureCustodyBody: 'The exchange is a set of audited immutable contracts. This site is a window onto them - it never holds funds, keys, or sessions.',
         howTitle: 'How a swap settles',

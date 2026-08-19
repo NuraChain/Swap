@@ -53,7 +53,7 @@ export const es: Dict = {
         featureSwapTitle: 'Intercambios sin libro de órdenes',
         featureSwapBody: 'Los precios salen de la fórmula de producto constante sobre las reservas del pool. Las cotizaciones se actualizan según se mueve el pool y tu límite de deslizamiento lo impone el contrato, no la confianza.',
         featureEarnTitle: 'Aporta liquidez, gana la comisión',
-        featureEarnBody: 'Cada operación paga un 0,30 % a su pool. Deposita dos tokens, recibe tokens LP y tu parte de cada operación se acumula en tu posición hasta que retires.',
+        featureEarnBody: 'Cada operación paga una comisión a su pool. Deposita dos tokens, recibe tokens LP y tu parte de cada operación se acumula en tu posición hasta que retires.',
         featureCustodyTitle: 'Autocustodia, de principio a fin',
         featureCustodyBody: 'El exchange es un conjunto de contratos auditados e inmutables. Este sitio es solo una ventana a ellos: nunca guarda fondos, claves ni sesiones.',
         howTitle: 'Cómo se liquida un intercambio',

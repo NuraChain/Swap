@@ -76,14 +76,17 @@ export function volumeUsd(
     return (usd0 + usd1) / 2n;
 }
 
-// Fee APR in basis points: annualized 0.3% of 24h volume over TVL.
-export function feeAprBps(volume24hUsd: bigint, tvlUsd: bigint): number
+// Fee APR in basis points: the pool's own fee on 24h volume, annualized over
+// TVL. The fee is the factory's live swapFee, not a constant - retuning it on
+// chain moves every pool's APR, and an APR computed from a fee nobody charges is
+// a number that lies in the direction that flatters us.
+export function feeAprBps(volume24hUsd: bigint, tvlUsd: bigint, swapFeeBps: number): number
 {
     if (tvlUsd <= 0n)
     {
         return 0;
     }
-    return Number((volume24hUsd * 3n * 365n * 10_000n) / (1000n * tvlUsd));
+    return Number((volume24hUsd * BigInt(swapFeeBps) * 365n) / tvlUsd);
 }
 
 export function toUsdNumber(valueWad: bigint): number

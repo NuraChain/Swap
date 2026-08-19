@@ -7,7 +7,7 @@ import type { PageRenderer, PageRoute } from '@azerothjs/kit';
 import { createLogger, teeSink, terminalSink } from '@azerothjs/logger';
 import { fileSink } from '@azerothjs/logger/node';
 import { loadDeploymentIfPresent } from '@nuraswap/shared/deployments';
-import { createPublicClient, http } from 'viem';
+import { createPublicClient, http, parseAbi } from 'viem';
 
 import { manifestOf } from '@azerothjs/http/api';
 
@@ -72,6 +72,42 @@ const tokens = await Promise.all(deployment.tokens.map(async (listed) =>
 }));
 const active = { ...deployment, tokens };
 
+// The swap fee lives in the factory (uint32 basis points, retunable by
+// feeToSetter without redeploying anything), so it is read, never assumed - the
+// fee APR on every pool and the fee printed on the swap card both come from this
+// number. Read once at boot: retuning it is a governance action, not a market
+// move, and a restart is a fair price for picking up the new one.
+// A public RPC drops a call now and then, and one dropped call is no reason to
+// refuse to boot - but a guessed fee is worse than no server, so it retries and
+// then gives up loudly rather than inventing a number.
+const factoryFee = parseAbi(['function swapFee() view returns (uint32)']);
+
+async function readSwapFee(): Promise<number>
+{
+    for (let attempt = 1; attempt <= 3; attempt++)
+    {
+        try
+        {
+            return await reader.readContract({
+                address: active.contracts.factory as `0x${ string }`,
+                abi: factoryFee,
+                functionName: 'swapFee'
+            });
+        }
+        catch (error)
+        {
+            log.warn('factory swapFee unreadable - retrying', { attempt, error: String(error).split('\n')[0] });
+            await new Promise<void>((resolve) => { setTimeout(resolve, attempt * 1000); });
+        }
+    }
+    log.error('factory swapFee unreadable after 3 tries - refusing to serve a fee nobody charges', {
+        factory: active.contracts.factory
+    });
+    process.exit(1);
+}
+
+const swapFeeBps = await readSwapFee();
+
 const dataDir = fileURLToPath(new URL(`${ config.dataDir }/`, new URL('..', import.meta.url)));
 mkdirSync(dataDir, { recursive: true });
 const db = new IndexerDb(`${ dataDir }${ config.chainId }.db`);
@@ -100,7 +136,7 @@ const ssr = isProduction
     ? await import(pathToFileURL(config.ssrEntry).href) as { routes: PageRoute[]; renderPage: PageRenderer }
     : undefined;
 
-const api = createApi({ db, deployment: active, status: indexer.status });
+const api = createApi({ db, deployment: active, swapFeeBps, status: indexer.status });
 
 const app = buildApp({
     dev: !isProduction,

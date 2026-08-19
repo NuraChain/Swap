@@ -22,6 +22,9 @@ export type TokenWithPrice = Infer<typeof tokenWithPrice>;
 export const stats = object({
     chainId: number({ int: true }),
     pairCount: number({ int: true }),
+    // The factory's swapFee, in bps. On the wire because the fee is the chain's
+    // to decide and the client would otherwise print a number of its own.
+    swapFeeBps: number({ int: true }),
     tvlUsd: number(),
     volume24hUsd: number(),
     indexedBlock: number({ int: true }),

@@ -53,7 +53,7 @@ export const fr: Dict = {
         featureSwapTitle: 'Des échanges sans carnet d’ordres',
         featureSwapBody: 'Les prix découlent de la formule du produit constant appliquée aux réserves du pool. La cotation suit les mouvements du pool, et votre limite de slippage est imposée par le contrat, pas par la confiance.',
         featureEarnTitle: 'Fournissez de la liquidité, touchez les frais',
-        featureEarnBody: 'Chaque transaction verse 0,30 % à son pool. Déposez deux jetons, recevez des jetons LP, et votre part de chaque transaction s’accumule sur votre position jusqu’au retrait.',
+        featureEarnBody: 'Chaque transaction verse une commission à son pool. Déposez deux jetons, recevez des jetons LP, et votre part de chaque transaction s’accumule sur votre position jusqu’au retrait.',
         featureCustodyTitle: 'Auto-conservation, de bout en bout',
         featureCustodyBody: 'La plateforme est un ensemble de contrats audités et immuables. Ce site n’en est qu’une fenêtre : il ne détient jamais de fonds, de clés ni de sessions.',
         howTitle: 'Comment un échange se règle',
