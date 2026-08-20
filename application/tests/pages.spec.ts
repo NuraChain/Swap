@@ -118,6 +118,15 @@ async function until(ready: () => boolean, budgetMs = 15_000): Promise<void>
     throw new Error('the page never reached the expected state');
 }
 
+/** Reactive writes land on the next macrotask; assertions have to wait for them. */
+function settled(): Promise<void>
+{
+    return new Promise((resolve) =>
+    {
+        setTimeout(resolve, 0);
+    });
+}
+
 beforeEach(() =>
 {
     for (const call of Object.values(market))
@@ -168,6 +177,57 @@ describe('the app shell', () =>
         const { container } = renderTest(() => App({ url: '/' }));
         expect(document.documentElement.dir).toBe('rtl');
         expect(container.textContent).toContain('مبادله');
+    });
+
+    it('tickers the native price in the header, read off the wrapped token', async () =>
+    {
+        // NURA is gas and cannot sit in a pool. WNURA is the same value in the
+        // shape a pool can hold, so the wrapped row IS the native price - the
+        // fixture prices it at $850.
+        const { container } = renderTest(() => App({ url: '/' }));
+        await until(() => container.querySelector('[data-testid="nura-price"]') !== null);
+        const ticker = container.querySelector('[data-testid="nura-price"]');
+        expect(ticker?.textContent).toContain('NURA');
+        expect(ticker?.textContent).toContain('$850');
+    });
+
+    it('prices at the precision of a price, not of money', async () =>
+    {
+        // fmtUsd's two-decimal money rule would print this as $0.00. A native
+        // token quoted against a bridged asset lands exactly here, and a header
+        // that says a coin is worth nothing is worse than a header with no
+        // ticker in it.
+        market.tokens.mockResolvedValue([{ ...TOKENS[0], priceUsd: 0.00026146 }, TOKENS[1]]);
+        const { container } = renderTest(() => App({ url: '/' }));
+        await until(() => container.querySelector('[data-testid="nura-price"]') !== null);
+        expect(container.querySelector('[data-testid="nura-price"]')?.textContent).toContain('$0.00026146');
+    });
+
+    it('localizes the ticker, digits and currency word alike', async () =>
+    {
+        setLang('fa');
+        const { container } = renderTest(() => App({ url: '/' }));
+        await until(() => container.querySelector('[data-testid="nura-price"]') !== null);
+        const ticker = container.querySelector('[data-testid="nura-price"]');
+        // Persian numerals and the currency word APPENDED rather than a leading
+        // '$'. Deliberately NOT an LTR island: that would put 'دلار' on the wrong
+        // side of the number, and every other USD figure in the app - the landing
+        // stats, the portfolio total - prints in the paragraph's own direction.
+        expect(ticker?.textContent).toContain('۸۵۰');
+        expect(ticker?.textContent).toContain('دلار');
+        expect(ticker?.querySelector('[data-ltr]')).toBeNull();
+    });
+
+    it('shows no ticker at all rather than a zero when the price is unknown', async () =>
+    {
+        for (const call of Object.values(market))
+        {
+            call.mockImplementation(() => Promise.reject(new Error('api unreachable')));
+        }
+        const { container } = renderTest(() => App({ url: '/' }));
+        await until(() => container.querySelector('header') !== null);
+        await settled();
+        expect(container.querySelector('[data-testid="nura-price"]')).toBeNull();
     });
 });
 

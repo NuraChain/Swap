@@ -4,7 +4,7 @@
 import { formatTokenAmount } from '@nuraswap/shared/digits';
 import { MAX_TICK, nearestUsableTick, tickSpacingForFee, tickToPriceWad } from '@nuraswap/shared/v3-math';
 
-import { fmtNumber, langInfo } from './i18n.ts';
+import { fmtNumber, langInfo, markUsd } from './i18n.ts';
 
 export function shortAddress(address: string): string
 {
@@ -65,6 +65,16 @@ export function fmtUsdPrice(price: number): string
 {
     const fraction = price >= 1 ? 4 : price >= 0.01 ? 6 : 8;
     return fmtNumber(price, fraction);
+}
+
+// The same price wearing its currency mark, for anywhere it stands ALONE - a
+// header ticker, a tooltip - rather than under a column header that already says
+// USD. fmtUsd is the obvious call here and the wrong one: its two-decimal money
+// rule prints a sub-cent token as $0.00, which is the exact rounding fmtUsdPrice
+// exists to avoid.
+export function fmtUsdPriceLabel(price: number): string
+{
+    return markUsd(fmtUsdPrice(price));
 }
 
 export function fmtPercentBps(bps: number): string

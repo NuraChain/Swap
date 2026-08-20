@@ -148,9 +148,16 @@ export function fmtNumber(value: number, maxFractionDigits = 2): string
     }).format(value);
 }
 
-export function fmtUsd(value: number): string
+// Marks an already-formatted figure as USD: a leading '$', or the locale's
+// currency word appended where that reads better. Separate from fmtUsd because
+// a PRICE carries its own precision rule (format.ts) and only borrows the mark.
+export function markUsd(text: string): string
 {
-    const text = fmtNumber(value, value >= 1000 ? 0 : 2);
     const suffix = langInfo().usdSuffix;
     return suffix === null ? `$${ text }` : `${ text } ${ suffix }`;
+}
+
+export function fmtUsd(value: number): string
+{
+    return markUsd(fmtNumber(value, value >= 1000 ? 0 : 2));
 }
