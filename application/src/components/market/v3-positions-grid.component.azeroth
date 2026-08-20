@@ -1,0 +1,148 @@
+import { tickToPriceWad } from '@nuraswap/shared/v3-math';
+
+import type { TokenRef } from '../../api.ts';
+import { v3Addresses } from '../../lib/chain.ts';
+import type { Address } from '../../lib/chain.ts';
+import { fmtAmount, fmtPercentBps, shortAddress } from '../../lib/format.ts';
+import { t } from '../../lib/i18n.ts';
+import { loadPositionViews } from '../../lib/v3.ts';
+import type { PositionView, TokenLike } from '../../lib/v3.ts';
+import { account, txEpoch } from '../../lib/wallet/store.ts';
+
+import TokenIcon from './token-icon.component.azeroth';
+import Badge from '../ui/badge.component.azeroth';
+import Button from '../ui/button.component.azeroth';
+import EmptyState from '../ui/empty-state.component.azeroth';
+
+// The connected wallet's V3 positions. Unlike an LP token balance, a position is
+// an NFT with a range, so the card leads with the two things that decide whether
+// it is doing anything at all: the range, and whether the price is inside it.
+//
+// Every number here is read from the chain - the indexer knows nothing about V3 -
+// so the grid does its own loading and shows a skeleton-free empty state until
+// the reads land.
+
+export default component V3PositionsGrid(props: {
+    tokens: TokenRef[];
+    onManage: (view: PositionView) => void;
+})
+{
+    state views: PositionView[] = [];
+    state loading = false;
+    let generation = 0;
+
+    const tokenOf = (address: Address): TokenLike =>
+        props.tokens.find((token) => token.address.toLowerCase() === address.toLowerCase())
+            ?? { address, symbol: shortAddress(address), name: address, decimals: 18 };
+
+    effect (account(), txEpoch(), props.tokens)
+    {
+        const owner = account();
+        const v3 = v3Addresses();
+        if (owner === null || v3 === null)
+        {
+            views = [];
+            return;
+        }
+        // Only the newest load may write: the 5s wallet poll can put two in
+        // flight at once, and a slow earlier one would overwrite the fresh list
+        // with a stale copy of itself.
+        generation++;
+        const mine = generation;
+        loading = views.length === 0;
+        void loadPositionViews(v3, owner, tokenOf)
+            .then((found) =>
+            {
+                if (mine === generation)
+                {
+                    views = found;
+                    loading = false;
+                }
+            })
+            .catch(() =>
+            {
+                if (mine === generation)
+                {
+                    loading = false;
+                }
+            });
+    }
+
+    const priceLabel = (view: PositionView, tick: number): string =>
+        fmtAmount(tickToPriceWad(tick, view.ref0.decimals, view.ref1.decimals), 18);
+
+    <Show
+        when={ views.length > 0 }
+        fallback={
+            <div class="card mt-3">
+                <EmptyState title={ loading ? t().common.loading : t().v3.noPositions } />
+            </div>
+        }
+    >
+        <div class="mt-3 grid gap-4 md:grid-cols-2">
+            <For each={ views } key={ (view) => String(view.position.tokenId) } let={ view }>
+                <article class="card p-5">
+                    <div class="flex items-center justify-between gap-3">
+                        <span class="flex items-center gap-2">
+                            <span class="flex -space-x-2" data-ltr>
+                                <TokenIcon symbol={ view.ref0.symbol } address={ view.ref0.address } size={ 26 } />
+                                <TokenIcon symbol={ view.ref1.symbol } address={ view.ref1.address } size={ 26 } />
+                            </span>
+                            <span class="flex flex-col">
+                                <span class="text-sm font-medium" data-ltr>
+                                    { `${ view.ref0.symbol }/${ view.ref1.symbol }` }
+                                </span>
+                                <span class="text-[11px] text-faint" data-ltr>
+                                    { `#${ view.position.tokenId } · ${ fmtPercentBps(view.position.fee / 100) }` }
+                                </span>
+                            </span>
+                        </span>
+                        <Show
+                            when={ view.position.liquidity > 0n }
+                            fallback={ <Badge>{ t().v3.closed }</Badge> }
+                        >
+                            <Badge tone={ view.active ? 'rise' : 'fall' }>
+                                { view.active ? t().v3.inRange : t().v3.outOfRange }
+                            </Badge>
+                        </Show>
+                    </div>
+
+                    <dl class="mt-4 flex flex-col gap-1 text-xs">
+                        <div class="flex justify-between gap-3">
+                            <dt class="text-faint">{ t().v3.range }</dt>
+                            <dd class="font-mono text-end" data-ltr>
+                                { `${ priceLabel(view, view.position.tickLower) } - ${ priceLabel(view, view.position.tickUpper) }` }
+                            </dd>
+                        </div>
+                        <div class="flex justify-between">
+                            <dt class="text-faint">{ `${ t().liquidity.pooled } ${ view.ref0.symbol }` }</dt>
+                            <dd class="font-mono text-val">{ fmtAmount(view.amount0, view.ref0.decimals) }</dd>
+                        </div>
+                        <div class="flex justify-between">
+                            <dt class="text-faint">{ `${ t().liquidity.pooled } ${ view.ref1.symbol }` }</dt>
+                            <dd class="font-mono text-val">{ fmtAmount(view.amount1, view.ref1.decimals) }</dd>
+                        </div>
+                        <div class="flex justify-between">
+                            <dt class="text-faint">{ t().v3.unclaimedFees }</dt>
+                            <dd class="font-mono text-rise" data-ltr>
+                                { `${ fmtAmount(view.fees0, view.ref0.decimals) } ${ view.ref0.symbol } · ${ fmtAmount(view.fees1, view.ref1.decimals) } ${ view.ref1.symbol }` }
+                            </dd>
+                        </div>
+                    </dl>
+
+                    <div class="mt-4">
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            block
+                            testId={ `manage-${ view.position.tokenId }` }
+                            onClick={ () => props.onManage(view) }
+                        >
+                            { t().v3.manage }
+                        </Button>
+                    </div>
+                </article>
+            </For>
+        </div>
+    </Show>
+}

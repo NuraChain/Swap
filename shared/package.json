@@ -6,6 +6,7 @@
     "license": "MIT",
     "exports": {
         "./math": "./src/math.ts",
+        "./v3-math": "./src/v3-math.ts",
         "./digits": "./src/digits.ts",
         "./deployments": "./src/deployments.ts"
     },

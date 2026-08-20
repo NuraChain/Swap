@@ -1,0 +1,689 @@
+import { minOutForSlippage } from '@nuraswap/shared/math';
+import {
+    MAX_TICK,
+    MIN_TICK,
+    counterpartAmount,
+    getSqrtRatioAtTick,
+    nearestUsableTick,
+    priceWadFromSqrtX96,
+    priceWadToTick,
+    sqrtX96FromPriceWad,
+    tickSpacingForFee,
+    tickToPriceWad
+} from '@nuraswap/shared/v3-math';
+import { formatTokenAmount, parseTokenAmount } from '@nuraswap/shared/digits';
+
+import type { TokenRef } from '../../api.ts';
+import { ERC20_ABI, deployment, publicClient, v3Addresses } from '../../lib/chain.ts';
+import type { Address } from '../../lib/chain.ts';
+import { fmtAmount, fmtPercentBps } from '../../lib/format.ts';
+import { t } from '../../lib/i18n.ts';
+import { buildCreateAndMint, buildMint, enabledFeeTiers, poolsForPair, sortTokens } from '../../lib/v3.ts';
+import type { FeeTier, V3PoolState } from '../../lib/v3.ts';
+import { account, balances, nativeBalance, requiredWallet, sendTx, txEpoch } from '../../lib/wallet/store.ts';
+
+import AmountField from './amount-field.component.azeroth';
+import TokenSelect from './token-select.component.azeroth';
+import WalletModal from './wallet-modal.component.azeroth';
+import Badge from '../ui/badge.component.azeroth';
+import Button from '../ui/button.component.azeroth';
+import Modal from '../ui/modal.component.azeroth';
+
+// Mint a concentrated position: pick the pair, pick a fee tier, pick the price
+// range, deposit. Three things the V2 flow never had to ask, and each one
+// changes what the deposit even is.
+//
+// Prices are quoted ONE way throughout - token1 per token0, with token0 fixed by
+// address order, not by which picker the user touched first. Letting the display
+// flip with the pickers means the range typed into the fields and the range sent
+// to the pool are inverses of each other exactly half the time.
+
+const NATIVE: TokenRef = { address: 'nura', symbol: 'NURA', name: 'NURA', decimals: 18 };
+const MAX_UINT256 = (1n << 256n) - 1n;
+const SLIPPAGE_BPS = 100;
+/** A default range worth showing: roughly +-25% around the current price. */
+const DEFAULT_BAND_TICKS = 2300;
+
+export default component AddV3Liquidity(props: {
+    tokens: TokenRef[];
+    initialA?: TokenRef;
+    initialB?: TokenRef;
+    initialFee?: number;
+    onClose: () => void;
+})
+{
+    state tokenA: TokenRef | null = props.initialA ?? NATIVE;
+    state tokenB: TokenRef | null = props.initialB ?? null;
+    state fee: number = props.initialFee ?? 3000;
+    state tiers: FeeTier[] = [];
+    state pools: V3PoolState[] = [];
+    state amountAText = '';
+    state amountBText = '';
+    state minText = '';
+    state maxText = '';
+    state openingText = '';
+    state fullRange = false;
+    state lastEdited: 'a' | 'b' = 'a';
+    state allowanceA = 0n;
+    state allowanceB = 0n;
+    state pickerFor: 'a' | 'b' | null = null;
+    state confirming = false;
+    state busy = false;
+    state walletOpen = false;
+    /** Set once per pair+tier, so retyping a range is never overwritten. */
+    let rangeSeededFor = '';
+    /** The pair the loaded pool list belongs to; a refresh of the same pair keeps it. */
+    let poolsFor = '';
+
+    const isNative = (token: TokenRef | null): boolean => token?.address === 'nura';
+    const wnura = (): Address => (deployment()?.contracts.wnura ?? '0x') as Address;
+    const hop = (token: TokenRef): Address => (isNative(token) ? wnura() : token.address) as Address;
+
+    const balanceOf = (token: TokenRef | null): bigint =>
+        token === null
+            ? 0n
+            : isNative(token)
+                ? nativeBalance()
+                : balances()[token.address.toLowerCase()] ?? 0n;
+
+    // Which of the two picks is token0. The pool decides by address, so this is
+    // the mapping every amount, price and tick below is expressed in.
+    derived ordered = tokenA === null || tokenB === null
+        || hop(tokenA as TokenRef) === hop(tokenB as TokenRef)
+        ? null
+        : (() =>
+        {
+            const [first, second] = sortTokens(hop(tokenA as TokenRef), hop(tokenB as TokenRef));
+            const aIsToken0 = hop(tokenA as TokenRef).toLowerCase() === first.toLowerCase();
+            return {
+                token0: first,
+                token1: second,
+                aIsToken0,
+                ref0: (aIsToken0 ? tokenA : tokenB) as TokenRef,
+                ref1: (aIsToken0 ? tokenB : tokenA) as TokenRef
+            };
+        })();
+
+    mount
+    {
+        const v3 = v3Addresses();
+        if (v3 !== null)
+        {
+            void enabledFeeTiers(v3.factory).then((list) =>
+            {
+                tiers = list;
+                if (!list.some((tier) => tier.fee === fee) && list.length > 0)
+                {
+                    fee = list.find((tier) => tier.fee === 3000)?.fee ?? list[0].fee;
+                }
+            }).catch(() => undefined);
+        }
+    }
+
+    // Every pool this pair has, at every tier - the tier row has to say which
+    // tiers exist before one is chosen, not after.
+    //
+    // The list is emptied only when the PAIR changes, never on a refresh. Blanked
+    // every five seconds, `firstProvider` flickered true, and the modal flashed
+    // its create-the-pool banner and opening-price field at someone who was
+    // halfway through typing a range into an existing pool.
+    effect (tokenA, tokenB, txEpoch())
+    {
+        const v3 = v3Addresses();
+        const current = ordered;
+        if (v3 === null || current === null)
+        {
+            poolsFor = '';
+            pools = [];
+            return;
+        }
+        const key = `${ current.token0 }-${ current.token1 }`;
+        if (key !== poolsFor)
+        {
+            poolsFor = key;
+            pools = [];
+        }
+        void poolsForPair(v3.factory, current.token0, current.token1)
+            .then((found) =>
+            {
+                if (poolsFor === key)
+                {
+                    pools = found;
+                }
+            })
+            .catch(() => undefined);
+    }
+
+    derived pool = pools.find((entry) => entry.fee === fee) ?? null;
+    derived spacing = tiers.find((tier) => tier.fee === fee)?.tickSpacing ?? tickSpacingForFee(fee);
+    /** No pool at this tier: this deposit creates it and names its price. */
+    derived firstProvider = pool === null;
+
+    derived decimals0 = ordered?.ref0.decimals ?? 18;
+    derived decimals1 = ordered?.ref1.decimals ?? 18;
+
+    // The price the range is measured against: the live pool's, or the opening
+    // price a first provider types.
+    derived openingWad = parseTokenAmount(openingText, 18);
+    derived sqrtPrice = pool !== null
+        ? (pool as V3PoolState).sqrtPriceX96
+        : openingWad === null || (openingWad as bigint) <= 0n
+            ? 0n
+            : sqrtX96FromPriceWad(openingWad as bigint, decimals0, decimals1);
+
+    derived currentPriceWad = sqrtPrice <= 0n ? 0n : priceWadFromSqrtX96(sqrtPrice, decimals0, decimals1);
+
+    // A band around the live price. A blank pair of bounds is not a position,
+    // and full range - the only other obvious default - concentrates nothing and
+    // is rarely what someone opening this modal wants.
+    const seedRange = (): void =>
+    {
+        const live = pool;
+        if (live === null)
+        {
+            return;
+        }
+        const low = nearestUsableTick((live as V3PoolState).tick - DEFAULT_BAND_TICKS, spacing);
+        const high = nearestUsableTick((live as V3PoolState).tick + DEFAULT_BAND_TICKS, spacing);
+        batch
+        {
+            fullRange = false;
+            minText = formatTokenAmount(tickToPriceWad(low, decimals0, decimals1), 18, 8);
+            maxText = formatTokenAmount(tickToPriceWad(high, decimals0, decimals1), 18, 8);
+        }
+    };
+
+    // Seeded once per pair and tier: after that the bounds belong to whoever is
+    // typing them, and a pool refresh must not overwrite a half-typed range.
+    effect (pools, fee, tokenA, tokenB)
+    {
+        const current = ordered;
+        if (current === null || pool === null)
+        {
+            return;
+        }
+        const key = `${ current.token0 }-${ current.token1 }-${ fee }`;
+        if (rangeSeededFor === key)
+        {
+            return;
+        }
+        rangeSeededFor = key;
+        seedRange();
+    }
+
+    derived minWad = parseTokenAmount(minText, 18);
+    derived maxWad = parseTokenAmount(maxText, 18);
+
+    derived tickLower = fullRange
+        ? nearestUsableTick(MIN_TICK, spacing)
+        : minWad === null || (minWad as bigint) <= 0n
+            ? null
+            : nearestUsableTick(priceWadToTick(minWad as bigint, decimals0, decimals1), spacing);
+
+    derived tickUpper = fullRange
+        ? nearestUsableTick(MAX_TICK, spacing)
+        : maxWad === null || (maxWad as bigint) <= 0n
+            ? null
+            : nearestUsableTick(priceWadToTick(maxWad as bigint, decimals0, decimals1), spacing);
+
+    derived rangeValid = tickLower !== null && tickUpper !== null && (tickLower as number) < (tickUpper as number);
+
+    derived sqrtLower = tickLower === null ? 0n : getSqrtRatioAtTick(tickLower as number);
+    derived sqrtUpper = tickUpper === null ? 0n : getSqrtRatioAtTick(tickUpper as number);
+
+    // Outside its range a position is ONE token, and the pool will not take the
+    // other. Asking for it anyway would have the depositor approve and sign for a
+    // transfer that never happens.
+    derived needsSide = !rangeValid || sqrtPrice <= 0n
+        ? { zero: true, one: true }
+        : sqrtPrice <= sqrtLower
+            ? { zero: true, one: false }
+            : sqrtPrice >= sqrtUpper
+                ? { zero: false, one: true }
+                : { zero: true, one: true };
+
+    const aIsToken0 = (): boolean => ordered?.aIsToken0 ?? true;
+    derived needsA = aIsToken0() ? needsSide.zero : needsSide.one;
+    derived needsB = aIsToken0() ? needsSide.one : needsSide.zero;
+
+    derived parsedA = tokenA === null ? null : parseTokenAmount(amountAText, (tokenA as TokenRef).decimals);
+    derived parsedB = tokenB === null ? null : parseTokenAmount(amountBText, (tokenB as TokenRef).decimals);
+
+    // The counterpart amount, from the range rather than from a reserve ratio:
+    // how much of the other token a given deposit needs depends on where the
+    // bounds sit relative to the price, which is the whole point of V3.
+    effect (amountAText, amountBText, minText, maxText, fullRange, fee, pools, openingText, tokenA, tokenB)
+    {
+        if (!rangeValid || sqrtPrice <= 0n || ordered === null)
+        {
+            return;
+        }
+        if (!needsA && amountAText !== '')
+        {
+            amountAText = '';
+            return;
+        }
+        if (!needsB && amountBText !== '')
+        {
+            amountBText = '';
+            return;
+        }
+        if (!needsA || !needsB)
+        {
+            return;
+        }
+        const known = lastEdited === 'a' ? parsedA : parsedB;
+        if (known === null || (known as bigint) <= 0n)
+        {
+            return;
+        }
+        const knownIsToken0 = lastEdited === 'a' ? aIsToken0() : !aIsToken0();
+        const other = counterpartAmount(sqrtPrice, sqrtLower, sqrtUpper, {
+            side: knownIsToken0 ? 0 : 1,
+            amount: known as bigint
+        });
+        const otherRef = (lastEdited === 'a' ? tokenB : tokenA) as TokenRef;
+        const text = formatTokenAmount(other, otherRef.decimals, 8);
+        if (lastEdited === 'a')
+        {
+            amountBText = text;
+        }
+        else
+        {
+            amountAText = text;
+        }
+    }
+
+    const manager = (): Address => (v3Addresses()?.positionManager ?? '0x') as Address;
+
+    effect (tokenA, tokenB, account(), txEpoch())
+    {
+        allowanceA = MAX_UINT256;
+        allowanceB = MAX_UINT256;
+        const owner = account();
+        if (owner === null || v3Addresses() === null)
+        {
+            return;
+        }
+        for (const [token, assign] of [
+            [tokenA, (value: bigint) => { allowanceA = value; }],
+            [tokenB, (value: bigint) => { allowanceB = value; }]
+        ] as Array<[TokenRef | null, (value: bigint) => void]>)
+        {
+            if (token === null || isNative(token))
+            {
+                continue;
+            }
+            void publicClient().readContract({
+                address: token.address as Address,
+                abi: ERC20_ABI,
+                functionName: 'allowance',
+                args: [owner, manager()]
+            }).then((value) => assign(value as bigint)).catch(() => undefined);
+        }
+    }
+
+    derived needsApproveA = needsA && tokenA !== null && !isNative(tokenA)
+        && parsedA !== null && allowanceA < (parsedA as bigint);
+    derived needsApproveB = needsB && tokenB !== null && !isNative(tokenB)
+        && parsedB !== null && allowanceB < (parsedB as bigint);
+
+    derived insufficient = (parsedA !== null && (parsedA as bigint) > balanceOf(tokenA))
+        || (parsedB !== null && (parsedB as bigint) > balanceOf(tokenB));
+
+    derived hasAmount = (needsA && parsedA !== null && (parsedA as bigint) > 0n)
+        || (needsB && parsedB !== null && (parsedB as bigint) > 0n);
+
+    derived ready = ordered !== null
+        && rangeValid
+        && sqrtPrice > 0n
+        && hasAmount
+        && !insufficient;
+
+    const deadline = async (): Promise<bigint> =>
+    {
+        const reader = publicClient();
+        const block = await reader.getBlock({ blockTag: 'pending' }).catch(() => reader.getBlock());
+        return block.timestamp + 1200n;
+    };
+
+    const approveToken = async (token: TokenRef, amount: bigint): Promise<void> =>
+    {
+        busy = true;
+        await sendTx(
+            `${ t().swap.approve } ${ token.symbol }`,
+            () => requiredWallet().writeContract({
+                address: token.address as Address,
+                abi: ERC20_ABI,
+                functionName: 'approve',
+                args: [manager(), amount]
+            } as never)
+        );
+        busy = false;
+    };
+
+    const supply = async (): Promise<void> =>
+    {
+        const current = ordered;
+        const v3 = v3Addresses();
+        if (current === null || v3 === null || tickLower === null || tickUpper === null)
+        {
+            return;
+        }
+        const owner = account() as Address;
+        const amount0 = (current.aIsToken0 ? parsedA : parsedB) ?? 0n;
+        const amount1 = (current.aIsToken0 ? parsedB : parsedA) ?? 0n;
+        busy = true;
+        const when = await deadline();
+        // A first provider names the price, so nothing can slip out from under
+        // them and the minimums are the amounts themselves; on a live pool the
+        // price can move between signing and mining, and it is the MINIMUMS that
+        // decide whether the deposit lands or reverts.
+        const min0 = firstProvider ? amount0 : minOutForSlippage(amount0, SLIPPAGE_BPS);
+        const min1 = firstProvider ? amount1 : minOutForSlippage(amount1, SLIPPAGE_BPS);
+        const nativeValue = isNative(tokenA)
+            ? (parsedA ?? 0n)
+            : isNative(tokenB)
+                ? (parsedB ?? 0n)
+                : 0n;
+        const request = {
+            manager: v3.positionManager,
+            token0: current.token0,
+            token1: current.token1,
+            fee,
+            tickLower: tickLower as number,
+            tickUpper: tickUpper as number,
+            amount0Desired: amount0,
+            amount1Desired: amount1,
+            amount0Min: min0,
+            amount1Min: min1,
+            recipient: owner,
+            deadline: when,
+            nativeValue
+        };
+        const label = `${ t().liquidity.add }: ${ current.ref0.symbol }/${ current.ref1.symbol } ${ fmtPercentBps(fee / 100) }`;
+        const ok = await sendTx(
+            label,
+            () => requiredWallet().writeContract((firstProvider
+                ? buildCreateAndMint(request, sqrtPrice)
+                : buildMint(request)) as never)
+        );
+        busy = false;
+        if (ok)
+        {
+            props.onClose();
+        }
+    };
+
+    // A toggle, not a one-way door: someone who tries full range and changes
+    // their mind gets the seeded band back rather than two empty fields.
+    const toggleFullRange = (): void =>
+    {
+        if (fullRange)
+        {
+            seedRange();
+            fullRange = false;
+            return;
+        }
+        batch
+        {
+            fullRange = true;
+            minText = '';
+            maxText = '';
+        }
+    };
+
+    <Modal title={ t().v3.addTitle } onClose={ props.onClose }>
+        <div class="flex flex-col gap-3">
+            <div>
+                <span class="text-xs text-faint">{ t().v3.feeTier }</span>
+                <div class="mt-2 flex flex-wrap gap-2">
+                    <For each={ tiers } key={ (tier) => String(tier.fee) } let={ tier }>
+                        <button
+                            type="button"
+                            class={ fee === tier.fee ? 'btn-ice h-8 gap-1.5 px-3 text-xs' : 'btn-ghost h-8 gap-1.5 px-3 text-xs' }
+                            aria-pressed={ String(fee === tier.fee) }
+                            data-testid={ `add-tier-${ tier.fee }` }
+                            onClick={ () => { fee = tier.fee; } }
+                        >
+                            <span data-ltr>{ fmtPercentBps(tier.fee / 100) }</span>
+                            <Show when={ !pools.some((entry) => entry.fee === tier.fee) }>
+                                <Badge>{ t().v3.newPool }</Badge>
+                            </Show>
+                        </button>
+                    </For>
+                </div>
+            </div>
+
+            <Show when={ ordered !== null && firstProvider }>
+                <div class="rounded-xl border border-val/40 bg-val/8 p-3 text-xs leading-relaxed text-val">
+                    <p>{ t().v3.createPool }</p>
+                    <label class="mt-2 flex items-center gap-2">
+                        <span class="shrink-0">{ t().v3.openingPrice }</span>
+                        <input
+                            class="w-full min-w-0 rounded-md border border-line bg-panel px-2 py-1 font-mono text-ink outline-none focus:border-ice"
+                            value={ openingText }
+                            inputmode="decimal"
+                            placeholder="0"
+                            aria-label={ t().v3.openingPrice }
+                            data-testid="v3-opening"
+                            data-ltr
+                            onInput={ (event) => { openingText = (event.currentTarget as HTMLInputElement).value; } }
+                        />
+                    </label>
+                    <Show when={ ordered } let={ pair }>
+                        <p class="mt-1 opacity-80" data-ltr>{ `${ pair.ref1.symbol } / ${ pair.ref0.symbol }` }</p>
+                    </Show>
+                </div>
+            </Show>
+
+            <div class="rounded-xl border border-line bg-raised p-3.5">
+                <div class="flex items-center justify-between gap-2">
+                    <span class="text-xs text-faint">{ t().v3.range }</span>
+                    <button
+                        type="button"
+                        class={ fullRange ? 'btn-ice h-7 px-2.5 text-[11px]' : 'btn-ghost h-7 px-2.5 text-[11px]' }
+                        aria-pressed={ String(fullRange) }
+                        data-testid="v3-full-range"
+                        onClick={ toggleFullRange }
+                    >
+                        { t().v3.fullRange }
+                    </button>
+                </div>
+                <Show when={ ordered } let={ pair }>
+                    <p class="mt-1 text-[11px] text-faint" data-ltr>
+                        { `${ pair.ref1.symbol } / ${ pair.ref0.symbol }` }
+                    </p>
+                </Show>
+                <div class="mt-2 grid gap-2 sm:grid-cols-2">
+                    <label class="flex flex-col gap-1 text-[11px] text-faint">
+                        <span>{ t().v3.minPrice }</span>
+                        <input
+                            class="rounded-md border border-line bg-panel px-2 py-1.5 font-mono text-sm text-ink outline-none focus:border-ice"
+                            value={ fullRange ? '0' : minText }
+                            inputmode="decimal"
+                            placeholder="0"
+                            readonly={ fullRange }
+                            aria-label={ t().v3.minPrice }
+                            data-testid="v3-min"
+                            data-ltr
+                            onInput={ (event) => { minText = (event.currentTarget as HTMLInputElement).value; } }
+                        />
+                    </label>
+                    <label class="flex flex-col gap-1 text-[11px] text-faint">
+                        <span>{ t().v3.maxPrice }</span>
+                        <input
+                            class="rounded-md border border-line bg-panel px-2 py-1.5 font-mono text-sm text-ink outline-none focus:border-ice"
+                            value={ fullRange ? '∞' : maxText }
+                            inputmode="decimal"
+                            placeholder="0"
+                            readonly={ fullRange }
+                            aria-label={ t().v3.maxPrice }
+                            data-testid="v3-max"
+                            data-ltr
+                            onInput={ (event) => { maxText = (event.currentTarget as HTMLInputElement).value; } }
+                        />
+                    </label>
+                </div>
+                <Show when={ currentPriceWad > 0n }>
+                    <p class="mt-2 flex items-center justify-between text-[11px] text-faint">
+                        <span>{ t().v3.currentPrice }</span>
+                        <span class="font-mono text-val" data-ltr>{ fmtAmount(currentPriceWad, 18) }</span>
+                    </p>
+                </Show>
+                <Show when={ !rangeValid && !fullRange && minText !== '' && maxText !== '' }>
+                    <p class="mt-2 text-[11px] text-fall">{ t().v3.invalidRange }</p>
+                </Show>
+                <p class="mt-2 text-[11px] leading-relaxed text-faint">{ t().v3.rangeHint }</p>
+            </div>
+
+            <Show when={ needsA }>
+                <AmountField
+                    label={ t().liquidity.amountA }
+                    amount={ amountAText }
+                    onAmount={ (value) => { lastEdited = 'a'; amountAText = value; } }
+                    token={ tokenA }
+                    onPickToken={ () => { pickerFor = 'a'; } }
+                    balance={ balanceOf(tokenA) }
+                    onMax={ () =>
+                    {
+                        lastEdited = 'a';
+                        amountAText = tokenA === null ? '' : formatTokenAmount(balanceOf(tokenA), (tokenA as TokenRef).decimals);
+                    } }
+                    testId="v3-liq-a"
+                />
+            </Show>
+            <Show when={ needsB }>
+                <AmountField
+                    label={ t().liquidity.amountB }
+                    amount={ amountBText }
+                    onAmount={ (value) => { lastEdited = 'b'; amountBText = value; } }
+                    token={ tokenB }
+                    onPickToken={ () => { pickerFor = 'b'; } }
+                    balance={ balanceOf(tokenB) }
+                    onMax={ () =>
+                    {
+                        lastEdited = 'b';
+                        amountBText = tokenB === null ? '' : formatTokenAmount(balanceOf(tokenB), (tokenB as TokenRef).decimals);
+                    } }
+                    testId="v3-liq-b"
+                />
+            </Show>
+            <Show when={ !needsA || !needsB }>
+                <p class="text-center text-xs text-faint">{ t().v3.oneSided }</p>
+            </Show>
+
+            <Show
+                when={ !confirming }
+                fallback={
+                    <div class="flex flex-col gap-3">
+                        <dl class="rounded-xl border border-line bg-raised p-3.5 text-xs">
+                            <div class="flex justify-between py-0.5">
+                                <dt class="text-faint">{ t().v3.feeTier }</dt>
+                                <dd class="font-mono" data-ltr>{ fmtPercentBps(fee / 100) }</dd>
+                            </div>
+                            <div class="flex justify-between py-0.5">
+                                <dt class="text-faint">{ t().v3.range }</dt>
+                                <dd class="font-mono" data-ltr>
+                                    { fullRange
+                                        ? t().v3.fullRange
+                                        : `${ minText } - ${ maxText }` }
+                                </dd>
+                            </div>
+                            <Show when={ needsA }>
+                                <div class="flex justify-between py-0.5">
+                                    <dt class="text-faint">{ (tokenA as TokenRef | null)?.symbol }</dt>
+                                    <dd class="font-mono" data-ltr>{ amountAText }</dd>
+                                </div>
+                            </Show>
+                            <Show when={ needsB }>
+                                <div class="flex justify-between py-0.5">
+                                    <dt class="text-faint">{ (tokenB as TokenRef | null)?.symbol }</dt>
+                                    <dd class="font-mono" data-ltr>{ amountBText }</dd>
+                                </div>
+                            </Show>
+                        </dl>
+                        <div class="flex gap-2">
+                            <Button variant="ghost" block onClick={ () => { confirming = false; } }>
+                                { t().common.cancel }
+                            </Button>
+                            <Button block busy={ busy } testId="v3-supply" onClick={ () => void supply() }>
+                                { t().liquidity.confirmAdd }
+                            </Button>
+                        </div>
+                    </div>
+                }
+            >
+                <Show
+                    when={ account() !== null }
+                    fallback={
+                        <Button block size="lg" testId="v3-add-connect" onClick={ () => { walletOpen = true; } }>
+                            { t().common.connect }
+                        </Button>
+                    }
+                >
+                    <Show
+                        when={ needsApproveA }
+                        fallback={
+                            <Show
+                                when={ needsApproveB }
+                                fallback={
+                                    <Button
+                                        block
+                                        size="lg"
+                                        disabled={ !ready }
+                                        testId="v3-add-review"
+                                        onClick={ () => { confirming = true; } }
+                                    >
+                                        { insufficient ? t().swap.insufficient : t().liquidity.add }
+                                    </Button>
+                                }
+                            >
+                                <Button block size="lg" busy={ busy } onClick={ () => void approveToken(tokenB as TokenRef, parsedB as bigint) }>
+                                    { `${ t().swap.approve } ${ (tokenB as TokenRef).symbol }` }
+                                </Button>
+                            </Show>
+                        }
+                    >
+                        <Button block size="lg" busy={ busy } onClick={ () => void approveToken(tokenA as TokenRef, parsedA as bigint) }>
+                            { `${ t().swap.approve } ${ (tokenA as TokenRef).symbol }` }
+                        </Button>
+                    </Show>
+                </Show>
+            </Show>
+        </div>
+
+        <Show when={ walletOpen }>
+            <WalletModal onClose={ () => { walletOpen = false; } } />
+        </Show>
+
+        <Show when={ pickerFor !== null }>
+            <TokenSelect
+                tokens={ props.tokens }
+                exclude={ pickerFor === 'a' ? (tokenB as TokenRef | null)?.address : (tokenA as TokenRef | null)?.address }
+                onClose={ () => { pickerFor = null; } }
+                onSelect={ (token) =>
+                {
+                    batch
+                    {
+                        if (pickerFor === 'a')
+                        {
+                            tokenA = token;
+                        }
+                        else
+                        {
+                            tokenB = token;
+                        }
+                        // A new pair is a new price scale: bounds typed against
+                        // the old one would name a range on the wrong curve.
+                        minText = '';
+                        maxText = '';
+                        amountAText = '';
+                        amountBText = '';
+                        pickerFor = null;
+                    }
+                } }
+            />
+        </Show>
+    </Modal>
+}

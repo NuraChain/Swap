@@ -1,0 +1,62 @@
+import type { TierQuote } from '../../lib/v3.ts';
+import { fmtPercentBps } from '../../lib/format.ts';
+import { t } from '../../lib/i18n.ts';
+
+import Badge from '../ui/badge.component.azeroth';
+import Icon from '../ui/icon.component.azeroth';
+import Tooltip from '../ui/tooltip.component.azeroth';
+
+// V3 splits one pair across several pools, one per fee tier, and they do not
+// share a price. Auto takes whichever quotes best right now; pinning a tier is
+// for the trader who wants the deep pool even when a thin one prints a better
+// number this second.
+//
+// Fee tiers are parts per million on V3 (3000 = 0.3%), and fmtPercentBps speaks
+// basis points - hence the /100 on every label.
+
+const ACTIVE = 'btn-ice h-8 gap-1.5 px-3 text-xs';
+const IDLE = 'btn-ghost h-8 gap-1.5 px-3 text-xs';
+const DEAD = 'btn-ghost h-8 gap-1.5 px-3 text-xs opacity-45';
+
+export default component FeeTierSelect(props: {
+    tiers: TierQuote[];
+    value: number | null;
+    bestFee: number | null;
+    onSelect: (fee: number | null) => void;
+})
+{
+    <div class="mt-3">
+        <div class="flex items-center gap-1.5 text-xs text-faint">
+            <span>{ t().v3.feeTier }</span>
+            <Tooltip label={ t().v3.feeTierHint }>
+                <Icon name="triangle-alert" size={ 12 } class="text-faint" />
+            </Tooltip>
+        </div>
+        <div class="mt-2 flex flex-wrap gap-2">
+            <button
+                type="button"
+                class={ props.value === null ? ACTIVE : IDLE }
+                aria-pressed={ String(props.value === null) }
+                data-testid="tier-auto"
+                onClick={ () => props.onSelect(null) }
+            >
+                { t().v3.autoTier }
+            </button>
+            <For each={ props.tiers } key={ (tier) => String(tier.fee) } let={ tier }>
+                <button
+                    type="button"
+                    class={ props.value === tier.fee ? ACTIVE : tier.out === 0n ? DEAD : IDLE }
+                    aria-pressed={ String(props.value === tier.fee) }
+                    disabled={ tier.out === 0n }
+                    data-testid={ `tier-${ tier.fee }` }
+                    onClick={ () => props.onSelect(tier.fee) }
+                >
+                    <span data-ltr>{ fmtPercentBps(tier.fee / 100) }</span>
+                    <Show when={ tier.fee === props.bestFee && props.tiers.length > 1 }>
+                        <Badge tone="rise">{ t().v3.bestTier }</Badge>
+                    </Show>
+                </button>
+            </For>
+        </div>
+    </div>
+}
