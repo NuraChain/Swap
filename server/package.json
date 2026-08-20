@@ -10,7 +10,8 @@
         "dev": "azeroth dev",
         "check": "azeroth check",
         "test": "vitest run",
-        "start": "node src/main.ts"
+        "start": "node src/main.ts",
+        "coverage": "vitest run --coverage"
     },
     "dependencies": {
         "@azerothjs/http": "^2.0.0-beta.2",

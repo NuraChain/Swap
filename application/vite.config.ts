@@ -53,6 +53,16 @@ export default defineConfig({
     },
     test:
     {
-        environment: 'happy-dom'
+        environment: 'happy-dom',
+        coverage:
+        {
+            provider: 'v8',
+            // src/ only, and .azeroth components are measured through the same
+            // transform the app ships - the locales are data, not logic.
+            include: ['src/**/*.{ts,azeroth}'],
+            exclude: ['src/lib/locales/**', 'src/vite-env.d.ts', 'src/entry.server.ts'],
+            reporter: ['text-summary', 'json-summary', 'html'],
+            reportsDirectory: 'coverage'
+        }
     }
 });
