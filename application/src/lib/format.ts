@@ -2,6 +2,7 @@
 // for the UI; parsing user input lives in @nuraswap/shared/digits.
 
 import { formatTokenAmount } from '@nuraswap/shared/digits';
+import { MAX_TICK, nearestUsableTick, tickSpacingForFee, tickToPriceWad } from '@nuraswap/shared/v3-math';
 
 import { fmtNumber, langInfo } from './i18n.ts';
 
@@ -41,6 +42,29 @@ export function fmtAmount(raw: bigint, decimals: number): string
     }
     const fraction = value >= 10_000 ? 0 : value >= 1 ? 4 : 6;
     return fmtNumber(value, fraction);
+}
+
+// One bound of a V3 range, as a price. A full-range position sits on the tick
+// limits, and the upper limit prices out around 3.4e38 - fifty-one grouped
+// digits that walk straight out of whatever card they are printed in. The add
+// form already writes that bound as the infinity sign; the position views read
+// back the same character. The LOWER limit needs no such guard: its price
+// rounds to zero in wad on its own, and formats as the locale's zero digit.
+export function fmtTickPrice(tick: number, decimals0: number, decimals1: number, fee: number): string
+{
+    return tick >= nearestUsableTick(MAX_TICK, tickSpacingForFee(fee))
+        ? '∞'
+        : fmtAmount(tickToPriceWad(tick, decimals0, decimals1), 18);
+}
+
+// A token PRICE, at a precision that suits its magnitude. A fixed four decimals
+// prints a token worth $0.00026 as '$0.0003' - a 15% error, where the only digits
+// carrying information are the ones being rounded away. Amounts already scale
+// this way in fmtAmount; prices had been left at a constant.
+export function fmtUsdPrice(price: number): string
+{
+    const fraction = price >= 1 ? 4 : price >= 0.01 ? 6 : 8;
+    return fmtNumber(price, fraction);
 }
 
 export function fmtPercentBps(bps: number): string
