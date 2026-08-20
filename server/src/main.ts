@@ -1,7 +1,7 @@
 import { mkdirSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import { pipeline, requestId, securityHeaders, rateLimit, logRequests, loadConfig, num, oneOf, str, type WebHandler } from '@azerothjs/http';
+import { pipeline, requestId, securityHeaders, rateLimit, logRequests, loadConfig, flag, num, oneOf, str, withResponseHeaders, type WebHandler } from '@azerothjs/http';
 import { serve, handleShutdownSignals } from '@azerothjs/http/node';
 import type { PageRenderer, PageRoute } from '@azerothjs/kit';
 import { createLogger, teeSink, terminalSink } from '@azerothjs/logger';
@@ -32,7 +32,14 @@ const config = loadConfig({
     chainId: num('CHAIN_ID', { default: 1020 }),
     dataDir: str('DATA_DIR', { default: '../data' }),
     clientDir: str('CLIENT_DIR', { default: '../application/dist' }),
-    ssrEntry: str('SSR_ENTRY', { default: '../application/dist-server/entry.server.js' })
+    ssrEntry: str('SSR_ENTRY', { default: '../application/dist-server/entry.server.js' }),
+    // Whether a reverse proxy sits in front. It decides what the rate limiter
+    // counts: off, the peer address is the bucket, and behind a proxy that is
+    // the PROXY for every visitor - one shared budget an attacker exhausts for
+    // everybody. On, the forwarded address is trusted, which is only safe when
+    // something actually strips and rewrites it. Default off: a directly exposed
+    // server must not believe a header the client can forge.
+    trustProxy: flag('TRUST_PROXY', { default: false })
 });
 const isProduction = config.env === 'production';
 
@@ -97,7 +104,10 @@ async function readSwapFee(): Promise<number>
         catch (error)
         {
             log.warn('factory swapFee unreadable - retrying', { attempt, error: String(error).split('\n')[0] });
-            await new Promise<void>((resolve) => { setTimeout(resolve, attempt * 1000); });
+            await new Promise<void>((resolve) =>
+            {
+                setTimeout(resolve, attempt * 1000);
+            });
         }
     }
     log.error('factory swapFee unreadable after 3 tries - refusing to serve a fee nobody charges', {
@@ -166,17 +176,17 @@ const handler = pipeline(
     app,
     requestId(),
     securityHeaders(),
+    // withResponseHeaders, NOT response.headers.set: the kernel answers with a
+    // payload response whose headers view is a copy, so setting on it reads back
+    // inside this function and reaches nobody. Every response left here without
+    // a Content-Security-Policy - the one header this whole module exists for.
     ...(isProduction
         ? [(next: WebHandler): WebHandler => ({
             handle: async (request: Request): Promise<Response> =>
-            {
-                const response = await next.handle(request);
-                response.headers.set('content-security-policy', csp);
-                return response;
-            }
+                withResponseHeaders(await next.handle(request), { 'content-security-policy': csp })
         })]
         : []),
-    rateLimit({ limit: 2000, windowMs: 60_000 })
+    rateLimit({ limit: 2000, windowMs: 60_000, trustProxy: config.trustProxy })
 );
 
 const served = await serve(handler, { port: config.port });
