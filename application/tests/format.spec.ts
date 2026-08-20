@@ -5,7 +5,7 @@
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { addressGradient, fmtAmount, fmtPercentBps, fmtTime, shortAddress } from '../src/lib/format.ts';
+import { addressGradient, fmtAmount, fmtPercentBps, fmtTime, fmtUsdPrice, shortAddress } from '../src/lib/format.ts';
 import { setLang } from '../src/lib/i18n.ts';
 
 const WAD = 10n ** 18n;
@@ -60,6 +60,26 @@ describe('addressGradient', () =>
             expect(hue).toBeGreaterThanOrEqual(0);
             expect(hue).toBeLessThan(360);
         }
+    });
+});
+
+describe('fmtUsdPrice', () =>
+{
+    it('scales its precision to the size of the price', () =>
+    {
+        // A native token quoted against a bridged asset lands here, and four fixed
+        // decimals printed $0.00026146 as $0.0003 - off by 15%, with every digit
+        // that carried information rounded away.
+        expect(fmtUsdPrice(0.00026146)).toBe('0.00026146');
+        expect(fmtUsdPrice(0.0525)).toBe('0.0525');
+        expect(fmtUsdPrice(653.67)).toBe('653.67');
+        expect(fmtUsdPrice(1)).toBe('1');
+    });
+
+    it('still rounds, just not before the digits run out', () =>
+    {
+        expect(fmtUsdPrice(0.000000004)).toBe('0');
+        expect(fmtUsdPrice(1234.56789)).toBe('1,234.5679');
     });
 });
 
