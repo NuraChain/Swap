@@ -1,0 +1,59 @@
+import { onCleanup } from 'azerothjs';
+
+import { client } from '../../api.ts';
+import { fmtUsdPriceLabel } from '../../lib/format.ts';
+
+// The chain's own coin, priced, in the shell - so the number a trader checks
+// first is on every page without one of them being a market page.
+//
+// NURA is gas and cannot sit in a pool; WNURA is the same value in the shape a
+// pool can hold, so the wrapped price IS the native price. The portfolio reads
+// it the same way.
+//
+// A header ornament shows a number or it shows nothing: no skeleton, no dash. An
+// api half that is down, a WNURA the indexer cannot price yet, and a first paint
+// before the fetch lands are one state here, and it is the header without a
+// ticker in it.
+
+// The figure is deliberately NOT a data-ltr island. It carries a currency WORD
+// in fa/ar rather than a leading '$', and isolating it LTR puts that word on the
+// wrong side of the number; the landing stats and the portfolio total print
+// fmtUsd the same way, in the paragraph's own direction.
+
+const POLL_MS = 30_000;
+
+export default component NuraPrice(props: { block?: boolean })
+{
+    state priceUsd = 0;
+
+    const read = (): void =>
+    {
+        void client.market.tokens()
+            .then((tokens) =>
+            {
+                priceUsd = tokens.find((token) => token.symbol === 'WNURA')?.priceUsd ?? 0;
+            })
+            .catch(() => { priceUsd = 0; });
+    };
+
+    // The read lives in mount, not an effect: this renders inside the shell, and
+    // the shell is evaluated by the prerender. mount is browser-only.
+    mount
+    {
+        read();
+        const timer = setInterval(read, POLL_MS);
+        onCleanup(() => clearInterval(timer));
+    }
+
+    <Show when={ priceUsd > 0 }>
+        <span
+            class={ props.block
+                ? 'flex min-h-11 items-center justify-center gap-2 rounded-lg border border-line px-3 text-sm'
+                : 'flex items-center gap-2 rounded-lg border border-line px-2.5 py-1.5 text-sm' }
+            data-testid="nura-price"
+        >
+            <span class="text-faint">NURA</span>
+            <span class="font-mono text-val">{ fmtUsdPriceLabel(priceUsd) }</span>
+        </span>
+    </Show>
+}

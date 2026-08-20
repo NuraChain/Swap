@@ -5,6 +5,7 @@ import { currentTheme, toggleTheme } from '../../lib/theme.ts';
 
 import AddChainButton from '../market/add-chain-button.component.azeroth';
 import ConnectButton from '../market/connect-button.component.azeroth';
+import NuraPrice from '../market/nura-price.component.azeroth';
 import Flag from '../ui/flag.component.azeroth';
 import Icon from '../ui/icon.component.azeroth';
 import Shamseh from '../ui/shamseh.component.azeroth';
@@ -79,6 +80,9 @@ export default component Header()
                 <Link to="/portfolio" activeClass="active" class={ navLink }>{ t().nav.portfolio }</Link>
             </nav>
             <div class="ms-auto flex items-center gap-1.5">
+                <span class="hidden lg:block">
+                    <NuraPrice />
+                </span>
                 <button
                     type="button"
                     class="hidden items-center gap-2 rounded-lg border border-line px-2.5 py-1.5 text-sm text-faint hover:border-ice hover:text-ink sm:flex"
@@ -138,6 +142,9 @@ export default component Header()
                             >
                                 <Icon name="x" size={ 18 } />
                             </button>
+                        </div>
+                        <div class="mb-2">
+                            <NuraPrice block />
                         </div>
                         <Link
                             to="/swap"
