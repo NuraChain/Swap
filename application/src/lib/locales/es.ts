@@ -70,6 +70,7 @@ export const es: Dict = {
     {
         tagline: 'Un creador de mercado automatizado y abierto. Tus claves, tus operaciones.',
         product: 'Producto',
+        community: 'Comunidad',
         rights: 'Nura Swap. Los contratos son inmutables; este sitio es una ventana a ellos.'
     },
     wallet:

@@ -3,12 +3,25 @@ import { Link } from 'azerothjs';
 import { t } from '../../lib/i18n.ts';
 
 import AddChainButton from '../market/add-chain-button.component.azeroth';
+import Icon from '../ui/icon.component.azeroth';
 import Shamseh from '../ui/shamseh.component.azeroth';
+
+// Where the PROJECT lives, which is why these are hardcoded: they belong to Nura
+// Swap itself, not to whichever chain a deployment points at. The same accounts
+// the explorer lists, so one set cannot drift from the other - only the GitHub
+// repository differs. Not ReadonlyArray: `<For each>` takes a mutable array.
+const SOCIALS: Array<{ name: string; href: string; icon: string }> = [
+    { name: 'X', href: 'https://x.com/nurachainnet', icon: 'social-x' },
+    { name: 'GitHub', href: 'https://github.com/NuraChain/Swap', icon: 'social-github' },
+    { name: 'Discord', href: 'https://discord.gg/8BMAXTdXQg', icon: 'social-discord' },
+    { name: 'Telegram', href: 'https://t.me/nurachain', icon: 'social-telegram' },
+    { name: 'Instagram', href: 'https://www.instagram.com/nura.chain/', icon: 'social-instagram' }
+];
 
 export default component Footer()
 {
     <footer class="mt-auto border-t border-line bg-panel">
-        <div class="mx-auto grid max-w-6xl gap-10 px-4 py-12 sm:grid-cols-[1fr_auto] sm:gap-16">
+        <div class="mx-auto grid max-w-6xl gap-10 px-4 py-12 sm:grid-cols-[1fr_auto_auto] sm:gap-16">
             <div class="max-w-xs">
                 <span class="flex items-center gap-2.5">
                     <Shamseh size={ 24 } class="text-ice" />
@@ -25,6 +38,27 @@ export default component Footer()
                     <li><Link to="/swap" class="text-faint hover:text-ice">{ t().nav.swap }</Link></li>
                     <li><Link to="/liquidity" class="text-faint hover:text-ice">{ t().nav.liquidity }</Link></li>
                     <li><Link to="/portfolio" class="text-faint hover:text-ice">{ t().nav.portfolio }</Link></li>
+                </ul>
+            </nav>
+            {/* Named in text, not by logo alone: a mark nobody recognises is a
+                dead link, and the name gives the anchor its accessible name. The
+                names are Latin proper nouns, so they stay LTR in both directions. */}
+            <nav aria-label={ t().footer.community }>
+                <h2 class="eyebrow">{ t().footer.community }</h2>
+                <ul class="mt-4 flex flex-col gap-2.5 text-sm">
+                    <For each={ SOCIALS } key={ (link) => link.name } let={ link }>
+                        <li>
+                            <a
+                                href={ link.href }
+                                target="_blank"
+                                rel="noreferrer"
+                                class="flex items-center gap-2.5 text-faint hover:text-ice"
+                            >
+                                <Icon name={ link.icon } size={ 16 } class="shrink-0" />
+                                <span data-ltr>{ link.name }</span>
+                            </a>
+                        </li>
+                    </For>
                 </ul>
             </nav>
         </div>
