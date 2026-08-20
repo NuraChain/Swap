@@ -29,7 +29,7 @@ export default component LanguageModal(props: { onClose: () => void })
                     type="button"
                     class="flex min-h-11 items-center gap-2.5 rounded-lg px-2.5 text-start text-sm hover:bg-ink/6 aria-[current=true]:bg-panel aria-[current=true]:text-ice"
                     lang={ entry.code }
-                    aria-current={ entry.code === currentLang() }
+                    aria-current={ entry.code === currentLang() ? 'true' : undefined }
                     data-testid={ `lang-${ entry.code }` }
                     onClick={ () => choose(entry.code) }
                 >

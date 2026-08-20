@@ -84,7 +84,7 @@ export default component Header()
                     class="hidden items-center gap-2 rounded-lg border border-line px-2.5 py-1.5 text-sm text-faint hover:border-ice hover:text-ink sm:flex"
                     aria-label={ t().common.language }
                     aria-haspopup="dialog"
-                    aria-expanded={ langOpen }
+                    aria-expanded={ String(langOpen) }
                     data-testid="lang-open"
                     onClick={ () => { langOpen = true; } }
                 >
@@ -106,7 +106,7 @@ export default component Header()
                     type="button"
                     class="flex min-h-11 min-w-11 items-center justify-center rounded-lg text-ink sm:hidden"
                     aria-label={ t().nav.home }
-                    aria-expanded={ drawerOpen }
+                    aria-expanded={ String(drawerOpen) }
                     data-testid="drawer-open"
                     onClick={ () => { drawerOpen = true; } }
                 >
@@ -170,7 +170,7 @@ export default component Header()
                                     class="flex min-h-11 flex-1 items-center justify-center gap-2 rounded-lg border border-line px-3 text-sm text-faint hover:text-ink"
                                     aria-label={ t().common.language }
                                     aria-haspopup="dialog"
-                                    aria-expanded={ langOpen }
+                                    aria-expanded={ String(langOpen) }
                                     data-testid="lang-open-drawer"
                                     onClick={ () => { langOpen = true; } }
                                 >
