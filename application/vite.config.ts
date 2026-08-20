@@ -42,7 +42,7 @@ export default defineConfig({
         // Declared, not inherited: the README and the devtools bridge URL both name these
         // ports, so they belong in the config rather than in vite's defaults. Vite still
         // steps to the next free port if this one is taken.
-        port: 5173,
+        port: 4001,
         proxy:
         {
             // The server half of this app. `azeroth dev` runs both halves; this line is
