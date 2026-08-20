@@ -11,6 +11,13 @@
         "wnura": "0xf0a4eC07916feBa4432121Ed5969887D9b939cD0",
         "multicall3": "0xf58884FCf45d8F5Cc8A73c618D23EB27b732CA24"
     },
+    "v3": {
+        "factory": "0x88E8bB62E1654e695043FD5416D5E5415AFFd39b",
+        "swapRouter": "0x98b52fB699F1F91494b2937fECf109f8E09570Ae",
+        "quoter": "0x4b6f7C7d1337F6C6A624677688EA8035c3Ed6782",
+        "positionManager": "0xcf00BFaA3c292205D38d37f9086c4F3838339Fbb",
+        "tickLens": "0xbFdA09e0D89ABa201491F81dcD0993Fd223e66A0"
+    },
     "tokens": [
         {
             "address": "0xf0a4eC07916feBa4432121Ed5969887D9b939cD0",

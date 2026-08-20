@@ -88,6 +88,16 @@ export const deploymentInfo = object({
         wnura: string(),
         multicall3: string()
     }),
+    // UniswapV3, or null on a chain that carries the V2 factory alone. The app
+    // reads this to decide whether the protocol switch exists at all - a missing
+    // block hides the V3 half rather than pointing it at a zero address.
+    v3: object({
+        factory: string(),
+        swapRouter: string(),
+        quoter: string(),
+        positionManager: string(),
+        tickLens: string()
+    }).nullable(),
     tokens: array(tokenRef)
 });
 export type DeploymentInfo = Infer<typeof deploymentInfo>;

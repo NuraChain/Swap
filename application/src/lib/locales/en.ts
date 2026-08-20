@@ -160,6 +160,47 @@ export const en = {
         selectPair: 'Select the pair',
         unpriced: 'Unpriced'
     },
+    // UniswapV3: a second exchange living beside the V2 one, not a new view of
+    // it. Every string here names something V2 has no equivalent for - a fee
+    // tier, a price range, a position that can be out of range and idle.
+    v3:
+    {
+        protocol: 'Protocol',
+        v2Hint: 'Constant-product pools. One price across the whole curve, and every provider earns on all of it.',
+        v3Hint: 'Concentrated liquidity. Choose a fee tier and a price range: inside it your capital works harder, outside it stops earning.',
+        feeTier: 'Fee tier',
+        feeTierHint: 'V3 splits a pair across several pools, one per fee. Auto trades through whichever quotes best right now.',
+        autoTier: 'Auto',
+        bestTier: 'Best',
+        noPool: 'No V3 pool for this pair yet',
+        noPools: 'No V3 pools yet.',
+        chartFromV2: 'The chart follows the V2 pool for this pair - V3 trades are not indexed yet.',
+        chainReadNote: 'V3 figures are read straight from the chain: TVL is what each pool holds right now. 24h volume and fee APR come from the indexer, which does not follow V3 yet.',
+        positions: 'My V3 positions',
+        noPositions: 'No V3 positions. Add liquidity in a price range to start earning.',
+        addTitle: 'Add V3 liquidity',
+        range: 'Price range',
+        rangeHint: 'Your liquidity earns only while the pool price sits inside this range.',
+        minPrice: 'Min price',
+        maxPrice: 'Max price',
+        fullRange: 'Full range',
+        currentPrice: 'Current price',
+        invalidRange: 'The minimum price has to be below the maximum.',
+        oneSided: 'This range sits entirely on one side of the price, so the pool takes only one of the two tokens.',
+        newPool: 'New',
+        createPool: 'No pool at this fee tier yet. Your deposit creates it and sets the opening price - match the market, or arbitrage takes the difference.',
+        openingPrice: 'Opening price',
+        inRange: 'In range',
+        outOfRange: 'Out of range',
+        closed: 'Closed',
+        unclaimedFees: 'Unclaimed fees',
+        manage: 'Manage position',
+        collect: 'Collect fees',
+        increase: 'Add',
+        decrease: 'Withdraw',
+        decreaseCollects: 'Withdrawing also collects the fees this position has earned.',
+        wrappedOnly: 'V3 positions move wrapped tokens: deposit and withdraw WNURA, and wrap or unwrap on the swap page.'
+    },
     portfolio:
     {
         title: 'Portfolio',

@@ -38,13 +38,17 @@ export default component Portfolio()
 
     mount
     {
+        // The rejection is swallowed for the same reason App swallows its own
+        // warm-up: an api half that is down is a state this page already renders
+        // (empty tables, an empty registry), and letting it through would add an
+        // unhandled rejection to the console of every visitor during an outage.
         void (async () =>
         {
             await ensureDeployment();
             const served = await client.market.tokens();
             tokens = served;
             watchTokens(served.map((token) => token.address as Address));
-        })();
+        })().catch(() => undefined);
     }
 
     effect (txEpoch())

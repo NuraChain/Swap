@@ -192,6 +192,10 @@ export function createApi(state: ApiState)
                 explorerUrl: deployment.explorerUrl,
                 faucet: deployment.faucet,
                 contracts: deployment.contracts,
+                // `?? null` and not the raw field: the artifact may omit `v3`
+                // entirely, and an absent key would fail the wire schema where an
+                // explicit null reads as "this chain has no V3".
+                v3: deployment.v3 ?? null,
                 tokens: deployment.tokens.map((token) => ({ ...token, address: token.address.toLowerCase() }))
             }))
         }))
