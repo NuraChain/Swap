@@ -12,6 +12,7 @@ type Store = typeof import('../src/lib/wallet/store.ts');
 type Address = `0x${ string }`;
 
 const ALICE = '0x00000000000000000000000000000000000000c1' as Address;
+const BOB = '0x00000000000000000000000000000000000000c2' as Address;
 const WNURA = '0x00000000000000000000000000000000000000b0' as Address;
 const USDT = '0x00000000000000000000000000000000000000c0' as Address;
 
@@ -357,8 +358,28 @@ describe('account and chain events', () =>
         const { store } = await loadStore();
         const provider = fakeProvider();
         await store.connectInjected({ id: 'x', name: 'x', icon: null, provider });
-        provider.handlers.get('accountsChanged')?.(['0x00000000000000000000000000000000000000c2'] as never);
-        expect(store.account()).toBe('0x00000000000000000000000000000000000000c2');
+        provider.handlers.get('accountsChanged')?.([BOB] as never);
+        expect(store.account()).toBe(BOB);
+    });
+
+    // The account signal is what the UI reads; requiredWallet() is what SIGNS.
+    // They were updated in different places and only one of them followed the
+    // switch, so the address on screen changed while every swap, approve and
+    // deposit went on being sent from the account the user had switched AWAY
+    // from - the wallet either prompting from the wrong account or refusing the
+    // transaction outright.
+    it('rebinds the signing client to the account it switched to', async () =>
+    {
+        const { store } = await loadStore();
+        const provider = fakeProvider();
+        await store.connectInjected({ id: 'x', name: 'x', icon: null, provider });
+        expect(store.requiredWallet().account?.address?.toLowerCase()).toBe(ALICE.toLowerCase());
+
+        provider.handlers.get('accountsChanged')?.([BOB] as never);
+        await settled();
+
+        expect(store.account()).toBe(BOB);
+        expect(store.requiredWallet().account?.address?.toLowerCase()).toBe(BOB.toLowerCase());
     });
 
     it('disconnects when the wallet reports no accounts left', async () =>
