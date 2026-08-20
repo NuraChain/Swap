@@ -147,13 +147,7 @@ async function restoreSession(option: WalletOption): Promise<void>
         }
         const info = await ensureDeployment();
         const chainIdHex = await option.provider.request({ method: 'eth_chainId' }) as string;
-        activeProvider = option.provider;
-        walletClient = createWalletClient({
-            account: accounts[0] as Address,
-            chain: chainOf(info),
-            transport: custom(option.provider as never)
-        });
-        setAccount(accounts[0] as Address);
+        adoptAccount(option.provider, accounts[0] as Address, info);
         setChainId(Number(chainIdHex));
         setConnectedVia(option.name);
         bindProviderEvents(option.provider);
@@ -222,6 +216,22 @@ export async function refreshBalances(): Promise<void>
     }
 }
 
+// The signing client and the account signal move TOGETHER, through here. They
+// used to be assigned side by side at connect and at restore, and an
+// accountsChanged updated only the signal - so the header showed the account the
+// user had switched TO while every swap, approve and deposit went on being
+// signed as the one they had switched away FROM.
+function adoptAccount(provider: Eip1193Provider, address: Address, info: DeploymentInfo): void
+{
+    activeProvider = provider;
+    walletClient = createWalletClient({
+        account: address,
+        chain: chainOf(info),
+        transport: custom(provider as never)
+    });
+    setAccount(address);
+}
+
 function bindProviderEvents(provider: Eip1193Provider): void
 {
     provider.on?.('accountsChanged', (accounts: never) =>
@@ -230,12 +240,20 @@ function bindProviderEvents(provider: Eip1193Provider): void
         if (list.length === 0)
         {
             disconnect();
+            return;
+        }
+        const info = deployment();
+        if (info === null)
+        {
+            // No artifact yet means no chain to bind a client to. The signal
+            // still follows, so the UI never shows an account the wallet left.
+            setAccount(list[0] as Address);
         }
         else
         {
-            setAccount(list[0] as Address);
-            void refreshBalances();
+            adoptAccount(provider, list[0] as Address, info);
         }
+        void refreshBalances();
     });
     provider.on?.('chainChanged', (chainIdHex: never) =>
     {
@@ -296,13 +314,7 @@ export async function connectInjected(option: WalletOption): Promise<void>
         return;
     }
     const chainIdHex = await option.provider.request({ method: 'eth_chainId' }) as string;
-    activeProvider = option.provider;
-    walletClient = createWalletClient({
-        account: accounts[0] as Address,
-        chain: chainOf(info),
-        transport: custom(option.provider as never)
-    });
-    setAccount(accounts[0] as Address);
+    adoptAccount(option.provider, accounts[0] as Address, info);
     setChainId(Number(chainIdHex));
     setConnectedVia(option.name);
     writeSession(option.id);
