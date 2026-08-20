@@ -44,7 +44,7 @@ export default component ConnectButton()
                 type="button"
                 class="btn-ghost px-3 py-2 text-sm"
                 data-testid="wallet-button"
-                aria-expanded={ menuOpen }
+                aria-expanded={ String(menuOpen) }
                 onClick={ () => { menuOpen = true; } }
             >
                 <span
