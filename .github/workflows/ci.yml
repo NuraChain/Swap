@@ -1,17 +1,79 @@
-# The same gates you run locally, on every push: check, build, the three suites.
+# The same gates you run locally, on every push - split into named steps so a
+# red run says WHICH gate failed without opening the log.
+#
+# Ordering matters and is not incidental: the build has to run before the test
+# step, because `server/tests/csp.spec.ts` recomputes the inline theme script's
+# hash from the BUILT html and skips itself when there is nothing built. Run the
+# tests first and that gate silently passes on an empty check.
 name: CI
 on:
   push:
     branches: [main]
   pull_request:
 
+# A superseded push does not need to finish; the newest commit is the one that
+# matters.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   verify:
+    name: types, lint, build, tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+          cache: npm
       - run: npm ci
-      - run: npm run verify
+
+      - name: RTL lint (physical direction utilities)
+        run: npm run lint:rtl
+
+      - name: Types and lint (both halves)
+        run: npm run check
+
+      - name: Build (client, SSR bundle, prerender)
+        run: npm run build
+
+      - name: Shared suite - AMM maths, V3 ticks, digits, deployment artifacts
+        run: npm run test:shared
+
+      - name: Server suite - indexer, data layer, market API, security edge
+        run: npm run test:server
+
+      - name: Application suite - libraries, components, page journeys
+        run: npm run test:web
+
+  coverage:
+    name: coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+
+      # The application suite mounts pages that read the built client's assets
+      # nowhere, but the CSP gate in the server suite does - keep the ordering.
+      - name: Build
+        run: npm run build
+
+      - name: Measure
+        run: npm run coverage
+
+      - name: Publish the reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: |
+            shared/coverage
+            server/coverage
+            application/coverage
+          if-no-files-found: warn
+          retention-days: 14

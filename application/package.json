@@ -10,7 +10,8 @@
         "dev": "azeroth dev",
         "check": "azeroth check",
         "build": "azeroth build",
-        "test": "vitest run"
+        "test": "vitest run",
+        "coverage": "vitest run --coverage"
     },
     "dependencies": {
         "@azerothjs/http": "^2.0.0-beta.2",

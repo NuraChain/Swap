@@ -9,8 +9,9 @@ import { describe, expect, it } from 'vitest';
 
 describe('ssr safety', () =>
 {
-    // Generous timeout: the first import cold-compiles the entire component graph.
-    it('every page module imports cleanly without a DOM', { timeout: 30_000 }, async () =>
+    // Generous timeout: the first import cold-compiles the entire component
+    // graph - every page, every component, and viem underneath them.
+    it('every page module imports cleanly without a DOM', { timeout: 120_000 }, async () =>
     {
         await expect(import('../src/App.azeroth')).resolves.toBeDefined();
         await expect(import('../src/pages/landing.azeroth')).resolves.toBeDefined();
@@ -18,6 +19,7 @@ describe('ssr safety', () =>
         await expect(import('../src/pages/liquidity.azeroth')).resolves.toBeDefined();
         await expect(import('../src/pages/portfolio.azeroth')).resolves.toBeDefined();
         await expect(import('../src/lib/wallet/store.ts')).resolves.toBeDefined();
+        await expect(import('../src/lib/v3.ts')).resolves.toBeDefined();
         await expect(import('../src/lib/theme.ts')).resolves.toBeDefined();
         await expect(import('../src/lib/i18n.ts')).resolves.toBeDefined();
     });

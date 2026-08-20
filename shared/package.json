@@ -11,7 +11,8 @@
         "./deployments": "./src/deployments.ts"
     },
     "scripts": {
-        "test": "vitest run"
+        "test": "vitest run",
+        "coverage": "vitest run --coverage"
     },
     "devDependencies": {
         "vitest": "^4.1.10"

@@ -15,13 +15,18 @@
         "dev": "azeroth dev",
         "check": "azeroth check",
         "build": "azeroth build",
-        "test": "azeroth test && npm test --workspace shared",
         "start": "npm start --workspace server",
+        "test": "azeroth test && npm test --workspace shared",
+        "test:shared": "npm test --workspace shared",
+        "test:server": "npm test --workspace server",
+        "test:web": "npm test --workspace application",
         "test:app": "azeroth test",
+        "coverage": "npm run coverage --workspace shared && npm run coverage --workspace server && npm run coverage --workspace application",
         "lint:rtl": "node application/scripts/lint-rtl.mjs",
         "verify": "npm run lint:rtl && npm run check && npm run build && npm test"
     },
     "devDependencies": {
-        "@azerothjs/cli": "^2.0.0-beta.2"
+        "@azerothjs/cli": "^2.0.0-beta.2",
+        "@vitest/coverage-v8": "^4.1.11"
     }
 }
