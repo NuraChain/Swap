@@ -72,6 +72,7 @@ export const en = {
     {
         tagline: 'An open automated market maker. Your keys, your trades.',
         product: 'Product',
+        community: 'Community',
         rights: 'Nura Swap. The contracts are immutable; this site is one window onto them.'
     },
     wallet:

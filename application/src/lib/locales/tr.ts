@@ -70,6 +70,7 @@ export const tr: Dict = {
     {
         tagline: 'Açık bir otomatik piyasa yapıcı. Anahtarlarınız, işlemleriniz.',
         product: 'Ürün',
+        community: 'Topluluk',
         rights: 'Nura Swap. Sözleşmeler değiştirilemez; bu site onlara açılan bir penceredir.'
     },
     wallet:

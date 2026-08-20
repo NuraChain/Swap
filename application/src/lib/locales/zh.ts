@@ -70,6 +70,7 @@ export const zh: Dict = {
     {
         tagline: '一个开放的自动做市商。你的密钥，你的交易。',
         product: '产品',
+        community: '社区',
         rights: 'Nura Swap。合约不可更改；本站只是通往它们的一扇窗口。'
     },
     wallet:
