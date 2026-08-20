@@ -51,8 +51,13 @@ export async function readTokenMetadata(client: PublicClient, address: `0x${ str
         {
             const rawSymbol = await client.readContract({ address, abi: ERC20_BYTES32_ABI, functionName: 'symbol' });
             const rawName = await client.readContract({ address, abi: ERC20_BYTES32_ABI, functionName: 'name' });
-            symbol = trimBytes(Buffer.from(rawSymbol.slice(2), 'hex').toString('utf8'));
-            name = trimBytes(Buffer.from(rawName.slice(2), 'hex').toString('utf8'));
+            // A zero word decodes to the empty string, and blank is not more
+            // truthful than the placeholder - it renders as a nameless chip
+            // beside a real balance, which is the shape a phishing token wants.
+            // The browser's importer has always guarded this; the indexer did
+            // not, so a token could reach the served registry with no name.
+            symbol = trimBytes(Buffer.from(rawSymbol.slice(2), 'hex').toString('utf8')) || UNKNOWN_TOKEN.symbol;
+            name = trimBytes(Buffer.from(rawName.slice(2), 'hex').toString('utf8')) || UNKNOWN_TOKEN.name;
         }
         catch
         {
