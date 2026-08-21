@@ -48,8 +48,10 @@ cat > "$SERVICE_FILE" <<EOF
 [Unit]
 Description=Nura Swap
 Documentation=https://github.com/AzerothJS/AzerothJS
-# network-online, not network: the indexer dials the chain RPC on boot, and
-# `network.target` is up long before a route exists.
+# network-online, not plain network: the indexer dials the chain RPC on boot, and
+# network.target is up long before a route exists. No backticks in this heredoc -
+# it is unquoted so that NODE_PATH and SERVICE_PATH below expand, which means a
+# backtick would run as a command substitution while the unit is being written.
 After=network-online.target
 Wants=network-online.target
 
