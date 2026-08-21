@@ -1,3 +1,3 @@
 #!/bin/bash
 
-systemctl restart nuraswap
+systemctl restart nura-swap

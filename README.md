@@ -220,8 +220,8 @@ NODE_ENV=production CHAIN_ID=1020 DATA_DIR=/var/lib/nuraswap node src/main.ts
 `deploy/deploy.sh` ships a build to the box. `scripts/service-install.sh` is the
 same unit generated for wherever the repo actually sits - it resolves the node
 binary and the paths itself, then `scripts/service-{start,stop,restart,status}.sh`
-drive it. Both install one unit named `nuraswap`; the checked-in file is the
-hardened, fixed-path version, the generator is the portable one.
+drive it. The checked-in file is the hardened, fixed-path version and installs
+`nuraswap`; the generator is the portable one and installs `nura-swap`.
 
 Put a TLS reverse proxy in front (Caddy shown; nginx works the same way):
 

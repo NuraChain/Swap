@@ -1,3 +1,3 @@
 #!/bin/bash
 
-systemctl stop nuraswap
+systemctl stop nura-swap

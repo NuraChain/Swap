@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-SERVICE_NAME="nuraswap"
+SERVICE_NAME="nura-swap"
 
 SERVICE_DIR="${SERVICE_DIR:-/etc/systemd/system}"
 SERVICE_FILE="$SERVICE_DIR/${SERVICE_NAME}.service"

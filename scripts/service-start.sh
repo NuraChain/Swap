@@ -1,3 +1,3 @@
 #!/bin/bash
 
-systemctl start nuraswap
+systemctl start nura-swap

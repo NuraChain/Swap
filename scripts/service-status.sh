@@ -1,3 +1,3 @@
 #!/bin/bash
 
-systemctl status nuraswap --no-pager
+systemctl status nura-swap --no-pager
