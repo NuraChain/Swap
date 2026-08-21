@@ -26,6 +26,16 @@ SERVICE_PATH="$ROOT/server"
 # `.env` from the working directory, and CLIENT_DIR/SSR_ENTRY are written relative to it.
 SERVICE_PATH_APP="src/main.ts"
 
+# ProtectHome= hides /home and /root from the service. That is free hardening for a
+# deployment under /srv or /opt, and a service that cannot start anywhere else: the
+# WorkingDirectory below would vanish from the unit's own view and systemd fails it
+# with 200/CHDIR before it runs a line. This installer follows the repo wherever it
+# sits, so the directive is emitted only where it cannot bite.
+case "$ROOT" in
+    /home/*|/root/*|/home|/root) PROTECT_HOME="# ProtectHome is unset: this repo lives under $ROOT, which it would hide." ;;
+    *) PROTECT_HOME="ProtectHome=true" ;;
+esac
+
 SERVICE_DIR="${SERVICE_DIR:-/etc/systemd/system}"
 SERVICE_FILE="$SERVICE_DIR/${SERVICE_NAME}.service"
 
@@ -80,7 +90,7 @@ StandardError=file:$SERVICE_PATH/logs/service_error.log
 # database. Use the checked-in unit for the hardened, fixed-path deployment.
 NoNewPrivileges=true
 PrivateTmp=true
-ProtectHome=true
+$PROTECT_HOME
 
 LimitNOFILE=1048576
 
