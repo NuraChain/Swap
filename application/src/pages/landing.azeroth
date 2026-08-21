@@ -46,7 +46,7 @@ export default component Landing()
 
         <Show when={ stats } let={ live }>
             <section class="border-y border-line bg-panel/70" aria-label={ t().landing.liveTitle }>
-                <div class="mx-auto grid max-w-6xl grid-cols-1 divide-y divide-line px-4 sm:grid-cols-3 sm:divide-x sm:divide-y-0 rtl:sm:divide-x-reverse">
+                <div class="mx-auto grid max-w-6xl grid-cols-1 divide-y divide-line px-4 sm:grid-cols-3 sm:divide-x sm:divide-y-0">
                     <div class="py-6 sm:pe-8">
                         <div class="eyebrow">{ t().landing.statTvl }</div>
                         <div class="mt-2 font-mono text-3xl tracking-tight text-val">{ fmtUsd(live.tvlUsd) }</div>

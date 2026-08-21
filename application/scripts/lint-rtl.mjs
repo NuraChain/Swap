@@ -5,8 +5,13 @@
 // Allowed escapes:
 // - `rtl:` variants (an explicit, considered override)
 // - `-translate-x-1/2` centering (symmetric, direction-free)
-// - `space-x`/`divide-x` WITH a matching rtl:*-reverse on the same class list
-//   or inside a data-ltr island (checked coarsely per line)
+//
+// `space-x`/`divide-x` are NOT banned: Tailwind v4 builds them out of
+// margin-inline-* and border-inline-*, so they already mirror. Pairing one with
+// an `rtl:*-reverse` - the v3 idiom, when they were physical left/right - is the
+// finding instead: it moves the gap or the rule onto the wrong side, hanging one
+// off the outer edge and leaving the last boundary bare. `*-reverse` on its own
+// is still right for `flex-row-reverse`, where DOM order really is reversed.
 
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -47,6 +52,11 @@ for (const file of files)
     const lines = readFileSync(file, 'utf8').split('\n');
     lines.forEach((line, index) =>
     {
+        // Checked BEFORE the rtl: escape below, because this finding IS an rtl: variant.
+        if (/\b(?:[a-z]+:)*rtl:(?:[a-z]+:)*(?:space-x|divide-x)-reverse\b/.test(line))
+        {
+            findings.push(`${ file.replace(ROOT, 'src') }:${ index + 1 }  rtl:*-reverse on space-x/divide-x - they are already logical, drop it`);
+        }
         if (line.includes('rtl:'))
         {
             return; // explicit RTL handling on this line - considered
@@ -58,12 +68,6 @@ for (const file of files)
             {
                 findings.push(`${ file.replace(ROOT, 'src') }:${ index + 1 }  ${ match[0] }`);
             }
-        }
-        if (/\b(?:-)?space-x-\d|\bdivide-x\b/.test(line)
-            && !/space-x-reverse|divide-x-reverse/.test(line)
-            && !line.includes('data-ltr'))
-        {
-            findings.push(`${ file.replace(ROOT, 'src') }:${ index + 1 }  space-x/divide-x without rtl reverse or data-ltr`);
         }
     });
 }
