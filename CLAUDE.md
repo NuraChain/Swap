@@ -105,8 +105,9 @@ Target viewports for review: **1440×900**, **1024×768**, **390×844**.
 
 Ten languages; `fa` and `ar` are RTL. **`npm run lint:rtl` runs in CI and rejects
 physical direction utilities** — `ml-*`, `pr-*`, `left-*`, `text-right`,
-`rounded-l-*`, `border-r-*`, and `space-x`/`divide-x` without an `rtl:*-reverse`
-or a `data-ltr` island.
+`rounded-l-*`, `border-r-*`, and an `rtl:*-reverse` bolted onto `space-x`/
+`divide-x`: Tailwind v4 builds those from `margin-inline-*`/`border-inline-*`, so
+they already mirror and the reverse puts the gap or rule on the wrong side.
 
 Use logical utilities: `ms/me`, `ps/pe`, `start/end`, `text-start`/`text-end`,
 `border-s/e`, `rounded-s/e`.

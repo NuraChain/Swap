@@ -23,15 +23,22 @@ left-*  right-*  -left-*  -right-*
 text-left  text-right
 rounded-l-*  rounded-r-*  rounded-t[lr]-*  rounded-b[lr]-*
 border-l-*  border-r-*
-space-x-*  divide-x   (unless paired with an rtl:*-reverse or on a data-ltr line)
+rtl:space-x-reverse  rtl:divide-x-reverse   (see below)
 ```
 
-Three escapes are allowed, and only these:
+Two escapes are allowed, and only these:
 
 1. a line containing an explicit `rtl:` variant - a considered override;
-2. `-translate-x-1/2` centring, which is symmetric;
-3. `space-x`/`divide-x` **with** a matching `rtl:space-x-reverse` on the same
-   class list, or inside a `data-ltr` island.
+2. `-translate-x-1/2` centring, which is symmetric.
+
+`space-x` and `divide-x` themselves are **fine** and need no `rtl:` handling.
+Tailwind v4 builds them out of `margin-inline-*` and `border-inline-*`, so they
+mirror on their own. Adding `rtl:space-x-reverse` / `rtl:divide-x-reverse` - the
+v3 idiom, from when they were physical `left`/`right` - is the bug the lint now
+catches: the reverse moves every gap or rule one boundary over, hanging one off
+the strip's outer edge and leaving the last boundary bare. `*-reverse` without
+the `rtl:` is still correct for `flex-row-reverse`, where DOM order really is
+reversed.
 
 ## Use logical properties instead
 
