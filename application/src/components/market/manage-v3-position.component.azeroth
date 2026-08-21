@@ -1,10 +1,10 @@
 import { minOutForSlippage } from '@nuraswap/shared/math';
-import { counterpartAmount, getAmountsForLiquidity, getSqrtRatioAtTick, tickToPriceWad } from '@nuraswap/shared/v3-math';
-import { formatTokenAmount, parseTokenAmount } from '@nuraswap/shared/digits';
+import { counterpartAmount, getAmountsForLiquidity, getSqrtRatioAtTick } from '@nuraswap/shared/v3-math';
+import { formatQuotedAmount, parseTokenAmount } from '@nuraswap/shared/digits';
 
 import { ERC20_ABI, publicClient, v3Addresses } from '../../lib/chain.ts';
 import type { Address } from '../../lib/chain.ts';
-import { fmtAmount, fmtPercentBps } from '../../lib/format.ts';
+import { fmtAmount, fmtPercentBps, fmtTickPrice } from '../../lib/format.ts';
 import { t } from '../../lib/i18n.ts';
 import { buildCollect, buildDecrease, buildIncrease } from '../../lib/v3.ts';
 import type { PositionView, V3PoolState } from '../../lib/v3.ts';
@@ -37,6 +37,9 @@ export default component ManageV3Position(props: { view: PositionView; onClose: 
     state allowance0 = 0n;
     state allowance1 = 0n;
     state busy = false;
+
+    /** The account the allowances were read for; a refresh of the same one keeps them. */
+    let allowanceKey = '';
 
     const manager = (): Address => (v3Addresses()?.positionManager ?? '0x') as Address;
     const position = (): PositionView['position'] => props.view.position;
@@ -81,19 +84,29 @@ export default component ManageV3Position(props: { view: PositionView; onClose: 
         });
         if (lastEdited === '0')
         {
-            amount1Text = formatTokenAmount(other, props.view.ref1.decimals, 8);
+            amount1Text = formatQuotedAmount(other, props.view.ref1.decimals);
         }
         else
         {
-            amount0Text = formatTokenAmount(other, props.view.ref0.decimals, 8);
+            amount0Text = formatQuotedAmount(other, props.view.ref0.decimals);
         }
     }
 
+    // "Approved until the read says otherwise" is the right first paint, but only
+    // ONCE per account: this effect also reruns on the 5s refresh tick, and
+    // re-blanking a known allowance there dropped the approve gate for the length
+    // of an RPC round-trip, every five seconds - long enough to click Deposit on
+    // a token the position manager cannot pull.
     effect (account(), txEpoch())
     {
-        allowance0 = MAX_UINT256;
-        allowance1 = MAX_UINT256;
         const owner = account();
+        const key = owner ?? '';
+        if (key !== allowanceKey)
+        {
+            allowanceKey = key;
+            allowance0 = MAX_UINT256;
+            allowance1 = MAX_UINT256;
+        }
         if (owner === null)
         {
             return;
@@ -221,7 +234,7 @@ export default component ManageV3Position(props: { view: PositionView; onClose: 
     };
 
     const priceLabel = (tick: number): string =>
-        fmtAmount(tickToPriceWad(tick, props.view.ref0.decimals, props.view.ref1.decimals), 18);
+        fmtTickPrice(tick, props.view.ref0.decimals, props.view.ref1.decimals, position().fee);
 
     <Modal title={ t().v3.manage } onClose={ props.onClose }>
         <div class="flex flex-col gap-3">
@@ -248,7 +261,7 @@ export default component ManageV3Position(props: { view: PositionView; onClose: 
             <dl class="rounded-xl border border-line bg-raised p-3.5 text-xs">
                 <div class="flex justify-between gap-3 py-0.5">
                     <dt class="text-faint">{ t().v3.range }</dt>
-                    <dd class="font-mono text-end" data-ltr>
+                    <dd class="min-w-0 font-mono text-end" data-ltr>
                         { `${ priceLabel(position().tickLower) } - ${ priceLabel(position().tickUpper) }` }
                     </dd>
                 </div>

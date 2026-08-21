@@ -1,9 +1,7 @@
-import { tickToPriceWad } from '@nuraswap/shared/v3-math';
-
 import type { TokenRef } from '../../api.ts';
 import { v3Addresses } from '../../lib/chain.ts';
 import type { Address } from '../../lib/chain.ts';
-import { fmtAmount, fmtPercentBps, shortAddress } from '../../lib/format.ts';
+import { fmtAmount, fmtPercentBps, fmtTickPrice, shortAddress } from '../../lib/format.ts';
 import { t } from '../../lib/i18n.ts';
 import { loadPositionViews } from '../../lib/v3.ts';
 import type { PositionView, TokenLike } from '../../lib/v3.ts';
@@ -69,7 +67,7 @@ export default component V3PositionsGrid(props: {
     }
 
     const priceLabel = (view: PositionView, tick: number): string =>
-        fmtAmount(tickToPriceWad(tick, view.ref0.decimals, view.ref1.decimals), 18);
+        fmtTickPrice(tick, view.ref0.decimals, view.ref1.decimals, view.position.fee);
 
     <Show
         when={ views.length > 0 }
@@ -110,7 +108,7 @@ export default component V3PositionsGrid(props: {
                     <dl class="mt-4 flex flex-col gap-1 text-xs">
                         <div class="flex justify-between gap-3">
                             <dt class="text-faint">{ t().v3.range }</dt>
-                            <dd class="font-mono text-end" data-ltr>
+                            <dd class="min-w-0 font-mono text-end" data-ltr>
                                 { `${ priceLabel(view, view.position.tickLower) } - ${ priceLabel(view, view.position.tickUpper) }` }
                             </dd>
                         </div>

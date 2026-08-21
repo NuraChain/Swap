@@ -26,6 +26,7 @@ const market = {
     stats: vi.fn().mockResolvedValue({
         chainId: 1020,
         pairCount: 1,
+        poolCount: 1,
         swapFeeBps: 25,
         tvlUsd: 0,
         volume24hUsd: 0,

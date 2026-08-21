@@ -57,6 +57,7 @@ function edge(options: EdgeOptions = {}): { handler: WebHandler; csp: string }
         db,
         deployment: DEPLOYMENT,
         swapFeeBps: 25,
+        externalPrices: () => new Map(),
         status: () => ({ headBlock: 1, indexedBlock: 1 })
     });
     const app = buildApp({ dev: !(options.production ?? true), api });

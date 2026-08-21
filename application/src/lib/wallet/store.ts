@@ -403,7 +403,19 @@ export async function switchChain(): Promise<void>
  */
 export async function addChainToWallet(): Promise<void>
 {
-    if (activeProvider === null)
+    // Registering a network needs no session: wallet_addEthereumChain is
+    // answerable by any injected provider, and this button exists FOR the
+    // visitor who has not connected yet - which is what the paragraph above
+    // promises and what requiring `activeProvider` quietly took away.
+    //
+    // Prefer the connected wallet. Otherwise, when exactly one wallet announced
+    // itself, ask that one. With several installed and none connected there is
+    // no way to know which was meant, so ask them to connect and choose.
+    const announced = optionsSignal()
+        .map((option) => option.provider)
+        .filter((provider): provider is Eip1193Provider => provider !== null);
+    const provider = activeProvider ?? (announced.length === 1 ? announced[0] : null);
+    if (provider === null)
     {
         pushToast('error', t().common.addChainNoWallet);
         return;
@@ -425,7 +437,7 @@ export async function addChainToWallet(): Promise<void>
     }
     try
     {
-        await activeProvider.request({
+        await provider.request({
             method: 'wallet_addEthereumChain',
             params: [addChainParams(info)]
         });

@@ -82,6 +82,9 @@ function healthy(overrides: Partial<{ blocksBehind: number }> = {}): void
     market.stats.mockResolvedValue({
         chainId: 1020,
         pairCount: 1,
+        // Deliberately different from pairCount: the headline counts BOTH exchanges,
+        // and a page reading the V2-only figure would show 1 here.
+        poolCount: 42,
         swapFeeBps: 25,
         tvlUsd: 1_700_000,
         volume24hUsd: 250_000,
@@ -239,6 +242,7 @@ describe('the landing page', () =>
         await until(() => container.textContent?.includes('1,700,000') === true);
         expect(container.textContent).toContain('Trade straight from your wallet.');
         expect(container.textContent).toContain('250,000');
+        expect(container.textContent).toContain('42');
     });
 
     // The api half being down must not take the page with it: the landing copy

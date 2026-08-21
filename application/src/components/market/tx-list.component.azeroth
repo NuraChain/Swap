@@ -15,6 +15,12 @@ type Kind = 'swap' | 'mint' | 'burn';
 
 const KINDS: Kind[] = ['swap', 'mint', 'burn'];
 
+// One feed, two exchanges. The protocol is spelled on EVERY row rather than
+// only on the V3 ones: an unmarked row would mean 'V2' by a convention the
+// reader has to be told, and the same pair trades at two different prices in
+// the two contracts. Casing matches the protocol switch on the liquidity page.
+const PROTOCOL_LABEL = { v2: 'V2', v3: 'V3' } as const;
+
 export default component TxList(props: {
     limit?: number;
     account?: string;
@@ -96,9 +102,12 @@ export default component TxList(props: {
                             </span>
                             <span class="block text-[10px] text-faint">{ fmtTime(tx.timestamp) }</span>
                         </span>
-                        <Tooltip label={ tx.txHash }>
-                            <Badge tone={ KIND_TONE[tx.kind as keyof typeof KIND_TONE] }>{ tx.kind }</Badge>
-                        </Tooltip>
+                        <span class="flex items-center gap-1.5">
+                            <Badge ltr>{ PROTOCOL_LABEL[tx.protocol as keyof typeof PROTOCOL_LABEL] }</Badge>
+                            <Tooltip label={ tx.txHash }>
+                                <Badge tone={ KIND_TONE[tx.kind as keyof typeof KIND_TONE] }>{ tx.kind }</Badge>
+                            </Tooltip>
+                        </span>
                     </li>
                 </For>
             </ul>

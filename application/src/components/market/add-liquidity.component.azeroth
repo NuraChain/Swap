@@ -1,5 +1,5 @@
 import { minOutForSlippage, quote as quoteRatio } from '@nuraswap/shared/math';
-import { formatTokenAmount, parseTokenAmount } from '@nuraswap/shared/digits';
+import { formatQuotedAmount, formatTokenAmount, parseTokenAmount } from '@nuraswap/shared/digits';
 
 import type { DeploymentInfo, TokenRef } from '../../api.ts';
 import { ERC20_ABI, FACTORY_ABI, PAIR_ABI, ROUTER_ABI, deployment, publicClient } from '../../lib/chain.ts';
@@ -43,6 +43,12 @@ export default component AddLiquidity(props: {
     state lastEdited: 'a' | 'b' = 'a';
     state walletOpen = false;
 
+    // What the two chain effects below last read FOR. They rerun on every refresh
+    // tick as well as on a real change, and only a change of key may discard what
+    // is already on screen - see each effect.
+    let pairKey = '';
+    let allowanceKey = '';
+
     const info = (): DeploymentInfo | null => deployment();
     const isNative = (token: TokenRef | null): boolean => token?.address === 'nura';
     const wnura = (): Address => (info()?.contracts.wnura ?? ZERO) as Address;
@@ -63,13 +69,23 @@ export default component AddLiquidity(props: {
     derived firstProvider = reserves !== null
         && ((reserves as { a: bigint; b: bigint }).a === 0n || (reserves as { a: bigint; b: bigint }).b === 0n);
 
-    // Reserve watch for the selected pair, oriented to (tokenA, tokenB).
+    // Reserve watch for the selected pair, oriented to (tokenA, tokenB). This
+    // effect also reruns on the 5s refresh tick, so what is on screen is only
+    // discarded when the PAIR changes - blanking on a refresh made `firstProvider`
+    // flip false for the length of an RPC round-trip once every five seconds, and
+    // the warning it gates strobed with it. The same key retires a read whose pair
+    // has since been replaced, so a slow answer cannot overwrite a newer one.
     effect (tokenA, tokenB, txEpoch(), info())
     {
-        reserves = null;
         const a = tokenA;
         const b = tokenB;
         const current = info();
+        const key = a === null || b === null ? '' : `${ a.address }/${ b.address }`;
+        if (key !== pairKey)
+        {
+            pairKey = key;
+            reserves = null;
+        }
         if (a === null || b === null || current === null)
         {
             return;
@@ -82,6 +98,10 @@ export default component AddLiquidity(props: {
                 functionName: 'getPair',
                 args: [hopAddress(a), hopAddress(b)]
             }).catch(() => ZERO) as Address;
+            if (key !== pairKey)
+            {
+                return;
+            }
             if (pair === ZERO)
             {
                 reserves = { a: 0n, b: 0n };
@@ -93,6 +113,10 @@ export default component AddLiquidity(props: {
             const token0 = await publicClient().readContract({
                 address: pair, abi: PAIR_ABI, functionName: 'token0'
             }) as Address;
+            if (key !== pairKey)
+            {
+                return;
+            }
             reserves = token0.toLowerCase() === hopAddress(a).toLowerCase()
                 ? { a: reserve0, b: reserve1 }
                 : { a: reserve1, b: reserve0 };
@@ -110,35 +134,46 @@ export default component AddLiquidity(props: {
         }
         if (lastEdited === 'a' && parsedA !== null)
         {
-            amountBText = formatTokenAmount(
+            amountBText = formatQuotedAmount(
                 quoteRatio(parsedA as bigint, pool.a, pool.b),
-                (tokenB as TokenRef).decimals,
-                8
+                (tokenB as TokenRef).decimals
             );
         }
         else if (lastEdited === 'b' && parsedB !== null)
         {
-            amountAText = formatTokenAmount(
+            amountAText = formatQuotedAmount(
                 quoteRatio(parsedB as bigint, pool.b, pool.a),
-                (tokenA as TokenRef).decimals,
-                8
+                (tokenA as TokenRef).decimals
             );
         }
     }
 
-    // Allowances for both ERC20 sides.
+    // Allowances for both ERC20 sides. "Approved until the read says otherwise"
+    // is the right first paint, but it is only right ONCE per pair and account:
+    // this effect also reruns on the 5s refresh tick, and re-blanking a known
+    // allowance there dropped the approve gate for the length of an RPC
+    // round-trip, every five seconds. The action button flipped between
+    // "Approve X" and "Add liquidity" on its own, and a click that landed in the
+    // gap sent a deposit the router had no allowance for - which reverts.
     effect (tokenA, tokenB, account(), txEpoch())
     {
-        allowanceA = MAX_UINT256;
-        allowanceB = MAX_UINT256;
         const owner = account();
+        const a = tokenA;
+        const b = tokenB;
+        const key = `${ owner ?? '' }|${ a === null ? '' : a.address }|${ b === null ? '' : b.address }`;
+        if (key !== allowanceKey)
+        {
+            allowanceKey = key;
+            allowanceA = MAX_UINT256;
+            allowanceB = MAX_UINT256;
+        }
         if (owner === null)
         {
             return;
         }
         for (const [token, assign] of [
-            [tokenA, (value: bigint) => { allowanceA = value; }],
-            [tokenB, (value: bigint) => { allowanceB = value; }]
+            [a, (value: bigint) => { allowanceA = value; }],
+            [b, (value: bigint) => { allowanceB = value; }]
         ] as Array<[TokenRef | null, (value: bigint) => void]>)
         {
             if (token === null || isNative(token))

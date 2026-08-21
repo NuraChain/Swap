@@ -57,7 +57,7 @@ export default component Landing()
                     </div>
                     <div class="py-6 sm:ps-8">
                         <div class="eyebrow">{ t().landing.statPools }</div>
-                        <div class="mt-2 font-mono text-3xl tracking-tight text-val">{ fmtNumber(live.pairCount, 0) }</div>
+                        <div class="mt-2 font-mono text-3xl tracking-tight text-val">{ fmtNumber(live.poolCount, 0) }</div>
                     </div>
                 </div>
             </section>
