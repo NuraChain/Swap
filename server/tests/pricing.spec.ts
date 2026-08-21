@@ -1,14 +1,19 @@
-// USD pricing is derived, never fetched: there is no oracle here, only pool
-// reserves and one anchor. Every number a user reads as money - TVL, 24h volume,
-// fee APR, portfolio value - comes out of this file, so a wrong derivation is not
-// a cosmetic bug, it is the exchange lying about its own size.
+// Every number a user reads as money - TVL, 24h volume, fee APR, portfolio
+// value - comes out of this file, so a wrong derivation is not a cosmetic bug,
+// it is the exchange lying about its own size.
+//
+// Two anchors feed it: the stable at $1, and SEEDED prices for bridged assets
+// nothing on chain can value. Everything else is derived from pools - and where
+// pools disagree, the DEEPEST one wins, which is the whole reason a pair holding
+// one wei cannot set the price of the token beside it.
 
 import { describe, expect, it } from 'vitest';
 
 import { WAD, pow10 } from '@nuraswap/shared/math';
+import { sqrtX96FromPriceWad } from '@nuraswap/shared/v3-math';
 
-import { buildPriceMap, feeAprBps, pairTvlUsd, toUsdNumber, volumeUsd } from '../src/indexer/pricing.ts';
-import type { Address, PairRow, TokenRow } from '../src/indexer/db.ts';
+import { anchorsOnly, buildPriceMap, feeAprBps, pairTvlUsd, toUsdNumber, volumeUsd } from '../src/indexer/pricing.ts';
+import type { Address, PairRow, TokenRow, V3PoolRow } from '../src/indexer/db.ts';
 
 const WNURA = '0x000000000000000000000000000000000000b0b0' as Address;
 const USDT = '0x0000000000000000000000000000000000000002' as Address;
@@ -29,6 +34,36 @@ const REFS = { stable: USDT, wrappedNative: WNURA };
 function pair(overrides: Partial<PairRow> & Pick<PairRow, 'address' | 'token0' | 'token1'>): PairRow
 {
     return { createdBlock: 1, reserve0: 0n, reserve1: 0n, ...overrides };
+}
+
+function v3Pool(overrides: Partial<V3PoolRow> & Pick<V3PoolRow, 'address' | 'token0' | 'token1'>): V3PoolRow
+{
+    return {
+        fee: 500,
+        createdBlock: 1,
+        balance0: 0n,
+        balance1: 0n,
+        sqrtPriceX96: 0n,
+        ...overrides
+    };
+}
+
+// A V3 price round-trips through an INTEGER square root in Q64.96, so it lands a
+// few wei off a round number. Asserting exact equality here would be asserting
+// the rounding, not the pricing.
+function expectAboutWad(actual: bigint | undefined, expected: bigint): void
+{
+    expect(actual).toBeDefined();
+    const value = actual as bigint;
+    const delta = value > expected ? value - expected : expected - value;
+    // A part per billion - orders tighter than any figure this feeds.
+    expect(delta * 1_000_000_000n <= expected).toBe(true);
+}
+
+/** sqrtPriceX96 for a whole-number token1-per-token0 rate, both sides 18dp. */
+function sqrtX96For(token1PerToken0: bigint): bigint
+{
+    return sqrtX96FromPriceWad(token1PerToken0 * WAD, 18, 18);
 }
 
 const decimalsOf = (address: string): number =>
@@ -143,8 +178,11 @@ describe('buildPriceMap', () =>
         expect(prices.get(USDT)).toBe(WAD);
     });
 
-    it('keeps the first price it derives for a token', () =>
+    it('takes the deepest pool that can name a price, whatever the scan order', () =>
     {
+        // One WNURA against one USDT implies $1. It is not a market, it is a
+        // rounding error with an address, and it must not outvote the pool holding
+        // 850k - which is exactly what happened while the first match won.
         const thinner = pair({
             address: '0x00000000000000000000000000000000000000ff' as Address,
             token0: WNURA,
@@ -152,8 +190,79 @@ describe('buildPriceMap', () =>
             reserve0: 1n * WAD,
             reserve1: 1n * pow10(6)
         });
-        const prices = buildPriceMap([WNURA_USDT, thinner], TOKENS, REFS);
-        expect(prices.get(WNURA)).toBe(850n * WAD);
+        expect(buildPriceMap([thinner, WNURA_USDT], TOKENS, REFS).get(WNURA)).toBe(850n * WAD);
+        expect(buildPriceMap([WNURA_USDT, thinner], TOKENS, REFS).get(WNURA)).toBe(850n * WAD);
+    });
+
+    it('prices through a V3 pool, from slot0 rather than from what it holds', () =>
+    {
+        // 2 WNURA per ALPHA by slot0. The BALANCES are lopsided on purpose: a
+        // concentrated pool holds whatever its ranges leave it holding, and reading
+        // a rate out of that ratio would give 100, not 2.
+        const pool = v3Pool({
+            address: '0x00000000000000000000000000000000000000c3' as Address,
+            token0: ALPHA,
+            token1: WNURA,
+            balance0: 1n * WAD,
+            balance1: 100n * WAD,
+            sqrtPriceX96: sqrtX96For(2n)
+        });
+        const prices = buildPriceMap([WNURA_USDT], TOKENS, REFS, undefined, [pool]);
+        // 2 WNURA at $850 = $1700.
+        expectAboutWad(prices.get(ALPHA), 1700n * WAD);
+    });
+
+    it('lets a funded V3 pool outrank a dust V2 pair on the same tokens', () =>
+    {
+        // The shape this chain is actually in: a pair holding a WEI beside a pool
+        // holding real money, disagreeing 4x about the native token.
+        const dust = pair({
+            address: '0x00000000000000000000000000000000000000fe' as Address,
+            token0: ALPHA,
+            token1: WNURA,
+            reserve0: 1n,
+            reserve1: 4n
+        });
+        const funded = v3Pool({
+            address: '0x00000000000000000000000000000000000000c4' as Address,
+            token0: ALPHA,
+            token1: WNURA,
+            balance0: 10n * WAD,
+            balance1: 20n * WAD,
+            sqrtPriceX96: sqrtX96For(2n)
+        });
+        const prices = buildPriceMap([WNURA_USDT, dust], TOKENS, REFS, undefined, [funded]);
+        // The dust pair says 4 WNURA each ($3400); the funded pool says 2 ($1700).
+        expectAboutWad(prices.get(ALPHA), 1700n * WAD);
+    });
+
+    it('ignores a V3 pool that has never been initialized', () =>
+    {
+        // sqrtPriceX96 is zero until the pool is initialized, and until the indexer
+        // has read slot0 even once. Neither is a price of nothing.
+        const uninitialized = v3Pool({
+            address: '0x00000000000000000000000000000000000000c5' as Address,
+            token0: ALPHA,
+            token1: WNURA,
+            balance0: 10n * WAD,
+            balance1: 20n * WAD
+        });
+        const prices = buildPriceMap([WNURA_USDT], TOKENS, REFS, undefined, [uninitialized]);
+        expect(prices.get(ALPHA)).toBeUndefined();
+    });
+
+    it('ignores a V3 pool holding nothing, however confident its price', () =>
+    {
+        // Depth is what the pool holds of the side already priced. Zero of it means
+        // the quote is backed by nothing, whatever slot0 says.
+        const empty = v3Pool({
+            address: '0x00000000000000000000000000000000000000c6' as Address,
+            token0: ALPHA,
+            token1: WNURA,
+            sqrtPriceX96: sqrtX96For(2n)
+        });
+        const prices = buildPriceMap([WNURA_USDT], TOKENS, REFS, undefined, [empty]);
+        expect(prices.get(ALPHA)).toBeUndefined();
     });
 
     it('anchors on a lowercased stable address', () =>
@@ -170,6 +279,43 @@ describe('buildPriceMap', () =>
         const prices = buildPriceMap([WNURA_USDT, ALPHA_WNURA], TOKENS, { stable: '', wrappedNative: WNURA });
         expect(prices.get(WNURA)).toBeUndefined();
         expect(prices.get(ALPHA)).toBeUndefined();
+    });
+});
+
+describe('anchorsOnly', () =>
+{
+    it('keeps the stable and the fed prices, drops everything derived', () =>
+    {
+        const seeds = new Map([[ALPHA, 500n * WAD]]);
+        const prices = buildPriceMap([WNURA_USDT], TOKENS, REFS, seeds);
+        const anchored = anchorsOnly(prices, REFS, seeds);
+
+        // Both anchors survive: one by definition, one from outside the chain.
+        expect(anchored.get(USDT)).toBe(WAD);
+        expect(anchored.get(ALPHA)).toBe(500n * WAD);
+        // WNURA has a price - it is just one a pool asserted, so it cannot be
+        // counted as value the exchange can prove it holds.
+        expect(prices.get(WNURA)).toBe(850n * WAD);
+        expect(anchored.has(WNURA)).toBe(false);
+    });
+
+    it('is empty when the stable has no price and nothing was fed', () =>
+    {
+        const prices = buildPriceMap([WNURA_USDT], TOKENS, { ...REFS, stable: ORPHAN });
+        // ORPHAN is anchored at $1 by being named the stable, so it IS in there -
+        // what must not be is anything that priced off a pool.
+        const anchored = anchorsOnly(prices, { ...REFS, stable: ORPHAN });
+        expect([...anchored.keys()]).toEqual([ORPHAN]);
+    });
+
+    it('values a pool at its anchored side alone', () =>
+    {
+        // The shape that started this: one pool, one side anchored, one side priced
+        // by that same pool. Counting both makes it worth double its real half.
+        const prices = buildPriceMap([WNURA_USDT], TOKENS, REFS);
+        const anchored = anchorsOnly(prices, REFS);
+        expect(pairTvlUsd(WNURA_USDT, prices, decimalsOf)).toBe(1_700_000n * WAD);
+        expect(pairTvlUsd(WNURA_USDT, anchored, decimalsOf)).toBe(850_000n * WAD);
     });
 });
 
@@ -226,11 +372,23 @@ describe('volumeUsd', () =>
         expect(volumeUsd(0n, 0n, WNURA_USDT, prices, decimalsOf)).toBe(0n);
     });
 
-    it('halves a one-sided figure when only one token is priced', () =>
+    it('does NOT halve when only one side can be priced', () =>
     {
+        // Halving exists to remove a double count: input and output are the same
+        // trade seen twice. With one side unpriced there is no double to remove -
+        // the priced side IS the trade - and halving reported a $100 swap as $50
+        // because nobody could put a number on what it bought.
         const prices = buildPriceMap([], TOKENS, REFS);
-        const half = volumeUsd(0n, 100n * pow10(6), WNURA_USDT, prices, decimalsOf);
-        expect(half).toBe(50n * WAD);
+        const whole = volumeUsd(0n, 100n * pow10(6), WNURA_USDT, prices, decimalsOf);
+        expect(whole).toBe(100n * WAD);
+    });
+
+    it('still halves when both sides carry a price', () =>
+    {
+        const prices = buildPriceMap([WNURA_USDT], TOKENS, REFS);
+        // 1 WNURA ($850) in for 850 USDT out: one trade of $850, not $1700.
+        const both = volumeUsd(1n * WAD, 850n * pow10(6), WNURA_USDT, prices, decimalsOf);
+        expect(both).toBe(850n * WAD);
     });
 });
 

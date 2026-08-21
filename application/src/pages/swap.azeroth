@@ -10,8 +10,8 @@ import { ERC20_ABI, FACTORY_ABI, PAIR_ABI, ROUTER_ABI, WNURA_ABI, deployment, en
 import type { Address } from '../lib/chain.ts';
 import { fmtPercentBps } from '../lib/format.ts';
 import { t } from '../lib/i18n.ts';
-import { bestTier, buildV3Swap, quoteAllTiers } from '../lib/v3.ts';
-import type { Protocol, TierQuote } from '../lib/v3.ts';
+import { bestTier, buildV3Swap, poolsForPair, quoteAllTiers } from '../lib/v3.ts';
+import type { Protocol, TierQuote, V3PoolState } from '../lib/v3.ts';
 import {
     account,
     balances,
@@ -90,6 +90,9 @@ export default component Swap()
     state infiniteApprove = false;
 
     state tokenList: TokenRef[] = [NATIVE];
+
+    /** The token+account+spender the allowance was read for; a refresh of the same key keeps it. */
+    let allowanceKey = '';
 
     // Read on mount only - see the pair link in mount below.
     const query = useQuery();
@@ -234,9 +237,15 @@ export default component Swap()
 
     derived parsedIn = parseTokenAmount(amountText, tokenIn.decimals);
 
-    // The charted pool: the active pair when it exists, else the out-token's
-    // WNURA pool - there is always a price story next to the trade.
+    // The charted pool: the selected exchange's own pool for the pair when it
+    // exists, else the out-token's WNURA pool - there is always a price story
+    // next to the trade.
     state chartPair: Address | null = null;
+    // Which exchange the chart ended up on when it is NOT the selected one, so
+    // the note under it can name the right pool. The two price independently -
+    // this pair sits at a different number on each - so borrowing a chart is
+    // something to say out loud, never something to do silently.
+    state chartNote: Protocol | null = null;
     let chartLookup = 0;
 
     // Every address is captured BEFORE the first await: a reactive read inside an
@@ -244,16 +253,20 @@ export default component Swap()
     // resolved pair never landed after a re-run and the chart stayed blank. The
     // last resolved pair also stays on screen while a new one resolves, so
     // flipping direction never blanks the chart.
-    effect (tokenIn, tokenOut, info)
+    effect (tokenIn, tokenOut, info, protocol, feeTier)
     {
         const out = tokenOut;
         const current = info;
+        const selected = protocol;
+        const pinnedTier = feeTier;
         if (current === null || out === null)
         {
             chartPair = null;
+            chartNote = null;
             return;
         }
         const factory = (current as DeploymentInfo).contracts.factory as Address;
+        const v3 = v3Addresses();
         const wnura = wnuraAddress();
         const from = hopAddress(tokenIn);
         const to = hopAddress(out);
@@ -261,27 +274,98 @@ export default component Swap()
         // order, and a stale one would overwrite the live pair with its own answer.
         chartLookup++;
         const generation = chartLookup;
-        void (async () =>
+
+        // The V2 pair for this trade: the direct one, else the out-token's WNURA
+        // pool, so there is always a price story next to the trade.
+        const v2PairOf = async (): Promise<Address | null> =>
         {
             const zero = '0x0000000000000000000000000000000000000000';
             const direct = await publicClient().readContract({
                 address: factory, abi: FACTORY_ABI, functionName: 'getPair', args: [from, to]
             }).catch(() => zero) as Address;
-            if (generation !== chartLookup)
-            {
-                return;
-            }
             if (direct !== zero)
             {
-                chartPair = direct;
-                return;
+                return direct;
             }
             const viaWnura = await publicClient().readContract({
                 address: factory, abi: FACTORY_ABI, functionName: 'getPair', args: [to, wnura]
             }).catch(() => zero) as Address;
+            return viaWnura === zero ? null : viaWnura;
+        };
+
+        // The V3 pool for this trade: the pinned tier is the one the trade will
+        // actually touch. On Auto nothing is pinned, and the deepest pool is both
+        // where a quote almost always routes and where the trades already are.
+        const v3PoolOf = async (): Promise<Address | null> =>
+        {
+            if (v3 === null)
+            {
+                return null;
+            }
+            const pools = await poolsForPair(v3.factory, from, to).catch((): V3PoolState[] => []);
+            const pinned = pinnedTier === null
+                ? null
+                : pools.find((pool) => pool.fee === pinnedTier) ?? null;
+            const deepest = pools.reduce<V3PoolState | null>(
+                (best, pool) => (best === null || pool.liquidity > best.liquidity ? pool : best),
+                null
+            );
+            return (pinned ?? deepest)?.address ?? null;
+        };
+
+        // A pool with liquidity but no trades charts NOTHING - the series is drawn
+        // from swaps, and a deposit is deliberately not one. That is the whole
+        // reason to look at the other exchange before settling for an empty card.
+        const hasTrades = async (address: Address): Promise<boolean> =>
+            client.market.pool({ params: { address } })
+                .then((detail) => detail.candles.some(
+                    (candle) => candle.volume0 !== '0' || candle.volume1 !== '0'
+                ))
+                .catch(() => false);
+
+        void (async () =>
+        {
+            const own = selected === 'v3' ? await v3PoolOf() : await v2PairOf();
+            if (generation !== chartLookup)
+            {
+                return;
+            }
+            // The selected exchange's own pool wins whenever it has anything to
+            // draw: the chart must match the trade being quoted, not the busier
+            // market next door.
+            if (own !== null && await hasTrades(own))
+            {
+                if (generation === chartLookup)
+                {
+                    chartPair = own;
+                    chartNote = null;
+                }
+                return;
+            }
+            if (generation !== chartLookup)
+            {
+                return;
+            }
+            const other = selected === 'v3' ? await v2PairOf() : await v3PoolOf();
+            if (generation !== chartLookup)
+            {
+                return;
+            }
+            if (other !== null && await hasTrades(other))
+            {
+                if (generation === chartLookup)
+                {
+                    chartPair = other;
+                    chartNote = selected === 'v3' ? 'v2' : 'v3';
+                }
+                return;
+            }
+            // Neither has traded. Stay on the selected exchange's own pool and let
+            // the chart say so, rather than borrowing an equally empty one.
             if (generation === chartLookup)
             {
-                chartPair = viaWnura === zero ? null : viaWnura;
+                chartPair = own ?? other;
+                chartNote = null;
             }
         })();
     }
@@ -500,10 +584,22 @@ export default component Swap()
 
     // Allowance follows the input token, the account, the protocol (each has its
     // own router to approve) and every confirmed tx.
+    //
+    // "Approved until the read says otherwise" is the right first paint, but only
+    // ONCE per token+account+spender: this effect also reruns on the 5s refresh
+    // tick, and re-blanking a known allowance there dropped the approve gate for
+    // the length of an RPC round-trip, every five seconds. The action button
+    // flipped between "Approve X" and "Swap" on its own, and a click that landed
+    // in the gap sent a swap the router had no allowance for - which reverts.
     effect (tokenIn, account(), txEpoch(), protocol, info)
     {
-        allowance = MAX_UINT256;
         const owner = account();
+        const key = `${ owner ?? '' }|${ tokenIn.address }|${ info === null ? '' : spender() }`;
+        if (key !== allowanceKey)
+        {
+            allowanceKey = key;
+            allowance = MAX_UINT256;
+        }
         if (info === null || owner === null || isNative(tokenIn))
         {
             return;
@@ -696,8 +792,10 @@ export default component Swap()
             <Show when={ chartPair } let={ pair }>
                 <div class="flex flex-col gap-2">
                     <PriceChart pairAddress={ pair } />
-                    <Show when={ protocol === 'v3' }>
-                        <p class="text-xs leading-relaxed text-faint">{ t().v3.chartFromV2 }</p>
+                    <Show when={ chartNote } let={ from }>
+                        <p class="text-xs leading-relaxed text-faint">
+                            { from === 'v2' ? t().v3.chartFromV2 : t().v3.chartFromV3 }
+                        </p>
                     </Show>
                 </div>
             </Show>

@@ -11,7 +11,7 @@ import {
     tickSpacingForFee,
     tickToPriceWad
 } from '@nuraswap/shared/v3-math';
-import { formatTokenAmount, parseTokenAmount } from '@nuraswap/shared/digits';
+import { formatQuotedAmount, formatTokenAmount, parseTokenAmount } from '@nuraswap/shared/digits';
 
 import type { TokenRef } from '../../api.ts';
 import { ERC20_ABI, deployment, publicClient, v3Addresses } from '../../lib/chain.ts';
@@ -74,6 +74,8 @@ export default component AddV3Liquidity(props: {
     let rangeSeededFor = '';
     /** The pair the loaded pool list belongs to; a refresh of the same pair keeps it. */
     let poolsFor = '';
+    /** The pair+account the allowances were read for; a refresh of the same key keeps them. */
+    let allowanceKey = '';
 
     const isNative = (token: TokenRef | null): boolean => token?.address === 'nura';
     const wnura = (): Address => (deployment()?.contracts.wnura ?? '0x') as Address;
@@ -283,7 +285,7 @@ export default component AddV3Liquidity(props: {
             amount: known as bigint
         });
         const otherRef = (lastEdited === 'a' ? tokenB : tokenA) as TokenRef;
-        const text = formatTokenAmount(other, otherRef.decimals, 8);
+        const text = formatQuotedAmount(other, otherRef.decimals);
         if (lastEdited === 'a')
         {
             amountBText = text;
@@ -296,18 +298,30 @@ export default component AddV3Liquidity(props: {
 
     const manager = (): Address => (v3Addresses()?.positionManager ?? '0x') as Address;
 
+    // "Approved until the read says otherwise" is the right first paint, but only
+    // ONCE per pair and account: this effect also reruns on the 5s refresh tick,
+    // and re-blanking a known allowance there dropped the approve gate for the
+    // length of an RPC round-trip, every five seconds - long enough to click the
+    // deposit button on a token the position manager cannot pull.
     effect (tokenA, tokenB, account(), txEpoch())
     {
-        allowanceA = MAX_UINT256;
-        allowanceB = MAX_UINT256;
         const owner = account();
+        const a = tokenA;
+        const b = tokenB;
+        const key = `${ owner ?? '' }|${ a === null ? '' : a.address }|${ b === null ? '' : b.address }`;
+        if (key !== allowanceKey)
+        {
+            allowanceKey = key;
+            allowanceA = MAX_UINT256;
+            allowanceB = MAX_UINT256;
+        }
         if (owner === null || v3Addresses() === null)
         {
             return;
         }
         for (const [token, assign] of [
-            [tokenA, (value: bigint) => { allowanceA = value; }],
-            [tokenB, (value: bigint) => { allowanceB = value; }]
+            [a, (value: bigint) => { allowanceA = value; }],
+            [b, (value: bigint) => { allowanceB = value; }]
         ] as Array<[TokenRef | null, (value: bigint) => void]>)
         {
             if (token === null || isNative(token))
@@ -375,12 +389,14 @@ export default component AddV3Liquidity(props: {
         const amount1 = (current.aIsToken0 ? parsedB : parsedA) ?? 0n;
         busy = true;
         const when = await deadline();
-        // A first provider names the price, so nothing can slip out from under
-        // them and the minimums are the amounts themselves; on a live pool the
-        // price can move between signing and mining, and it is the MINIMUMS that
-        // decide whether the deposit lands or reverts.
-        const min0 = firstProvider ? amount0 : minOutForSlippage(amount0, SLIPPAGE_BPS);
-        const min1 = firstProvider ? amount1 : minOutForSlippage(amount1, SLIPPAGE_BPS);
+        // Both minimums carry the tolerance, first provider or not. The position
+        // manager derives one liquidity figure from the pair of amounts, rounding
+        // down, then derives the amounts back out of that liquidity - so at least
+        // one side always lands a few wei under what was asked for. Minimums equal
+        // to the desired amounts therefore revert EVERY mint with `Price slippage
+        // check`, including on a pool this very transaction creates.
+        const min0 = minOutForSlippage(amount0, SLIPPAGE_BPS);
+        const min1 = minOutForSlippage(amount1, SLIPPAGE_BPS);
         const nativeValue = isNative(tokenA)
             ? (parsedA ?? 0n)
             : isNative(tokenB)

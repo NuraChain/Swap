@@ -37,9 +37,10 @@ const V3_REFRESH_MS = 30_000;
 
 // A V3 pool row. TVL is what the pool contract HOLDS, not a reserve-derived
 // figure: V3 has no reserves to derive one from, and the balances are the only
-// honest answer available without an indexer. Volume and fee APR need indexed
-// events, which the server does not collect for V3 - the table says so rather
-// than printing a zero that reads as "no trades".
+// honest answer available without an indexer. Volume and fee APR need AGGREGATED
+// events: the indexer stores V3 swaps for the activity feed, but prices its
+// hourly candles off a pair's reserves, which a concentrated pool has none of -
+// so the table says unknown rather than printing a zero that reads as "no trades".
 interface V3Row
 {
     pool: V3PoolState;
@@ -95,8 +96,14 @@ export default component Liquidity()
         priced.find((token) => token.address.toLowerCase() === address.toLowerCase())
             ?? { address, symbol: shortAddress(address), name: address, decimals: 18 };
 
-    const usdOf = (address: Address): number =>
-        priced.find((token) => token.address.toLowerCase() === address.toLowerCase())?.priceUsd ?? 0;
+    // Value locked counts ANCHORED prices only - the same rule the server sums by.
+    // A pool priced by the deposit that created it cannot vouch for its own size:
+    // count the derived side and every two-token pool is worth twice its real half.
+    const anchoredUsdOf = (address: Address): number =>
+    {
+        const token = priced.find((entry) => entry.address.toLowerCase() === address.toLowerCase());
+        return token?.anchored === true ? token.priceUsd : 0;
+    };
 
     // The V3 table is assembled in the browser: one multicall finds the pools
     // across every pair and tier, a second reads what they hold. It runs only
@@ -132,8 +139,8 @@ export default component Liquidity()
                     const balance = held.get(pool.address.toLowerCase()) ?? { amount0: 0n, amount1: 0n };
                     // Display arithmetic, so floats are the right tool here - the
                     // USD prices arrive as numbers and the result is a label.
-                    const tvlUsd = Number(formatTokenAmount(balance.amount0, ref0.decimals)) * usdOf(pool.token0)
-                        + Number(formatTokenAmount(balance.amount1, ref1.decimals)) * usdOf(pool.token1);
+                    const tvlUsd = Number(formatTokenAmount(balance.amount0, ref0.decimals)) * anchoredUsdOf(pool.token0)
+                        + Number(formatTokenAmount(balance.amount1, ref1.decimals)) * anchoredUsdOf(pool.token1);
                     return {
                         pool,
                         ref0,

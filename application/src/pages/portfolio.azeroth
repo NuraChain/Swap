@@ -6,8 +6,8 @@ import { client } from '../api.ts';
 import type { Pool, TokenWithPrice } from '../api.ts';
 import { deployment, ensureDeployment } from '../lib/chain.ts';
 import type { Address } from '../lib/chain.ts';
-import { fmtAmount } from '../lib/format.ts';
-import { fmtNumber, fmtUsd, t } from '../lib/i18n.ts';
+import { fmtAmount, fmtUsdPrice } from '../lib/format.ts';
+import { fmtUsd, t } from '../lib/i18n.ts';
 import { account, balances, nativeBalance, txEpoch, watchTokens } from '../lib/wallet/store.ts';
 
 import FaucetButton from '../components/market/faucet-button.component.azeroth';
@@ -174,7 +174,7 @@ export default component Portfolio()
                                             <span>{ fmtAmount(holding.balance, holding.decimals) }</span>
                                         </td>
                                         <td class="px-4 py-3 text-end font-mono">
-                                            <span>{ holding.priceUsd === 0 ? '-' : fmtNumber(holding.priceUsd, 4) }</span>
+                                            <span>{ holding.priceUsd === 0 ? '-' : fmtUsdPrice(holding.priceUsd) }</span>
                                         </td>
                                         <td class="px-4 py-3 text-end font-mono text-val">
                                             <span>{ fmtUsd(holding.valueUsd) }</span>

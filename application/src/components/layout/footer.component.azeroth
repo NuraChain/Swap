@@ -21,7 +21,7 @@ const SOCIALS: Array<{ name: string; href: string; icon: string }> = [
 export default component Footer()
 {
     <footer class="mt-auto border-t border-line bg-panel">
-        <div class="mx-auto grid max-w-6xl gap-10 px-4 py-12 sm:grid-cols-[1fr_auto_auto] sm:gap-16">
+        <div class="mx-auto flex max-w-6xl flex-col gap-10 px-4 py-12 sm:flex-row sm:justify-between sm:gap-16">
             <div class="max-w-xs">
                 <span class="flex items-center gap-2.5">
                     <Shamseh size={ 24 } class="text-ice" />

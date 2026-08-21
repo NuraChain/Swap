@@ -15,13 +15,22 @@ export type TokenRef = Infer<typeof tokenRef>;
 
 export const tokenWithPrice = object({
     ...tokenShape,
-    priceUsd: number()
+    priceUsd: number(),
+    // Whether that price came from outside the exchange - the stable anchor or
+    // the feed - rather than being derived from a pool. Value locked counts only
+    // anchored assets, and the browser computes the V3 table's TVL itself, so it
+    // needs the same distinction the server uses.
+    anchored: boolean()
 });
 export type TokenWithPrice = Infer<typeof tokenWithPrice>;
 
 export const stats = object({
     chainId: number({ int: true }),
+    // V2 pairs alone. `poolCount` is what the site shows - the two exchanges are
+    // one market to anyone reading a headline number - and this stays for
+    // anything that needs the V2 half specifically.
     pairCount: number({ int: true }),
+    poolCount: number({ int: true }),
     // The factory's swapFee, in bps. On the wire because the fee is the chain's
     // to decide and the client would otherwise print a number of its own.
     swapFeeBps: number({ int: true }),
@@ -65,6 +74,10 @@ export type PoolDetail = Infer<typeof poolDetail>;
 
 export const txItem = object({
     txHash: string(),
+    // Which AMM the row came out of. One feed carries both, so a row that does
+    // not say cannot be read - the same two tokens and the same three verbs
+    // mean a different pool, a different fee, and a different position model.
+    protocol: enumOf(['v2', 'v3']),
     kind: enumOf(['swap', 'mint', 'burn']),
     timestamp: number({ int: true }),
     account: string(),

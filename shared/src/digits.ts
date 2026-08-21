@@ -65,3 +65,16 @@ export function formatTokenAmount(amount: bigint, decimals: number, maxFractionD
     const text = fraction === '' ? whole.toString() : `${ whole }.${ fraction }`;
     return negative ? `-${ text }` : text;
 }
+
+// The counterpart of a quoted pair, as text for an amount field. Capping the
+// fraction keeps 18-decimal dust out of the input, but a cap that rounds a
+// non-zero amount all the way down to "0" is worse than a long string: the field
+// parses back as zero, so the form it feeds reports "enter an amount" forever
+// with a number already on screen. Widen to full precision in exactly that case.
+export function formatQuotedAmount(amount: bigint, decimals: number, maxFractionDigits = 8): string
+{
+    const capped = formatTokenAmount(amount, decimals, maxFractionDigits);
+    return amount !== 0n && parseTokenAmount(capped, decimals) === 0n
+        ? formatTokenAmount(amount, decimals)
+        : capped;
+}

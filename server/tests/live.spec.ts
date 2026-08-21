@@ -22,6 +22,8 @@ const PAIR_TWO = '0x00000000000000000000000000000000000000ab' as Address;
 const NURA = '0x0000000000000000000000000000000000000001' as Address;
 const USDT = '0x0000000000000000000000000000000000000002' as Address;
 const ROUTER = '0x00000000000000000000000000000000000000f1' as Address;
+const V3_FACTORY = '0x00000000000000000000000000000000000000f3' as Address;
+const V3_POOL = '0x00000000000000000000000000000000000000b3' as Address;
 const ALICE = '0x00000000000000000000000000000000000000c1' as Address;
 const BOB = '0x00000000000000000000000000000000000000c2' as Address;
 
@@ -48,7 +50,7 @@ const DEPLOYMENT_TOKENS = [
     { address: USDT, symbol: 'mUSDT', name: 'Mock Tether USD', decimals: 6 }
 ];
 
-function deploymentShape(startBlock: number): Deployment
+function deploymentShape(startBlock: number, v3Factory: Address | null = null): Deployment
 {
     return {
         chainId: 1020,
@@ -64,7 +66,16 @@ function deploymentShape(startBlock: number): Deployment
             wnura: NURA,
             multicall3: '0x00000000000000000000000000000000000000f2'
         },
-        tokens: DEPLOYMENT_TOKENS
+        tokens: DEPLOYMENT_TOKENS,
+        v3: v3Factory === null
+            ? null
+            : {
+                factory: v3Factory,
+                swapRouter: '0x0000000000000000000000000000000000000032' as Address,
+                quoter: '0x0000000000000000000000000000000000000033' as Address,
+                positionManager: '0x0000000000000000000000000000000000000034' as Address,
+                tickLens: '0x0000000000000000000000000000000000000035' as Address
+            }
     };
 }
 
@@ -96,14 +107,18 @@ function fakeLogger(): { lines: LogLine[]; log: never }
 
 const running: Array<{ stop: () => void }> = [];
 
-function run(db: IndexerDb, log: never, overrides: { startBlock?: number; confirmations?: number } = {}): {
+function run(
+    db: IndexerDb,
+    log: never,
+    overrides: { startBlock?: number; confirmations?: number; v3Factory?: Address } = {}
+): {
     status: () => { headBlock: number; indexedBlock: number };
     stop: () => void;
 }
 {
     const indexer = startIndexer({
         db,
-        deployment: deploymentShape(overrides.startBlock ?? 0),
+        deployment: deploymentShape(overrides.startBlock ?? 0, overrides.v3Factory ?? null),
         log,
         pollingIntervalMs: POLL_MS,
         confirmations: overrides.confirmations ?? 0
@@ -177,8 +192,111 @@ function scriptOnePool(): void
     });
 }
 
+describe('V3 pools', () =>
+{
+    it('indexes a pool the V3 factory created and reads what it holds', async () =>
+    {
+        const db = freshDb();
+        const { log } = fakeLogger();
+        scriptOnePool();
+        chain.poolCreated({
+            factory: V3_FACTORY,
+            pool: V3_POOL,
+            token0: NURA,
+            token1: USDT,
+            fee: 500,
+            blockNumber: 3,
+            logIndex: 2
+        });
+        // A concentrated pool's worth is what it HOLDS - no event says so, and a
+        // plain transfer in moves it with no log at all, so it is read.
+        chain.setBalance(NURA, V3_POOL, 7n * 10n ** 18n);
+        chain.setBalance(USDT, V3_POOL, 11n * 10n ** 6n);
+        chain.setPoolPrice(V3_POOL, 79228162514264337593543950336n);
+
+        const indexer = run(db, log, { v3Factory: V3_FACTORY });
+        await settle(() => db.getV3Pool(V3_POOL)?.balance0 === 7n * 10n ** 18n);
+
+        const pool = db.getV3Pool(V3_POOL);
+        expect(pool?.token0).toBe(NURA);
+        expect(pool?.fee).toBe(500);
+        expect(pool?.balance1).toBe(11n * 10n ** 6n);
+        // slot0, not a ratio of the balances - 2^96 is the Q64.96 encoding of 1:1.
+        expect(pool?.sqrtPriceX96).toBe(79228162514264337593543950336n);
+        // The V2 side is untouched by any of it.
+        expect(db.getPair(PAIR)).not.toBeNull();
+        indexer.stop();
+    });
+
+    it('holds the last readable balances when the RPC stops answering', async () =>
+    {
+        const db = freshDb();
+        const { log, lines } = fakeLogger();
+        scriptOnePool();
+        chain.poolCreated({
+            factory: V3_FACTORY,
+            pool: V3_POOL,
+            token0: NURA,
+            token1: USDT,
+            fee: 500,
+            blockNumber: 3,
+            logIndex: 2
+        });
+        chain.setBalance(NURA, V3_POOL, 7n * 10n ** 18n);
+        chain.setBalance(USDT, V3_POOL, 11n * 10n ** 6n);
+        chain.setPoolPrice(V3_POOL, 79228162514264337593543950336n);
+
+        const indexer = run(db, log, { v3Factory: V3_FACTORY });
+        await settle(() => db.getV3Pool(V3_POOL)?.balance0 === 7n * 10n ** 18n);
+
+        // Blanking a pool's TVL because one read timed out would be a worse
+        // answer than the one from fifteen seconds ago.
+        chain.unreadableTokens.add(NURA.toLowerCase());
+        // Long enough to outlast the balance beat: balances are read on their own
+        // slower timer, not once per log scan, and this waits for the NEXT one.
+        await settle(() => lines.some((line) => line.message.includes('state unreadable')), 400);
+        expect(db.getV3Pool(V3_POOL)?.balance0).toBe(7n * 10n ** 18n);
+        indexer.stop();
+    });
+});
+
 describe('first run', () =>
 {
+    it('reindexes a database that predates the chain gaining V3', async () =>
+    {
+        const db = freshDb();
+        const { log } = fakeLogger();
+        scriptOnePool();
+
+        const first = run(db, log);
+        await settle(() => first.status().indexedBlock >= chain.height);
+        expect(db.getMeta('identity')).toBe(`1020:${ FACTORY }:${ chain.blocks[0].hash }`);
+        first.stop();
+
+        // Same chain, same V2 factory - the deployment now also carries V3. What
+        // is stored is a complete V2 history beside an empty V3 one, and the
+        // cursor only moves forward, so resuming would leave that gap forever.
+        const second = run(db, log, { v3Factory: V3_FACTORY });
+        await settle(() => second.status().indexedBlock >= chain.height);
+        expect(db.getMeta('identity')).toBe(`1020:${ FACTORY }:${ V3_FACTORY }:${ chain.blocks[0].hash }`);
+    });
+
+    it('leaves a V2-only chain alone - no reindex for a feature it does not have', async () =>
+    {
+        const db = freshDb();
+        const { log } = fakeLogger();
+        scriptOnePool();
+
+        const first = run(db, log);
+        await settle(() => first.status().indexedBlock >= chain.height);
+        const stamp = db.getMeta('identity');
+        first.stop();
+
+        const second = run(db, log);
+        await settle(() => second.status().indexedBlock >= chain.height);
+        expect(db.getMeta('identity')).toBe(stamp);
+    });
+
     it('stamps identity, seeds the artifact tokens, and indexes to head', async () =>
     {
         const db = freshDb();

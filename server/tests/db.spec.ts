@@ -5,6 +5,11 @@
 // to bring the exact bigint back. A silently truncated reserve is a wrong price
 // on every screen that reads it.
 
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
+
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { IndexerDb } from '../src/indexer/db.ts';
@@ -23,6 +28,16 @@ const MAX_UINT112 = (1n << 112n) - 1n;
 const MAX_UINT256 = (1n << 256n) - 1n;
 
 const open: IndexerDb[] = [];
+const scratchDirs: string[] = [];
+
+// The migration path needs a database that OUTLIVES one connection, which an
+// in-memory one does not - it dies with the handle that opened it.
+function scratchPath(): string
+{
+    const dir = mkdtempSync(join(tmpdir(), 'nuraswap-db-'));
+    scratchDirs.push(dir);
+    return join(dir, 'chain.db');
+}
 
 function freshDb(): IndexerDb
 {
@@ -39,6 +54,81 @@ afterEach(() =>
     {
         open.pop()?.close();
     }
+    while (scratchDirs.length > 0)
+    {
+        rmSync(scratchDirs.pop() as string, { recursive: true, force: true });
+    }
+});
+
+describe('schema migration', () =>
+{
+    // An indexer restart must not be a reindex. CREATE TABLE IF NOT EXISTS does
+    // nothing to a table that already exists, so every column added after the
+    // fact has to be added in place - and a server that cannot open its own
+    // database does not start at all.
+    it('adds columns to a database written before they existed', () =>
+    {
+        const path = scratchPath();
+        const old = new DatabaseSync(path);
+        old.exec(`
+            CREATE TABLE events (
+                block_number INTEGER NOT NULL,
+                log_index INTEGER NOT NULL,
+                tx_hash TEXT NOT NULL,
+                ts INTEGER NOT NULL,
+                pair TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                account TEXT NOT NULL,
+                amount0_in TEXT NOT NULL DEFAULT '0',
+                amount1_in TEXT NOT NULL DEFAULT '0',
+                amount0_out TEXT NOT NULL DEFAULT '0',
+                amount1_out TEXT NOT NULL DEFAULT '0',
+                PRIMARY KEY (block_number, log_index)
+            );
+            CREATE TABLE v3_pools (
+                address TEXT PRIMARY KEY,
+                token0 TEXT NOT NULL,
+                token1 TEXT NOT NULL,
+                fee INTEGER NOT NULL,
+                created_block INTEGER NOT NULL
+            );
+        `);
+        old.prepare('INSERT INTO events (block_number, log_index, tx_hash, ts, pair, kind, account, amount0_in) '
+            + "VALUES (1, 0, '0xold', 100, ?, 'swap', ?, '5')").run(PAIR, ALICE);
+        old.prepare('INSERT INTO v3_pools (address, token0, token1, fee, created_block) VALUES (?, ?, ?, 500, 3)')
+            .run(OTHER_PAIR, NURA, USDT);
+        old.close();
+
+        const db = new IndexerDb(path);
+        open.push(db);
+
+        // The row predates the column, and it was a V2 row by definition - which
+        // is exactly what the DEFAULT has to say for the read to stay truthful.
+        const [event] = db.recentEvents(10);
+        expect(event.protocol).toBe('v2');
+        expect(event.amount0In).toBe(5n);
+
+        // A pool whose balances and price were never read is not a pool worth
+        // zero - but zero is what it holds until the first read lands, and the
+        // price map skips a pool quoting nothing rather than pricing off it.
+        const pool = db.getV3Pool(OTHER_PAIR);
+        expect(pool?.fee).toBe(500);
+        expect(pool?.balance0).toBe(0n);
+        expect(pool?.sqrtPriceX96).toBe(0n);
+    });
+
+    it('is idempotent - a second open of a migrated database changes nothing', () =>
+    {
+        const path = scratchPath();
+        const first = new IndexerDb(path);
+        first.upsertV3Pool({ address: OTHER_PAIR, token0: NURA, token1: USDT, fee: 500, createdBlock: 3 });
+        first.updateV3Price(OTHER_PAIR, 12345n);
+        first.close();
+
+        const second = new IndexerDb(path);
+        open.push(second);
+        expect(second.getV3Pool(OTHER_PAIR)?.sqrtPriceX96).toBe(12345n);
+    });
 });
 
 function event(overrides: Partial<EventRow> = {}): EventRow
@@ -50,6 +140,7 @@ function event(overrides: Partial<EventRow> = {}): EventRow
         timestamp: 1_700_000_000,
         pair: PAIR,
         kind: 'swap',
+        protocol: 'v2',
         account: ALICE,
         amount0In: 1n,
         amount1In: 0n,

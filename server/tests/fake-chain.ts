@@ -6,7 +6,7 @@
 
 import { encodeAbiParameters, encodeEventTopics, pad, toHex } from 'viem';
 
-import { FACTORY_ABI, PAIR_ABI } from '../src/indexer/decode.ts';
+import { FACTORY_ABI, PAIR_ABI, V3_FACTORY_ABI } from '../src/indexer/decode.ts';
 import type { Address } from '../src/indexer/db.ts';
 import type { RawLog } from '../src/indexer/decode.ts';
 
@@ -29,6 +29,10 @@ export class FakeChain
     public logs: RawLog[] = [];
     public readonly txFrom = new Map<string, Address>();
     public readonly tokens = new Map<string, { symbol: string; name: string; decimals: number }>();
+    /** Pool address -> sqrtPriceX96, for slot0. Absent reverts, like an unpooled address. */
+    public readonly poolPrices = new Map<string, bigint>();
+    /** `${ token }:${ holder }` -> balance, for balanceOf. Absent reads as zero. */
+    public readonly balances = new Map<string, bigint>();
     /** Reads of these token addresses throw, exercising the unknown-token path. */
     public readonly unreadableTokens = new Set<string>();
     public readonly getLogsCalls: GetLogsCall[] = [];
@@ -113,6 +117,41 @@ export class FakeChain
             logIndex: options.logIndex,
             transactionHash: options.txHash ?? '0xf0'
         });
+    }
+
+    public poolCreated(options: {
+        factory: Address;
+        pool: Address;
+        token0: Address;
+        token1: Address;
+        fee: number;
+        blockNumber: number;
+        logIndex: number;
+        txHash?: `0x${ string }`;
+    }): void
+    {
+        this.#push({
+            address: options.factory,
+            topics: encodeEventTopics({
+                abi: V3_FACTORY_ABI,
+                eventName: 'PoolCreated',
+                args: { token0: options.token0, token1: options.token1, fee: options.fee }
+            }),
+            data: encodeAbiParameters([{ type: 'int24' }, { type: 'address' }], [10, options.pool]),
+            blockNumber: BigInt(options.blockNumber),
+            logIndex: options.logIndex,
+            transactionHash: options.txHash ?? '0xf3'
+        });
+    }
+
+    public setBalance(token: Address, holder: Address, balance: bigint): void
+    {
+        this.balances.set(`${ token.toLowerCase() }:${ holder.toLowerCase() }`, balance);
+    }
+
+    public setPoolPrice(pool: Address, sqrtPriceX96: bigint): void
+    {
+        this.poolPrices.set(pool.toLowerCase(), sqrtPriceX96);
     }
 
     public sync(options: {
@@ -291,6 +330,17 @@ export class FakeChain
                 {
                     throw new Error('execution reverted');
                 }
+                // Answered before the token lookup: a pool is not in the token
+                // registry, and slot0 is the one call made against its own address.
+                if (options.functionName === 'slot0')
+                {
+                    const sqrtPriceX96 = this.poolPrices.get(key);
+                    if (sqrtPriceX96 === undefined)
+                    {
+                        throw new Error('execution reverted');
+                    }
+                    return [sqrtPriceX96, 0, 0, 1, 1, 0, true];
+                }
                 const token = this.tokens.get(key);
                 if (token === undefined)
                 {
@@ -307,6 +357,11 @@ export class FakeChain
                 if (options.functionName === 'name')
                 {
                     return token.name;
+                }
+                if (options.functionName === 'balanceOf')
+                {
+                    const holder = String((options as { args?: unknown[] }).args?.[0] ?? '').toLowerCase();
+                    return this.balances.get(`${ key }:${ holder }`) ?? 0n;
                 }
                 throw new Error(`unexpected call ${ options.functionName }`);
             }

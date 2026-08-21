@@ -12,9 +12,18 @@ import type { Deployment } from '@nuraswap/shared/deployments';
 import { priceFromReserves } from '@nuraswap/shared/math';
 
 import { HOUR, fillCandles, hourStartOf } from './indexer/apply.ts';
-import { buildPriceMap, feeAprBps, pairTvlUsd, toUsdNumber, volumeUsd } from './indexer/pricing.ts';
+import {
+    anchorsOnly,
+    buildPriceMap,
+    feeAprBps,
+    pairTvlUsd,
+    poolTvlUsd,
+    toUsdNumber,
+    toUsdPrice,
+    volumeUsd
+} from './indexer/pricing.ts';
 import { deploymentInfo, pool, poolDetail, stats, tokenWithPrice, txItem } from './schemas.ts';
-import type { EventRow, IndexerDb, PairRow } from './indexer/db.ts';
+import type { EventRow, IndexerDb, PairRow, V3PoolRow } from './indexer/db.ts';
 import type { Pool, TokenRef, TxItem } from './schemas.ts';
 
 export interface IndexerStatus
@@ -29,6 +38,12 @@ export interface ApiState
     deployment: Deployment;
     /** The factory's live swapFee in basis points - read from the chain at boot. */
     swapFeeBps: number;
+    /**
+     * SYMBOL -> USD price in 1e18, from outside the chain. Bridged assets are
+     * worth what they bridge, which no pool here knows; without this a chain
+     * whose stable has no liquidity prices nothing at all.
+     */
+    externalPrices: () => ReadonlyMap<string, bigint>;
     status: () => IndexerStatus;
 }
 
@@ -58,12 +73,48 @@ export function createApi(state: ApiState)
         return db.getToken(address)?.decimals ?? 18;
     }
 
-    function poolWire(pair: PairRow, prices: ReturnType<typeof buildPriceMap>): Pool
+    // The feed knows symbols; the price map is keyed by address. The token
+    // registry is the only thing that can join them, and it is read per request
+    // rather than cached at boot so a token the indexer discovers later is
+    // priced the moment it appears.
+    function externalSeeds(): Map<string, bigint>
+    {
+        const feed = state.externalPrices();
+        const seeds = new Map<string, bigint>();
+        for (const token of feed.size === 0 ? [] : db.listTokens())
+        {
+            const price = feed.get(token.symbol.toUpperCase());
+            if (price !== undefined)
+            {
+                seeds.set(token.address.toLowerCase(), price);
+            }
+        }
+        return seeds;
+    }
+
+    // Two maps, deliberately. EVERY price is what the app quotes with - swap
+    // rates, a position's worth, the token registry - because a pool-derived
+    // price is the best answer available for those. ANCHORED prices are the
+    // subset that came from outside the exchange, and they are what money
+    // figures are summed over: a pool cannot be counted as valuable on the
+    // strength of a rate it set itself.
+    function priceView(): { prices: ReturnType<typeof buildPriceMap>; anchored: ReturnType<typeof buildPriceMap> }
+    {
+        const seeds = externalSeeds();
+        const prices = buildPriceMap(db.listPairs(), db.listTokens(), refs, seeds, db.listV3Pools());
+        return { prices, anchored: anchorsOnly(prices, refs, seeds) };
+    }
+
+    function poolWire(
+        pair: PairRow,
+        prices: ReturnType<typeof buildPriceMap>,
+        anchored: ReturnType<typeof buildPriceMap>
+    ): Pool
     {
         const hourNow = hourStartOf(Math.floor(Date.now() / 1000));
         const dayVolume = db.volumeSince(pair.address, hourNow - 23 * HOUR);
-        const volume24hUsd = volumeUsd(dayVolume.volume0, dayVolume.volume1, pair, prices, decimalsOf);
-        const tvlUsd = pairTvlUsd(pair, prices, decimalsOf);
+        const volume24hUsd = volumeUsd(dayVolume.volume0, dayVolume.volume1, pair, anchored, decimalsOf);
+        const tvlUsd = pairTvlUsd(pair, anchored, decimalsOf);
         return {
             address: pair.address,
             token0: tokenRefOf(pair.token0),
@@ -82,13 +133,52 @@ export function createApi(state: ApiState)
         };
     }
 
+    // A concentrated pool answers the same wire shape as a pair. It has no
+    // reserves, so the token BALANCES the indexer refreshes stand in - the same
+    // figure the stats headline already counts it by - and the price comes off
+    // the last candle, which is the pool's own post-trade sqrtPriceX96 rather
+    // than a ratio of those balances. The fee is the pool's own tier, in ppm,
+    // where a pair carries one factory-wide swapFee in bps.
+    function v3PoolWire(
+        pool: V3PoolRow,
+        prices: ReturnType<typeof buildPriceMap>,
+        anchored: ReturnType<typeof buildPriceMap>
+    ): Pool
+    {
+        const hourNow = hourStartOf(Math.floor(Date.now() / 1000));
+        const dayVolume = db.volumeSince(pool.address, hourNow - 23 * HOUR);
+        const volume24hUsd = volumeUsd(dayVolume.volume0, dayVolume.volume1, pool, anchored, decimalsOf);
+        const tvlUsd = poolTvlUsd(pool, pool.balance0, pool.balance1, anchored, decimalsOf);
+        return {
+            address: pool.address,
+            token0: tokenRefOf(pool.token0),
+            token1: tokenRefOf(pool.token1),
+            reserve0: pool.balance0.toString(),
+            reserve1: pool.balance1.toString(),
+            priceWad: (db.candles(pool.address, 0).at(-1)?.close ?? 0n).toString(),
+            tvlUsd: toUsdNumber(tvlUsd),
+            volume24hUsd: toUsdNumber(volume24hUsd),
+            feeAprBps: feeAprBps(volume24hUsd, tvlUsd, pool.fee / 100)
+        };
+    }
+
+    // The two protocols keep their pools in different tables - a V2 pair carries
+    // reserves, a V3 pool has none to carry - but a transaction row only ever
+    // wants the two tokens, which both tables answer the same way.
+    function poolTokensOf(event: EventRow): { token0: string; token1: string }
+    {
+        const pool = event.protocol === 'v3' ? db.getV3Pool(event.pair) : db.getPair(event.pair);
+        return { token0: pool?.token0 ?? event.pair, token1: pool?.token1 ?? event.pair };
+    }
+
     function txWire(event: EventRow): TxItem
     {
-        const pair = db.getPair(event.pair);
-        const token0 = tokenRefOf(pair?.token0 ?? event.pair);
-        const token1 = tokenRefOf(pair?.token1 ?? event.pair);
+        const tokens = poolTokensOf(event);
+        const token0 = tokenRefOf(tokens.token0);
+        const token1 = tokenRefOf(tokens.token1);
         const base = {
             txHash: event.txHash,
+            protocol: event.protocol,
             kind: event.kind,
             timestamp: event.timestamp,
             account: event.account,
@@ -119,20 +209,32 @@ export function createApi(state: ApiState)
             stats: routes.get('/stats', { output: stats }, () =>
             {
                 const pairs = db.listPairs();
-                const prices = buildPriceMap(pairs, db.listTokens(), refs);
+                const v3Pools = db.listV3Pools();
+                const { anchored } = priceView();
                 const hourNow = hourStartOf(Math.floor(Date.now() / 1000));
+                const dayStart = hourNow - 23 * HOUR;
                 let tvlUsd = 0n;
                 let volume24hUsd = 0n;
                 for (const pair of pairs)
                 {
-                    tvlUsd += pairTvlUsd(pair, prices, decimalsOf);
-                    const dayVolume = db.volumeSince(pair.address, hourNow - 23 * HOUR);
-                    volume24hUsd += volumeUsd(dayVolume.volume0, dayVolume.volume1, pair, prices, decimalsOf);
+                    tvlUsd += pairTvlUsd(pair, anchored, decimalsOf);
+                    const dayVolume = db.volumeSince(pair.address, dayStart);
+                    volume24hUsd += volumeUsd(dayVolume.volume0, dayVolume.volume1, pair, anchored, decimalsOf);
+                }
+                // One market, one set of totals. A V3 pool's worth is what it HOLDS,
+                // read onto the row by the indexer, and its volume is summed from
+                // its own swaps - there is no candle series to read it out of.
+                for (const pool of v3Pools)
+                {
+                    tvlUsd += poolTvlUsd(pool, pool.balance0, pool.balance1, anchored, decimalsOf);
+                    const dayVolume = db.v3VolumeSince(pool.address, dayStart);
+                    volume24hUsd += volumeUsd(dayVolume.volume0, dayVolume.volume1, pool, anchored, decimalsOf);
                 }
                 const status = state.status();
                 return {
                     chainId: deployment.chainId,
                     pairCount: pairs.length,
+                    poolCount: pairs.length + v3Pools.length,
                     swapFeeBps,
                     tvlUsd: toUsdNumber(tvlUsd),
                     volume24hUsd: toUsdNumber(volume24hUsd),
@@ -143,24 +245,30 @@ export function createApi(state: ApiState)
             pools: routes.get('/pools', { output: array(pool) }, () =>
             {
                 const pairs = db.listPairs();
-                const prices = buildPriceMap(pairs, db.listTokens(), refs);
-                return pairs.map((pair) => poolWire(pair, prices));
+                const { prices, anchored } = priceView();
+                return pairs.map((pair) => poolWire(pair, prices, anchored));
             }),
             pool: routes.get('/pools/:address', { output: poolDetail }, (context) =>
             {
+                // Either table may own the address: the chart is asked for a pool,
+                // not for a protocol, and both now keep an hourly series.
                 const pair = db.getPair(context.params.address);
-                if (pair === null)
+                const v3Pool = pair === null ? db.getV3Pool(context.params.address) : null;
+                if (pair === null && v3Pool === null)
                 {
                     throw new NotFoundError('unknown pool');
                 }
-                const prices = buildPriceMap(db.listPairs(), db.listTokens(), refs);
+                const { prices, anchored } = priceView();
+                const wire = pair !== null
+                    ? poolWire(pair, prices, anchored)
+                    : v3PoolWire(v3Pool as V3PoolRow, prices, anchored);
                 const hourNow = hourStartOf(Math.floor(Date.now() / 1000));
-                const raw = db.candles(pair.address, hourNow - 72 * HOUR);
+                const raw = db.candles(wire.address, hourNow - 72 * HOUR);
                 // Chain time can run AHEAD of wall time (local chains walk their
                 // clock forward); fill to whichever is later or the fill is empty.
                 const toHour = Math.max(hourNow, raw.at(-1)?.hourStart ?? hourNow);
                 return {
-                    ...poolWire(pair, prices),
+                    ...wire,
                     candles: fillCandles(raw, toHour).map((point) => ({
                         hourStart: point.hourStart,
                         open: point.open.toString(),
@@ -174,10 +282,11 @@ export function createApi(state: ApiState)
             }),
             tokens: routes.get('/tokens', { output: array(tokenWithPrice) }, () =>
             {
-                const prices = buildPriceMap(db.listPairs(), db.listTokens(), refs);
+                const { prices, anchored } = priceView();
                 return db.listTokens().map((token) => ({
                     ...token,
-                    priceUsd: toUsdNumber(prices.get(token.address) ?? 0n)
+                    priceUsd: toUsdPrice(prices.get(token.address) ?? 0n),
+                    anchored: anchored.has(token.address)
                 }));
             }),
             txs: routes.get(

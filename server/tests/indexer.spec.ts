@@ -121,6 +121,7 @@ describe('applyEvent', () =>
 
         const swap = {
             kind: 'swap' as const,
+            protocol: 'v2' as const,
             pair: PAIR,
             blockNumber: 12,
             logIndex: 3,
@@ -152,13 +153,13 @@ describe('applyEvent', () =>
 
         applyEvent(db, { kind: 'sync', pair: PAIR, reserve0: 40_000n * 10n ** 18n, reserve1: 100_000n * 10n ** 6n }, context);
         applyEvent(db, {
-            kind: 'swap', pair: PAIR, blockNumber: 12, logIndex: 1, txHash: '0x01', account: TRADER,
+            kind: 'swap', protocol: 'v2', pair: PAIR, blockNumber: 12, logIndex: 1, txHash: '0x01', account: TRADER,
             amount0In: 10n ** 18n, amount1In: 0n, amount0Out: 0n, amount1Out: 2n * 10n ** 6n
         }, context);
         // Price moves: more USDT per NURA now.
         applyEvent(db, { kind: 'sync', pair: PAIR, reserve0: 38_000n * 10n ** 18n, reserve1: 105_000n * 10n ** 6n }, context);
         applyEvent(db, {
-            kind: 'swap', pair: PAIR, blockNumber: 12, logIndex: 5, txHash: '0x02', account: TRADER,
+            kind: 'swap', protocol: 'v2', pair: PAIR, blockNumber: 12, logIndex: 5, txHash: '0x02', account: TRADER,
             amount0In: 0n, amount1In: 5n * 10n ** 6n, amount0Out: 18n * 10n ** 17n, amount1Out: 0n
         }, context);
 
@@ -461,6 +462,7 @@ describe('applyEvent - deposits, withdrawals and guards', () =>
         pairCreated(db);
         applyEvent(db, {
             kind: 'mint',
+            protocol: 'v2',
             pair: PAIR,
             blockNumber: 12,
             logIndex: 0,
@@ -485,6 +487,7 @@ describe('applyEvent - deposits, withdrawals and guards', () =>
         pairCreated(db);
         const burn = {
             kind: 'burn' as const,
+            protocol: 'v2' as const,
             pair: PAIR,
             blockNumber: 13,
             logIndex: 0,
@@ -507,6 +510,7 @@ describe('applyEvent - deposits, withdrawals and guards', () =>
         pairCreated(db);
         applyEvent(db, {
             kind: 'swap',
+            protocol: 'v2',
             pair: PAIR,
             blockNumber: 12,
             logIndex: 0,
@@ -526,6 +530,7 @@ describe('applyEvent - deposits, withdrawals and guards', () =>
         const db = freshDb();
         applyEvent(db, {
             kind: 'swap',
+            protocol: 'v2',
             pair: PAIR,
             blockNumber: 12,
             logIndex: 0,
@@ -552,6 +557,7 @@ describe('applyEvent - deposits, withdrawals and guards', () =>
         }, context);
         applyEvent(db, {
             kind: 'swap',
+            protocol: 'v2',
             pair: PAIR,
             blockNumber: 12,
             logIndex: 0,
@@ -583,6 +589,7 @@ describe('applyEvent - deposits, withdrawals and guards', () =>
         };
         applyEvent(db, {
             kind: 'swap',
+            protocol: 'v2',
             pair: PAIR,
             blockNumber: 12,
             logIndex: 0,
@@ -595,6 +602,7 @@ describe('applyEvent - deposits, withdrawals and guards', () =>
         }, hourApart);
         applyEvent(db, {
             kind: 'swap',
+            protocol: 'v2',
             pair: PAIR,
             blockNumber: 13,
             logIndex: 0,
@@ -623,6 +631,7 @@ describe('applyEvent - deposits, withdrawals and guards', () =>
         }, context);
         const swap = {
             kind: 'swap' as const,
+            protocol: 'v2' as const,
             pair: PAIR,
             blockNumber: 12,
             logIndex: 0,

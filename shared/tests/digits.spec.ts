@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { formatTokenAmount, normalizeDigits, parseTokenAmount } from '../src/digits.ts';
+import { formatQuotedAmount, formatTokenAmount, normalizeDigits, parseTokenAmount } from '../src/digits.ts';
 
 describe('normalizeDigits', () =>
 {
@@ -89,5 +89,34 @@ describe('formatTokenAmount', () =>
     {
         const raw = 123_456_789_012_345_678n;
         expect(parseTokenAmount(formatTokenAmount(raw, 18), 18)).toBe(raw);
+    });
+});
+
+describe('formatQuotedAmount', () =>
+{
+    it('caps the fraction like formatTokenAmount when that keeps the value', () =>
+    {
+        expect(formatQuotedAmount(1_234_567_890_123_456_789n, 18)).toBe('1.23456789');
+        expect(formatQuotedAmount(1_500_000n, 6)).toBe('1.5');
+        expect(formatQuotedAmount(0n, 18)).toBe('0');
+    });
+
+    // The bug this exists for: the add-liquidity ratio fill wrote the counterpart
+    // side with an 8-digit cap, so a quote below 1e-8 landed in the field as "0",
+    // parsed back as zero and left the deposit button disabled with a number
+    // already on screen.
+    it('widens rather than render a non-zero amount as zero', () =>
+    {
+        expect(formatQuotedAmount(10_000_000n, 18)).toBe('0.00000000001');
+        expect(formatQuotedAmount(1n, 18)).toBe('0.000000000000000001');
+        expect(parseTokenAmount(formatQuotedAmount(1n, 18), 18)).toBe(1n);
+    });
+
+    it('never returns text that parses back to zero for a non-zero amount', () =>
+    {
+        for (const raw of [1n, 7n, 99n, 10n ** 9n, 10n ** 10n - 1n, 10n ** 11n])
+        {
+            expect(parseTokenAmount(formatQuotedAmount(raw, 18), 18)).not.toBe(0n);
+        }
     });
 });

@@ -12,6 +12,7 @@ import { createPublicClient, http, parseAbi } from 'viem';
 import { manifestOf } from '@azerothjs/http/api';
 
 import { buildApp, createApi } from './app.ts';
+import { startPriceFeed } from './feed.ts';
 import { buildCsp } from './csp.ts';
 import { IndexerDb } from './indexer/db.ts';
 import { UNKNOWN_TOKEN, readTokenMetadata } from './indexer/erc20.ts';
@@ -39,7 +40,14 @@ const config = loadConfig({
     // everybody. On, the forwarded address is trusted, which is only safe when
     // something actually strips and rewrites it. Default off: a directly exposed
     // server must not believe a header the client can forge.
-    trustProxy: flag('TRUST_PROXY', { default: false })
+    trustProxy: flag('TRUST_PROXY', { default: false }),
+    // The only outbound HTTP this process makes. A bridged asset is worth what
+    // it bridges, and no pool on this chain states that - with the feed off,
+    // every USD figure that depends on one reads $0. That is the correct
+    // behaviour for an air-gapped box and the wrong one everywhere else, so it
+    // is a switch rather than an assumption.
+    priceFeed: flag('PRICE_FEED', { default: true }),
+    priceFeedMs: num('PRICE_FEED_MS', { default: 60_000 })
 });
 const isProduction = config.env === 'production';
 
@@ -139,6 +147,10 @@ const indexer = startIndexer({
     confirmations: 0
 });
 
+const feed = config.priceFeed
+    ? startPriceFeed({ log, refreshMs: config.priceFeedMs })
+    : { prices: (): ReadonlyMap<string, bigint> => new Map(), stop: (): void => undefined };
+
 // In dev, vite serves the client and proxies /api here; in production this server serves
 // the whole app - one origin, no CORS between halves. The SSR bundle is ONE self-contained
 // file, so importing it gives the kit both the route table and the page renderer.
@@ -146,7 +158,7 @@ const ssr = isProduction
     ? await import(pathToFileURL(config.ssrEntry).href) as { routes: PageRoute[]; renderPage: PageRenderer }
     : undefined;
 
-const api = createApi({ db, deployment: active, swapFeeBps, status: indexer.status });
+const api = createApi({ db, deployment: active, swapFeeBps, externalPrices: feed.prices, status: indexer.status });
 
 const app = buildApp({
     dev: !isProduction,
@@ -193,6 +205,8 @@ const served = await serve(handler, { port: config.port });
 handleShutdownSignals(served);
 process.once('SIGINT', indexer.stop);
 process.once('SIGTERM', indexer.stop);
+process.once('SIGINT', feed.stop);
+process.once('SIGTERM', feed.stop);
 
 // The panel's Server tab connects here and mirrors the server's reactive graph. Dev only,
 // token-gated; the token lives in `.env` so it survives restarts.
