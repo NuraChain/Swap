@@ -364,7 +364,12 @@ function addChainParams(info: NonNullable<ReturnType<typeof deployment>>): objec
         chainName: info.networkName,
         nativeCurrency: { name: 'NURA', symbol: 'NURA', decimals: 18 },
         rpcUrls: [info.rpcUrl],
-        blockExplorerUrls: info.explorerUrl === null ? [] : [info.explorerUrl]
+        // Absent, NOT empty, when there is no explorer: EIP-3085 asks for null or
+        // at least one URL, and MetaMask enforces it - an empty array comes back
+        // -32602 "Expected null or array with at least one valid string HTTPS
+        // URL", which failed the whole add for a deployment that simply has no
+        // explorer configured.
+        ...(info.explorerUrl === null ? {} : { blockExplorerUrls: [info.explorerUrl] })
     };
 }
 
@@ -385,8 +390,18 @@ export async function switchChain(): Promise<void>
     {
         await activeProvider.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: hexId }] });
     }
-    catch
+    catch (error)
     {
+        // "Unknown chain" is 4902 by the spec, but wallets disagree in practice -
+        // forks answer -32603 or 4200 for the same condition - so the fallback
+        // fires on anything that is NOT an explicit refusal rather than on one
+        // code. The test matters in the other direction too: catching everything
+        // meant a DECLINED switch was answered by immediately asking to add the
+        // chain, a second prompt for someone who had just said no.
+        if (classifyTxError(error) === 'rejected')
+        {
+            return;
+        }
         await activeProvider.request({
             method: 'wallet_addEthereumChain',
             params: [addChainParams(info)]
@@ -443,10 +458,18 @@ export async function addChainToWallet(): Promise<void>
         });
         pushToast('success', t().common.addChainDone);
     }
-    catch
+    catch (error)
     {
-        // Declined in the wallet, or already present and refused - either way the
-        // user saw their wallet's own prompt and needs nothing further from us.
+        // A declined prompt is a normal outcome: the user saw their own wallet ask
+        // and said no, so a red toast would only restate it. Everything else is
+        // NOT that - a malformed parameter (-32602) or a provider that does not
+        // implement the method at all (4200) landed here too, and swallowing them
+        // left a button that visibly did nothing, the one failure a user cannot
+        // tell apart from a broken page.
+        if (classifyTxError(error) !== 'rejected')
+        {
+            pushToast('error', t().common.addChainFailed);
+        }
     }
 }
 

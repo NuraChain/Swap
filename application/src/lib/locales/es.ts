@@ -29,6 +29,7 @@ export const es: Dict = {
         addChain: 'Añadir Nura Chain a la cartera',
         addChainDone: 'Nura Chain añadida a tu cartera',
         addChainNoWallet: 'Conecta antes una cartera.',
+        addChainFailed: 'Tu cartera no pudo añadir Nura Chain. Comprueba que esté desbloqueada e inténtalo de nuevo.',
         viewExplorer: 'Ver en el explorador',
         indexerLag: 'Los datos de mercado se están poniendo al día: pools, gráficos e historial pueden ir unos bloques por detrás de la cadena. Las cotizaciones y los saldos se leen en vivo y siguen siendo correctos.',
         firstPage: 'Primera página',

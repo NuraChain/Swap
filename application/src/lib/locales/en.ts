@@ -31,6 +31,7 @@ export const en = {
         addChain: 'Add Nura Chain to wallet',
         addChainDone: 'Nura Chain added to your wallet',
         addChainNoWallet: 'Connect a wallet first.',
+        addChainFailed: 'Your wallet could not add Nura Chain. Check that it is unlocked, then try again.',
         viewExplorer: 'View on explorer',
         indexerLag: 'Market data is catching up - pools, charts and history may lag the chain by a few blocks. Quotes and balances are read live and stay correct.',
         firstPage: 'First page',

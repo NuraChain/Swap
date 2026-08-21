@@ -29,6 +29,7 @@ export const fr: Dict = {
         addChain: 'Ajouter Nura Chain au portefeuille',
         addChainDone: 'Nura Chain a été ajoutée à votre portefeuille',
         addChainNoWallet: 'Connectez d’abord un portefeuille.',
+        addChainFailed: 'Votre portefeuille n’a pas pu ajouter Nura Chain. Vérifiez qu’il est déverrouillé, puis réessayez.',
         viewExplorer: 'Voir dans l’explorateur',
         indexerLag: 'Les données de marché se remettent à niveau - les pools, les graphiques et l’historique peuvent avoir quelques blocs de retard sur la chaîne. Les cotations et les soldes sont lus en direct et restent exacts.',
         firstPage: 'Première page',

@@ -29,6 +29,7 @@ export const tr: Dict = {
         addChain: 'Nura Chain’i cüzdana ekle',
         addChainDone: 'Nura Chain cüzdanınıza eklendi',
         addChainNoWallet: 'Önce bir cüzdan bağlayın.',
+        addChainFailed: 'Cüzdanınız Nura Chain’i ekleyemedi. Kilidinin açık olduğundan emin olup tekrar deneyin.',
         viewExplorer: 'Gezginde görüntüle',
         indexerLag: 'Piyasa verileri zinciri yakalıyor - havuzlar, grafikler ve geçmiş zincirin birkaç blok gerisinde kalabilir. Fiyat teklifleri ve bakiyeler canlı okunur ve doğru kalır.',
         firstPage: 'İlk sayfa',

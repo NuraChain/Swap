@@ -29,6 +29,7 @@ export const zh: Dict = {
         addChain: '将 Nura Chain 添加到钱包',
         addChainDone: 'Nura Chain 已添加到你的钱包',
         addChainNoWallet: '请先连接钱包。',
+        addChainFailed: '您的钱包无法添加 Nura 链。请确认钱包已解锁后重试。',
         viewExplorer: '在区块浏览器中查看',
         indexerLag: '行情数据正在追赶链上进度——资金池、图表和历史记录可能落后链上若干区块。报价和余额为实时读取，始终准确。',
         firstPage: '首页',
