@@ -143,7 +143,7 @@ cd server && NODE_ENV=production node src/main.ts
 
 One origin serves everything on :3000 - pages, API, and the strict CSP.
 `CHAIN_ID` picks the deployment artifact and defaults to 1020. The VPS story
-(Caddy, systemd, `deploy/deploy.sh`) is further down.
+(Caddy, systemd, `npm run service:install`) is further down.
 
 Open http://localhost:4001 and connect a real wallet extension - there is no
 built-in signer, on purpose. The full walkthrough:
@@ -216,12 +216,11 @@ cd server
 NODE_ENV=production CHAIN_ID=1020 DATA_DIR=/var/lib/nuraswap node src/main.ts
 ```
 
-`deploy/nuraswap.service` runs that same command under systemd, and
-`deploy/deploy.sh` ships a build to the box. `scripts/service-install.sh` is the
-same unit generated for wherever the repo actually sits - it resolves the node
-binary and the paths itself, then `scripts/service-{start,stop,restart,status}.sh`
-drive it. The checked-in file is the hardened, fixed-path version and installs
-`nuraswap`; the generator is the portable one and installs `nura-swap`.
+`npm run service:install` runs that same command under systemd: it generates the
+unit for wherever the repo actually sits - resolving the node binary and the paths
+itself - and installs it as `nura-swap`. `npm run service:start`, `:stop`,
+`:restart` and `:status` drive it from there; `npm run service:deploy` rebuilds and
+restarts in place, and `npm run service:uninstall` removes the unit.
 
 Put a TLS reverse proxy in front (Caddy shown; nginx works the same way):
 

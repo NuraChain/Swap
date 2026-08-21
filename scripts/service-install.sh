@@ -78,11 +78,10 @@ ExecStart="$NODE_PATH" $SERVICE_PATH_APP
 StandardOutput=file:$SERVICE_PATH/logs/service_output.log
 StandardError=file:$SERVICE_PATH/logs/service_error.log
 
-# The path-independent half of deploy/nuraswap.service. Its User=, ProtectSystem=strict
-# and ReadWritePaths= are deliberately NOT copied: they are written against the fixed
-# /srv/nuraswap layout, and this installer runs against whatever directory it is in -
-# a strict sandbox with the wrong ReadWritePaths is a service that cannot open its
-# database. Use the checked-in unit for the hardened, fixed-path deployment.
+# Hardening, kept portable. User=, ProtectSystem=strict and ReadWritePaths= are
+# deliberately not emitted: they only make sense against a fixed /srv layout, and this
+# installer runs against whatever directory it is in - a strict sandbox with the wrong
+# ReadWritePaths is a service that cannot open its database.
 NoNewPrivileges=true
 PrivateTmp=true
 $PROTECT_HOME
