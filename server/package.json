@@ -1,7 +1,7 @@
 {
     "name": "nuraswap-server",
     "private": true,
-    "version": "1.0.0",
+    "version": "1.1.0",
     "type": "module",
     "engines": {
         "node": ">=24"
@@ -18,7 +18,7 @@
         "@azerothjs/kit": "^2.0.0-beta.2",
         "@azerothjs/logger": "^2.0.0-beta.2",
         "@azerothjs/schema": "^2.0.0-beta.2",
-        "@nuraswap/shared": "1.0.0",
+        "@nuraswap/shared": "1.1.0",
         "azerothjs": "^2.0.0-beta.2",
         "viem": "^2.55.11"
     },

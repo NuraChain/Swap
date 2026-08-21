@@ -1,7 +1,7 @@
 {
     "name": "nuraswap",
     "private": true,
-    "version": "1.0.0",
+    "version": "1.1.0",
     "type": "module",
     "engines": {
         "node": ">=24"
@@ -23,7 +23,14 @@
         "test:app": "azeroth test",
         "coverage": "npm run coverage --workspace shared && npm run coverage --workspace server && npm run coverage --workspace application",
         "lint:rtl": "node application/scripts/lint-rtl.mjs",
-        "verify": "npm run lint:rtl && npm run check && npm run build && npm test"
+        "verify": "npm run lint:rtl && npm run check && npm run build && npm test",
+        "service:stop": "bash scripts/service-stop.sh",
+        "service:start": "bash scripts/service-start.sh",
+        "service:status": "bash scripts/service-status.sh",
+        "service:restart": "bash scripts/service-restart.sh",
+        "service:install": "bash scripts/service-install.sh",
+        "service:uninstall": "bash scripts/service-uninstall.sh",
+        "service:deploy": "npm run build && npm run service:restart"
     },
     "devDependencies": {
         "@azerothjs/cli": "^2.0.0-beta.2",
