@@ -14,7 +14,7 @@ if [ "$(id -u)" -ne 0 ]; then
   exit 1
 fi
 
-SERVICE_NAME="nuraswap"
+SERVICE_NAME="nura-swap"
 
 # The repo root, and the server half inside it. The server IS the service: it runs the API, the
 # indexer, and in production serves the built client itself, so there is only ever one unit.
@@ -57,18 +57,13 @@ echo "> Installing systemd service (${SERVICE_FILE})..."
 cat > "$SERVICE_FILE" <<EOF
 [Unit]
 Description=Nura Swap
-Documentation=https://github.com/AzerothJS/AzerothJS
-# network-online, not plain network: the indexer dials the chain RPC on boot, and
-# network.target is up long before a route exists. No backticks in this heredoc -
-# it is unquoted so that NODE_PATH and SERVICE_PATH below expand, which means a
-# backtick would run as a command substitution while the unit is being written.
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
 Restart=always
-RestartSec=3
+RestartSec=5
 # The floor, so a box with no .env still runs the PRODUCTION path - without it the
 # server serves no SSR and attaches the devtools bridge. The file below overrides.
 Environment=NODE_ENV=production
