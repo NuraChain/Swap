@@ -7,6 +7,34 @@ Notable changes to Nura Swap. The format follows
 The exchange contracts live in [their own repository](https://github.com/NuraChain/Swap);
 this changelog covers the application, the indexer, and the shared maths.
 
+## [1.1.1] - 2026-08-21
+
+### Changed
+
+`scripts/service-install.sh` installs the unit as `nura-swap` and gives systemd
+5 seconds between restarts rather than 3. `deploy/` is gone with it: the
+generator writes the unit for wherever the repo actually sits, which left the
+fixed-path `/srv/nuraswap` copy with nothing to offer, and the Caddy snippet it
+carried is already in the README.
+
+### Fixed
+
+**`npm ci` builds off Windows.** Tailwind's oxide compiler ships as a
+platform-specific optional dependency, so a lockfile resolved on Windows carried
+only the msvc binary and a Linux box installed no compiler at all. Both the
+`linux-x64-gnu` and `win32-x64-msvc` builds are pinned in `optionalDependencies`,
+so one lockfile resolves on either.
+
+**The unit generator no longer runs its own comment.** The heredoc that writes
+the service file is unquoted so that the resolved node and server paths expand -
+which also made a backtick in the surrounding comment a command substitution,
+executed while the unit was being written.
+
+**A repo under `/home` starts.** `ProtectHome=true` hides `/home` and `/root`
+from the service, and takes `WorkingDirectory` with it: systemd failed the unit
+with 200/CHDIR before it ran a line. The installer follows the repo wherever it
+sits, so the directive is now emitted only where it cannot bite.
+
 ## [1.1.0] - 2026-08-21
 
 ### Added
