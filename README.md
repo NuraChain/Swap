@@ -8,19 +8,10 @@ Swap tokens, provide liquidity, and track your portfolio on a UniswapV2-class AM
 self-custody end to end, in ten languages with first-class RTL, dark and light
 themes.
 
-<div dir="rtl">
-
-**نوراسواپ - بازارساز خودکار متن‌باز. کلیدها و معامله‌ها از آنِ شما.**
-
-مبادله توکن، تأمین نقدینگی و پیگیری دارایی‌ها روی یک AMM از خانواده UniswapV2؛
-امانت‌داری کاملاً شخصی، دوزبانه با پشتیبانی کامل راست‌به‌چپ و دو پوسته تیره و روشن.
-
-</div>
-
 [![Built with AzerothJS](https://img.shields.io/badge/built%20with-AzerothJS-5fb3e8)](https://github.com/AzerothJS/AzerothJS)
 [![Node >= 24](https://img.shields.io/badge/node-%3E%3D24-brightgreen)](https://nodejs.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](#license)
-[![Version 1.0.0](https://img.shields.io/badge/version-1.0.0-5fb3e8)](CHANGELOG.md)
+[![Version 1.1.0](https://img.shields.io/badge/version-1.1.0-5fb3e8)](CHANGELOG.md)
 
 </div>
 
@@ -215,7 +206,13 @@ NODE_ENV=production CHAIN_ID=1020 DATA_DIR=/var/lib/nuraswap node src/main.ts
 ```
 
 `deploy/nuraswap.service` runs that same command under systemd, and
-`deploy/deploy.sh` ships a build to the box. Put a TLS reverse proxy in front (Caddy shown; nginx works the same way):
+`deploy/deploy.sh` ships a build to the box. `scripts/service-install.sh` is the
+same unit generated for wherever the repo actually sits - it resolves the node
+binary and the paths itself, then `scripts/service-{start,stop,restart,status}.sh`
+drive it. Both install one unit named `nuraswap`; the checked-in file is the
+hardened, fixed-path version, the generator is the portable one.
+
+Put a TLS reverse proxy in front (Caddy shown; nginx works the same way):
 
 ```
 nuraswap.example {

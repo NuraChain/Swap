@@ -7,6 +7,33 @@ Notable changes to Nura Swap. The format follows
 The exchange contracts live in [their own repository](https://github.com/NuraChain/Swap);
 this changelog covers the application, the indexer, and the shared maths.
 
+## [1.1.0] - 2026-08-21
+
+### Added
+
+**V3 trades are charted.** A concentrated pool has no reserves to price an
+hourly candle from, but every V3 `Swap` reports the pool's own post-trade
+`sqrtPriceX96` - so the series is drawn from that instead, in the same
+orientation and scale a V2 pair is priced in. The pool detail route serves a V3
+pool alongside a V2 pair, with the pool's balances where a pair carries reserves.
+
+**The NURA price in the header.** On every page rather than only the market ones,
+read off the WNURA pool, at price precision rather than money precision - a
+sub-cent native token printed as $0.00 under the two-decimal rule.
+
+### Changed
+
+The swap chart follows the selected exchange's own pool, and falls back to the
+other only when its own has no trades to draw - saying so, since the two pools
+price independently.
+
+### Fixed
+
+Switching account in the wallet rebinds the signing client. The account signal
+followed the switch while `walletClient` kept the account baked in at connect, so
+the header showed the new account while every swap, approve and deposit was
+signed as the old one.
+
 ## [1.0.0] - 2026-08-20
 
 First release. Everything below is what the exchange ships with.
