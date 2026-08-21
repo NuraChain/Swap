@@ -97,6 +97,17 @@ signs with the user's wallet - the site never holds funds or keys.
 Nothing else: the deployment artifact for Nura Chain is committed, so there is
 no chain to start and no contract to deploy before the app runs.
 
+
+> **Native binaries.** npm resolves a package's platform binaries for the host it
+> runs on, so a lockfile written on Windows carries no Linux binding and `npm ci`
+> on a Linux box fails inside `@tailwindcss/oxide` ([npm/cli#4828]). Its siblings
+> (`@rolldown/binding`, `lightningcss`) list every platform themselves; oxide does
+> not, so the root `optionalDependencies` pins the two this project builds on -
+> `linux-x64-gnu` and `win32-x64-msvc`. Keep those in step with the
+> `@tailwindcss/oxide` version when Tailwind is upgraded.
+
+[npm/cli#4828]: https://github.com/npm/cli/issues/4828
+
 ### Development
 
 Two processes, one terminal each:
