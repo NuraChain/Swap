@@ -37,38 +37,6 @@ export const WALLET_BRANDS: WalletBrand[] = [
         label: 'Trust Wallet',
         icon: '/wallets/trust.svg',
         install: 'https://trustwallet.com/browser-extension'
-    },
-    {
-        // No official vector in the set we vendor; it announces its own icon when
-        // installed, which is the one that ends up on screen for real users.
-        rdns: 'com.binance.wallet',
-        label: 'Binance Wallet',
-        icon: null,
-        install: 'https://www.binance.com/en/web3wallet'
-    },
-    {
-        rdns: 'com.okex.wallet',
-        label: 'OKX Wallet',
-        icon: '/wallets/okx.svg',
-        install: 'https://www.okx.com/web3'
-    },
-    {
-        rdns: 'io.rabby',
-        label: 'Rabby',
-        icon: '/wallets/rabby.svg',
-        install: 'https://rabby.io/'
-    },
-    {
-        rdns: 'com.coinbase.wallet',
-        label: 'Coinbase Wallet',
-        icon: '/wallets/coinbase.svg',
-        install: 'https://www.coinbase.com/wallet/downloads'
-    },
-    {
-        rdns: 'app.phantom',
-        label: 'Phantom',
-        icon: '/wallets/phantom.svg',
-        install: 'https://phantom.app/download'
     }
 ];
 

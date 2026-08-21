@@ -9,7 +9,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const WALLETS = ['metamask', 'trust', 'coinbase', 'okx', 'rabby', 'phantom'];
+const WALLETS = ['metamask', 'trust'];
 
 // The package blocks ./package.json in its exports map, so resolve by path from
 // the workspace root rather than through require.resolve.
