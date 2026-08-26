@@ -12,17 +12,18 @@ import Badge from '../ui/badge.component.azeroth';
 import Button from '../ui/button.component.azeroth';
 import EmptyState from '../ui/empty-state.component.azeroth';
 
-// The connected wallet's V3 positions. Unlike an LP token balance, a position is
-// an NFT with a range, so the card leads with the two things that decide whether
+// The connected wallet's V3 positions. A position is an NFT with a range, not
+// an LP token balance, so the card leads with the two things that decide whether
 // it is doing anything at all: the range, and whether the price is inside it.
 //
-// Every number here is read from the chain - the indexer knows nothing about V3 -
-// so the grid does its own loading and shows a skeleton-free empty state until
-// the reads land.
+// Every number here is read straight from the position manager - the indexer's
+// event feed cannot reconstruct uncollected fees or live liquidity - so the grid
+// does its own loading and shows an empty state until the reads land.
 
 export default component V3PositionsGrid(props: {
-    tokens: TokenRef[];
-    onManage: (view: PositionView) => void;
+    /** Token metadata for naming position legs; unknown tokens fall back to a short address. */
+    tokens?: TokenRef[];
+    onManage?: (view: PositionView) => void;
 })
 {
     state views: PositionView[] = [];
@@ -30,7 +31,7 @@ export default component V3PositionsGrid(props: {
     let generation = 0;
 
     const tokenOf = (address: Address): TokenLike =>
-        props.tokens.find((token) => token.address.toLowerCase() === address.toLowerCase())
+        (props.tokens ?? []).find((token) => token.address.toLowerCase() === address.toLowerCase())
             ?? { address, symbol: shortAddress(address), name: address, decimals: 18 };
 
     effect (account(), txEpoch(), props.tokens)
@@ -129,15 +130,20 @@ export default component V3PositionsGrid(props: {
                     </dl>
 
                     <div class="mt-4">
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            block
-                            testId={ `manage-${ view.position.tokenId }` }
-                            onClick={ () => props.onManage(view) }
+                        <Show
+                            when={ props.onManage !== undefined }
+                            fallback={ <span /> }
                         >
-                            { t().v3.manage }
-                        </Button>
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                block
+                                testId={ `manage-${ view.position.tokenId }` }
+                                onClick={ () => (props.onManage as (view: PositionView) => void)(view) }
+                            >
+                                { t().v3.manage }
+                            </Button>
+                        </Show>
                     </div>
                 </article>
             </For>

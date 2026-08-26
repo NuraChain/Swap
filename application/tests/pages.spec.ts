@@ -13,6 +13,7 @@ const market = {
     stats: vi.fn(),
     pools: vi.fn(),
     pool: vi.fn(),
+    traded: vi.fn().mockResolvedValue({ traded: false }),
     tokens: vi.fn(),
     txs: vi.fn(),
     deployment: vi.fn()
@@ -68,12 +69,16 @@ const DEPLOYMENT = {
     explorerUrl: null,
     faucet: false,
     contracts: {
-        factory: '0x00000000000000000000000000000000000000f0',
-        router: '0x00000000000000000000000000000000000000f1',
         wnura: TOKENS[0].address,
         multicall3: '0x00000000000000000000000000000000000000f2'
     },
-    v3: null,
+    v3: {
+        factory: '0x0000000000000000000000000000000000000031',
+        swapRouter: '0x0000000000000000000000000000000000000032',
+        quoter: '0x0000000000000000000000000000000000000033',
+        positionManager: '0x0000000000000000000000000000000000000034',
+        tickLens: '0x0000000000000000000000000000000000000035'
+    },
     tokens: TOKENS.map(({ priceUsd: _price, ...token }) => token)
 };
 
@@ -81,11 +86,7 @@ function healthy(overrides: Partial<{ blocksBehind: number }> = {}): void
 {
     market.stats.mockResolvedValue({
         chainId: 1020,
-        pairCount: 1,
-        // Deliberately different from pairCount: the headline counts BOTH exchanges,
-        // and a page reading the V2-only figure would show 1 here.
         poolCount: 42,
-        swapFeeBps: 25,
         tvlUsd: 1_700_000,
         volume24hUsd: 250_000,
         indexedBlock: 100,
@@ -332,41 +333,24 @@ describe('the swap page', () =>
         await until(() => container.textContent?.includes('Slippage tolerance') === true);
         expect(container.textContent).toContain('Transaction deadline');
     });
-
-    // The deployment carries no v3 block here, so the whole V3 half must be
-    // absent rather than pointed at a zero address.
-    it('hides the protocol switch on a chain with no V3', async () =>
-    {
-        const { container } = renderTest(() => App({ url: '/swap' }));
-        await until(() => container.textContent?.includes('You pay') === true);
-        expect(container.querySelector('[data-testid="protocol-v3"]')).toBeNull();
-    });
-
 });
 
 describe('the liquidity page', () =>
 {
-    it('lists the served pools with their figures', async () =>
-    {
-        const { container } = renderTest(() => App({ url: '/liquidity' }));
-        await until(() => container.textContent?.includes('WNURA/mUSDT') === true);
-        expect(container.textContent).toContain('$1,700,000');
-        expect(container.textContent).toContain('9.12%');
-    });
-
     it('asks for a wallet before showing positions', async () =>
     {
         const { container } = renderTest(() => App({ url: '/liquidity' }));
         await until(() => container.textContent?.includes('Connect a wallet to see your positions.') === true);
-        expect(container.textContent).toContain('My positions');
+        expect(container.textContent).toContain('My V3 positions');
     });
 
-    it('says so plainly when the exchange has no pools yet', async () =>
+    // The pool table is assembled in the browser from on-chain discovery; with
+    // the chain reads stubbed offline there is nothing to show, and the empty
+    // state has to say so rather than spin forever.
+    it('says so plainly when no pools can be discovered', async () =>
     {
-        market.pools.mockResolvedValue([]);
         const { container } = renderTest(() => App({ url: '/liquidity' }));
-        await until(() => container.textContent?.includes('No pools yet.') === true);
-        expect(container.textContent).toContain('No pools yet.');
+        await until(() => container.textContent?.includes('No V3 pools yet.') === true);
     });
 
     it('filters the pool table as the search is typed', async () =>
@@ -376,15 +360,7 @@ describe('the liquidity page', () =>
         const search = container.querySelector<HTMLInputElement>('[data-testid="pool-search"]');
         search!.value = 'nothing-matches-this';
         fire(search as HTMLElement, 'input');
-        await until(() => container.textContent?.includes('No pools yet.') === true);
-    });
-
-    it('keeps the table up when the pool list cannot be fetched', async () =>
-    {
-        market.pools.mockImplementation(() => Promise.reject(new Error('api unreachable')));
-        const { container } = renderTest(() => App({ url: '/liquidity' }));
-        await until(() => container.textContent?.includes('Liquidity') === true);
-        expect(container.querySelector('footer')).not.toBeNull();
+        await until(() => container.textContent?.includes('No V3 pools yet.') === true);
     });
 });
 

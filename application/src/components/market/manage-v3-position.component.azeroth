@@ -1,8 +1,8 @@
-import { minOutForSlippage } from '@nuraswap/shared/math';
+import { MAX_UINT256, minOutForSlippage } from '@nuraswap/shared/math';
 import { counterpartAmount, getAmountsForLiquidity, getSqrtRatioAtTick } from '@nuraswap/shared/v3-math';
 import { formatQuotedAmount, parseTokenAmount } from '@nuraswap/shared/digits';
 
-import { ERC20_ABI, publicClient, v3Addresses } from '../../lib/chain.ts';
+import { ERC20_ABI, LIQUIDITY_SLIPPAGE_BPS, chainDeadline, refreshAllowances, v3Addresses } from '../../lib/chain.ts';
 import type { Address } from '../../lib/chain.ts';
 import { fmtAmount, fmtPercentBps, fmtTickPrice } from '../../lib/format.ts';
 import { t } from '../../lib/i18n.ts';
@@ -23,9 +23,6 @@ import Modal from '../ui/modal.component.azeroth';
 // Both sides move as ERC20s. A position holding WNURA takes WNURA and returns
 // WNURA; wrapping is one step on the swap page, and hiding it inside this sheet
 // would make the transaction depend on which token happened to be involved.
-
-const MAX_UINT256 = (1n << 256n) - 1n;
-const SLIPPAGE_BPS = 100;
 
 export default component ManageV3Position(props: { view: PositionView; onClose: () => void })
 {
@@ -111,18 +108,10 @@ export default component ManageV3Position(props: { view: PositionView; onClose: 
         {
             return;
         }
-        for (const [token, assign] of [
-            [props.view.ref0.address, (value: bigint) => { allowance0 = value; }],
-            [props.view.ref1.address, (value: bigint) => { allowance1 = value; }]
-        ] as Array<[string, (value: bigint) => void]>)
-        {
-            void publicClient().readContract({
-                address: token as Address,
-                abi: ERC20_ABI,
-                functionName: 'allowance',
-                args: [owner, manager()]
-            }).then((value) => assign(value as bigint)).catch(() => undefined);
-        }
+        refreshAllowances(owner, [
+            { token: props.view.ref0, spender: manager(), onValue: (value) => { allowance0 = value; } },
+            { token: props.view.ref1, spender: manager(), onValue: (value) => { allowance1 = value; } }
+        ]);
     }
 
     derived needsApprove0 = needs0 && parsed0 !== null && allowance0 < (parsed0 as bigint);
@@ -135,12 +124,7 @@ export default component ManageV3Position(props: { view: PositionView; onClose: 
 
     derived hasFees = props.view.fees0 > 0n || props.view.fees1 > 0n;
 
-    const deadline = async (): Promise<bigint> =>
-    {
-        const reader = publicClient();
-        const block = await reader.getBlock({ blockTag: 'pending' }).catch(() => reader.getBlock());
-        return block.timestamp + 1200n;
-    };
+    const deadline = (): Promise<bigint> => chainDeadline(1200);
 
     const label = (): string =>
         `${ props.view.ref0.symbol }/${ props.view.ref1.symbol } #${ position().tokenId }`;
@@ -175,8 +159,8 @@ export default component ManageV3Position(props: { view: PositionView; onClose: 
                 manager: manager(),
                 tokenId: position().tokenId,
                 liquidity: burnLiquidity,
-                amount0Min: minOutForSlippage(burnAmounts.amount0, SLIPPAGE_BPS),
-                amount1Min: minOutForSlippage(burnAmounts.amount1, SLIPPAGE_BPS),
+                amount0Min: minOutForSlippage(burnAmounts.amount0, LIQUIDITY_SLIPPAGE_BPS),
+                amount1Min: minOutForSlippage(burnAmounts.amount1, LIQUIDITY_SLIPPAGE_BPS),
                 recipient: owner,
                 deadline: when
             }) as never)
@@ -201,8 +185,8 @@ export default component ManageV3Position(props: { view: PositionView; onClose: 
                 tokenId: position().tokenId,
                 amount0Desired: amount0,
                 amount1Desired: amount1,
-                amount0Min: minOutForSlippage(amount0, SLIPPAGE_BPS),
-                amount1Min: minOutForSlippage(amount1, SLIPPAGE_BPS),
+                amount0Min: minOutForSlippage(amount0, LIQUIDITY_SLIPPAGE_BPS),
+                amount1Min: minOutForSlippage(amount1, LIQUIDITY_SLIPPAGE_BPS),
                 deadline: when,
                 nativeValue: 0n
             }) as never)

@@ -1,4 +1,4 @@
-import { minOutForSlippage } from '@nuraswap/shared/math';
+import { MAX_UINT256, minOutForSlippage } from '@nuraswap/shared/math';
 import {
     MAX_TICK,
     MIN_TICK,
@@ -14,7 +14,16 @@ import {
 import { formatQuotedAmount, formatTokenAmount, parseTokenAmount } from '@nuraswap/shared/digits';
 
 import type { TokenRef } from '../../api.ts';
-import { ERC20_ABI, deployment, publicClient, v3Addresses } from '../../lib/chain.ts';
+import {
+    ERC20_ABI,
+    LIQUIDITY_SLIPPAGE_BPS,
+    NATIVE_TOKEN,
+    chainDeadline,
+    deployment,
+    isNativeToken,
+    refreshAllowances,
+    v3Addresses
+} from '../../lib/chain.ts';
 import type { Address } from '../../lib/chain.ts';
 import { fmtAmount, fmtPercentBps } from '../../lib/format.ts';
 import { t } from '../../lib/i18n.ts';
@@ -38,9 +47,6 @@ import Modal from '../ui/modal.component.azeroth';
 // flip with the pickers means the range typed into the fields and the range sent
 // to the pool are inverses of each other exactly half the time.
 
-const NATIVE: TokenRef = { address: 'nura', symbol: 'NURA', name: 'NURA', decimals: 18 };
-const MAX_UINT256 = (1n << 256n) - 1n;
-const SLIPPAGE_BPS = 100;
 /** A default range worth showing: roughly +-25% around the current price. */
 const DEFAULT_BAND_TICKS = 2300;
 
@@ -52,7 +58,7 @@ export default component AddV3Liquidity(props: {
     onClose: () => void;
 })
 {
-    state tokenA: TokenRef | null = props.initialA ?? NATIVE;
+    state tokenA: TokenRef | null = props.initialA ?? NATIVE_TOKEN;
     state tokenB: TokenRef | null = props.initialB ?? null;
     state fee: number = props.initialFee ?? 3000;
     state tiers: FeeTier[] = [];
@@ -77,14 +83,13 @@ export default component AddV3Liquidity(props: {
     /** The pair+account the allowances were read for; a refresh of the same key keeps them. */
     let allowanceKey = '';
 
-    const isNative = (token: TokenRef | null): boolean => token?.address === 'nura';
     const wnura = (): Address => (deployment()?.contracts.wnura ?? '0x') as Address;
-    const hop = (token: TokenRef): Address => (isNative(token) ? wnura() : token.address) as Address;
+    const hop = (token: TokenRef): Address => (isNativeToken(token) ? wnura() : token.address) as Address;
 
     const balanceOf = (token: TokenRef | null): bigint =>
         token === null
             ? 0n
-            : isNative(token)
+            : isNativeToken(token)
                 ? nativeBalance()
                 : balances()[token.address.toLowerCase()] ?? 0n;
 
@@ -319,27 +324,15 @@ export default component AddV3Liquidity(props: {
         {
             return;
         }
-        for (const [token, assign] of [
-            [a, (value: bigint) => { allowanceA = value; }],
-            [b, (value: bigint) => { allowanceB = value; }]
-        ] as Array<[TokenRef | null, (value: bigint) => void]>)
-        {
-            if (token === null || isNative(token))
-            {
-                continue;
-            }
-            void publicClient().readContract({
-                address: token.address as Address,
-                abi: ERC20_ABI,
-                functionName: 'allowance',
-                args: [owner, manager()]
-            }).then((value) => assign(value as bigint)).catch(() => undefined);
-        }
+        refreshAllowances(owner, [
+            { token: a, spender: manager(), onValue: (value) => { allowanceA = value; } },
+            { token: b, spender: manager(), onValue: (value) => { allowanceB = value; } }
+        ]);
     }
 
-    derived needsApproveA = needsA && tokenA !== null && !isNative(tokenA)
+    derived needsApproveA = needsA && tokenA !== null && !isNativeToken(tokenA)
         && parsedA !== null && allowanceA < (parsedA as bigint);
-    derived needsApproveB = needsB && tokenB !== null && !isNative(tokenB)
+    derived needsApproveB = needsB && tokenB !== null && !isNativeToken(tokenB)
         && parsedB !== null && allowanceB < (parsedB as bigint);
 
     derived insufficient = (parsedA !== null && (parsedA as bigint) > balanceOf(tokenA))
@@ -354,12 +347,7 @@ export default component AddV3Liquidity(props: {
         && hasAmount
         && !insufficient;
 
-    const deadline = async (): Promise<bigint> =>
-    {
-        const reader = publicClient();
-        const block = await reader.getBlock({ blockTag: 'pending' }).catch(() => reader.getBlock());
-        return block.timestamp + 1200n;
-    };
+    const deadline = (): Promise<bigint> => chainDeadline(1200);
 
     const approveToken = async (token: TokenRef, amount: bigint): Promise<void> =>
     {
@@ -395,11 +383,11 @@ export default component AddV3Liquidity(props: {
         // one side always lands a few wei under what was asked for. Minimums equal
         // to the desired amounts therefore revert EVERY mint with `Price slippage
         // check`, including on a pool this very transaction creates.
-        const min0 = minOutForSlippage(amount0, SLIPPAGE_BPS);
-        const min1 = minOutForSlippage(amount1, SLIPPAGE_BPS);
-        const nativeValue = isNative(tokenA)
+        const min0 = minOutForSlippage(amount0, LIQUIDITY_SLIPPAGE_BPS);
+        const min1 = minOutForSlippage(amount1, LIQUIDITY_SLIPPAGE_BPS);
+        const nativeValue = isNativeToken(tokenA)
             ? (parsedA ?? 0n)
-            : isNative(tokenB)
+            : isNativeToken(tokenB)
                 ? (parsedB ?? 0n)
                 : 0n;
         const request = {

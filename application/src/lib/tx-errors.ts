@@ -1,6 +1,7 @@
 // Wallet and contract failures translated into something a trader can act on.
 // Pure classification, split from the wallet store so it is testable without a
-// chain: the revert strings below are UniswapV2's own, and getting one wrong
+// chain. The revert strings are the exchange contracts' own - the pool's
+// slippage guard, the position manager's transfer - and getting one wrong
 // means telling someone their trade failed for the wrong reason.
 
 export type TxFailure =
@@ -48,8 +49,9 @@ export function classifyTxError(error: unknown): TxFailure
     {
         return 'expired';
     }
-    // The slippage bound doing its job - the sandwich case.
-    if (/INSUFFICIENT_OUTPUT_AMOUNT|INSUFFICIENT_A_AMOUNT|INSUFFICIENT_B_AMOUNT/.test(message))
+    // The slippage bound doing its job - the sandwich case. The pool names it
+    // INSUFFICIENT_OUTPUT_AMOUNT; the router's own guard uses the same words.
+    if (/INSUFFICIENT_OUTPUT_AMOUNT/.test(message))
     {
         return 'insufficientOutput';
     }
@@ -57,9 +59,8 @@ export function classifyTxError(error: unknown): TxFailure
     {
         return 'transferFailed';
     }
-    // Checked AFTER the output cases: INSUFFICIENT_LIQUIDITY is a substring of
-    // neither, but the pair-level names below share the prefix.
-    if (/INSUFFICIENT_LIQUIDITY|INSUFFICIENT_INPUT_AMOUNT/.test(message))
+    // Checked AFTER the output cases: these share word stems with them.
+    if (/INSUFFICIENT_LIQUIDITY|Too little received|too little/i.test(message))
     {
         return 'insufficientLiquidity';
     }

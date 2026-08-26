@@ -565,7 +565,7 @@ describe('sending a transaction', () =>
     it('classifies a slippage revert as the slippage bound firing', async () =>
     {
         const { store, toast } = await connected();
-        const send = vi.fn().mockRejectedValue(new Error('UniswapV2Router: INSUFFICIENT_OUTPUT_AMOUNT'));
+        const send = vi.fn().mockRejectedValue(new Error('SwapRouter: INSUFFICIENT_OUTPUT_AMOUNT'));
         await store.sendTx('Swap', send);
         expect(toast.toasts()[0].text).toContain('slippage limit');
     });
