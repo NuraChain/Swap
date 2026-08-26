@@ -1,4 +1,4 @@
-// Property and fuzz coverage for the three pure libraries every price on screen
+// Property and fuzz coverage for the pure libraries every price on screen
 // is computed from. The hand-written specs next to this file pin the values that
 // matter; these pin the LAWS - the things that must hold for inputs nobody
 // thought to write down, which is where a rounding direction or an overflow
@@ -11,16 +11,10 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-    BPS,
     WAD,
-    getAmountIn,
-    getAmountOut,
     maxInForSlippage,
     minOutForSlippage,
     pow10,
-    priceFromReserves,
-    priceImpactBps,
-    quote,
     scaleToWad,
     sqrtBigint,
     usdValue
@@ -71,146 +65,6 @@ function intBetween(next: () => number, low: number, high: number): number
 {
     return low + Math.floor(next() * (high - low + 1));
 }
-
-describe('getAmountOut laws', () =>
-{
-    it('never drains the pool it trades against', () =>
-    {
-        const next = lcg(1);
-        for (let round = 0; round < ROUNDS; round++)
-        {
-            const reserveIn = bigBetween(next, 90);
-            const reserveOut = bigBetween(next, 90);
-            const amountIn = bigBetween(next, 90);
-            const fee = intBetween(next, 0, 1000);
-            const out = getAmountOut(amountIn, reserveIn, reserveOut, fee);
-            expect(out < reserveOut, `${ amountIn }/${ reserveIn }/${ reserveOut }@${ fee }`).toBe(true);
-            expect(out >= 0n).toBe(true);
-        }
-    });
-
-    // The invariant the pair contract itself enforces: after the swap, the
-    // fee-adjusted product may not fall below the product before it. Every
-    // rounding in getAmountOut has to fall on the pool's side of this line.
-    it('keeps the fee-adjusted constant product from ever decreasing', () =>
-    {
-        const next = lcg(2);
-        for (let round = 0; round < ROUNDS; round++)
-        {
-            const reserveIn = bigBetween(next, 80) + 1000n;
-            const reserveOut = bigBetween(next, 80) + 1000n;
-            const amountIn = bigBetween(next, 80);
-            const fee = intBetween(next, 0, 1000);
-            const out = getAmountOut(amountIn, reserveIn, reserveOut, fee);
-            const left = (reserveIn * BPS + amountIn * (BPS - BigInt(fee))) * (reserveOut - out);
-            const right = reserveIn * reserveOut * BPS;
-            expect(left >= right, `k shrank at ${ amountIn }/${ reserveIn }/${ reserveOut }@${ fee }`).toBe(true);
-        }
-    });
-
-    it('never pays less for more input, or more for a higher fee', () =>
-    {
-        const next = lcg(3);
-        for (let round = 0; round < ROUNDS; round++)
-        {
-            const reserveIn = bigBetween(next, 70) + 10n ** 9n;
-            const reserveOut = bigBetween(next, 70) + 10n ** 9n;
-            const amountIn = bigBetween(next, 60) + 1n;
-            const fee = intBetween(next, 0, 500);
-            const base = getAmountOut(amountIn, reserveIn, reserveOut, fee);
-            expect(getAmountOut(amountIn * 2n, reserveIn, reserveOut, fee) >= base).toBe(true);
-            expect(getAmountOut(amountIn, reserveIn, reserveOut, fee + 1) <= base).toBe(true);
-        }
-    });
-
-    it('answers zero whenever any leg of the trade is empty', () =>
-    {
-        const next = lcg(4);
-        for (let round = 0; round < 60; round++)
-        {
-            const value = bigBetween(next, 60);
-            expect(getAmountOut(0n, value, value, 25)).toBe(0n);
-            expect(getAmountOut(value, 0n, value, 25)).toBe(0n);
-            expect(getAmountOut(value, value, 0n, 25)).toBe(0n);
-        }
-    });
-});
-
-describe('getAmountIn laws', () =>
-{
-    // The router quotes exact-output trades from this. Asking for less than the
-    // true requirement is the failure that matters: the trade reverts on chain.
-    it('always asks for enough to cover the output it names', () =>
-    {
-        const next = lcg(5);
-        let exercised = 0;
-        for (let round = 0; round < ROUNDS; round++)
-        {
-            const reserveIn = bigBetween(next, 70) + 10n ** 12n;
-            const reserveOut = bigBetween(next, 70) + 10n ** 12n;
-            const amountOut = reserveOut / BigInt(intBetween(next, 2, 1000));
-            const fee = intBetween(next, 0, 500);
-            const need = getAmountIn(amountOut, reserveIn, reserveOut, fee);
-            if (need === 0n)
-            {
-                continue;
-            }
-            exercised++;
-            expect(
-                getAmountOut(need, reserveIn, reserveOut, fee) >= amountOut,
-                `${ need } in did not buy ${ amountOut } out`
-            ).toBe(true);
-        }
-        expect(exercised).toBeGreaterThan(100);
-    });
-
-    it('refuses any output the pool cannot cover', () =>
-    {
-        const next = lcg(6);
-        for (let round = 0; round < 100; round++)
-        {
-            const reserveOut = bigBetween(next, 60) + 1n;
-            const reserveIn = bigBetween(next, 60) + 1n;
-            expect(getAmountIn(reserveOut, reserveIn, reserveOut, 25)).toBe(0n);
-            expect(getAmountIn(reserveOut + 1n, reserveIn, reserveOut, 25)).toBe(0n);
-        }
-    });
-});
-
-describe('price impact laws', () =>
-{
-    it('stays inside its own scale and grows with the trade', () =>
-    {
-        const next = lcg(7);
-        for (let round = 0; round < ROUNDS; round++)
-        {
-            const reserveIn = bigBetween(next, 60) + 10n ** 12n;
-            const reserveOut = bigBetween(next, 60) + 10n ** 12n;
-            const amountIn = bigBetween(next, 50) + 1n;
-            const fee = intBetween(next, 0, 300);
-            const small = priceImpactBps(amountIn, getAmountOut(amountIn, reserveIn, reserveOut, fee), reserveIn, reserveOut, fee);
-            const large = priceImpactBps(amountIn * 10n, getAmountOut(amountIn * 10n, reserveIn, reserveOut, fee), reserveIn, reserveOut, fee);
-            expect(small).toBeGreaterThanOrEqual(0);
-            expect(small).toBeLessThanOrEqual(10_000);
-            expect(large).toBeGreaterThanOrEqual(small);
-        }
-    });
-
-    // Impact measures the pool moving, not the fee being charged. A fee-only
-    // fill has to read as zero impact whatever the fee is.
-    it('reads zero when the only difference from mid is the fee', () =>
-    {
-        const next = lcg(8);
-        for (let round = 0; round < 100; round++)
-        {
-            const reserve = bigBetween(next, 50) + 10n ** 18n;
-            const fee = intBetween(next, 0, 500);
-            const amountIn = reserve / 1_000_000n + 1n;
-            const midOut = (amountIn * (BPS - BigInt(fee)) / BPS) * reserve / reserve;
-            expect(priceImpactBps(amountIn, midOut, reserve, reserve, fee)).toBe(0);
-        }
-    });
-});
 
 describe('slippage bounds', () =>
 {
@@ -264,28 +118,6 @@ describe('decimal scaling', () =>
         }
     });
 
-    it('prices a pool the same way whichever side is called the base', () =>
-    {
-        const next = lcg(12);
-        for (let round = 0; round < 120; round++)
-        {
-            const decimals0 = intBetween(next, 2, 18);
-            const decimals1 = intBetween(next, 2, 18);
-            const reserve0 = bigBetween(next, 60) + pow10(decimals0);
-            const reserve1 = bigBetween(next, 60) + pow10(decimals1);
-            const forward = priceFromReserves(reserve0, decimals0, reserve1, decimals1);
-            const backward = priceFromReserves(reserve1, decimals1, reserve0, decimals0);
-            if (forward === 0n || backward === 0n)
-            {
-                continue;
-            }
-            // The two are reciprocals to within the truncation of two divisions.
-            const product = (forward * backward) / WAD;
-            expect(product <= WAD * 2n).toBe(true);
-            expect(product * 2n >= WAD).toBe(true);
-        }
-    });
-
     it('values twice the tokens at no less than twice the price', () =>
     {
         const next = lcg(13);
@@ -296,20 +128,6 @@ describe('decimal scaling', () =>
             const price = bigBetween(next, 60);
             const single = usdValue(amount, decimals, price);
             expect(usdValue(amount * 2n, decimals, price) >= single * 2n - 1n).toBe(true);
-        }
-    });
-
-    it('quotes a ratio that never overshoots the reserves', () =>
-    {
-        const next = lcg(14);
-        for (let round = 0; round < ROUNDS; round++)
-        {
-            const amountA = bigBetween(next, 60) + 1n;
-            const reserveA = bigBetween(next, 60) + 1n;
-            const reserveB = bigBetween(next, 60) + 1n;
-            const quoted = quote(amountA, reserveA, reserveB);
-            // Floor division: the quote never exceeds the exact ratio.
-            expect(quoted * reserveA <= amountA * reserveB).toBe(true);
         }
     });
 });

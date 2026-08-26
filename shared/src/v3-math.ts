@@ -1,11 +1,10 @@
 // UniswapV3 math, bigint end to end - the Q64.96 half of this exchange.
 //
-// V2 keeps its price in the reserve ratio, so a pool's balances ARE its price.
-// V3 does not: liquidity sits inside tick ranges and the price lives in a single
-// Q64.96 square root, `sqrtPriceX96`. A V3 pool holding 10 WNURA and 3000 USDT
-// is not quoting 300 - the balances say only what the range happens to hold at
-// this instant. Everything that used to read reserves has to come through here
-// instead, which is why price, ticks, and position amounts all live in one file.
+// A V3 pool's balances are NOT its price: liquidity sits inside tick ranges and
+// the price lives in a single Q64.96 square root, `sqrtPriceX96`. A pool holding
+// 10 WNURA and 3000 USDT is not quoting 300 - the balances say only what the
+// range happens to hold at this instant. Every price, tick and position amount
+// is computed here, which is why they all live in one file.
 //
 // The tick and liquidity routines are ports of the audited Solidity (TickMath,
 // SqrtPriceMath, LiquidityAmounts) with the same rounding, so a number this file
@@ -144,9 +143,8 @@ export function nearestUsableTick(tick: number, tickSpacing: number): number
     return Math.min(highest, Math.max(lowest, rounded));
 }
 
-// Price of token0 in token1 units as 1e18 fixed point - the SAME orientation and
-// scale `priceFromReserves` returns for a V2 pair, so a chart, a pool row, or a
-// USD price map can hold both kinds of pool without knowing which it has.
+// Price of token0 in token1 units as 1e18 fixed point - the scale every pool
+// row, chart and USD price map in this repo carries.
 export function priceWadFromSqrtX96(sqrtPriceX96: bigint, decimals0: number, decimals1: number): bigint
 {
     if (sqrtPriceX96 <= 0n)
@@ -192,9 +190,8 @@ export function rawPriceWadFromSqrtX96(sqrtPriceX96: bigint, zeroForOne: boolean
         : (Q192 * WAD) / (sqrtPriceX96 * sqrtPriceX96);
 }
 
-// Price impact in basis points against the fee-free mid price, the same measure
-// `priceImpactBps` reports for V2 - the two numbers are comparable, which is the
-// whole point when one card shows a route that may come from either protocol.
+// Price impact in basis points against the fee-free mid price, so the number on
+// screen measures the pool moving - never the fee being charged.
 export function priceImpactBpsFromMid(
     amountIn: bigint,
     amountOut: bigint,
