@@ -4,7 +4,7 @@
 
 **An open automated market maker. Your keys, your trades.**
 
-Swap tokens, provide liquidity, and track your portfolio on a UniswapV2-class AMM -
+Swap tokens, provide liquidity, and track your portfolio on a UniswapV3 AMM -
 self-custody end to end, in ten languages with first-class RTL, dark and light
 themes.
 
@@ -22,35 +22,28 @@ themes.
 The application half of a production-shaped DEX - the exchange contracts live in
 their own repository:
 
-- **Swap** - router-quoted trades with live price impact, slippage and deadline
-  control, an approve-then-swap flow, NURA wrap/unwrap, a price chart, and recent
-  trades. High-impact trades demand explicit confirmation. A **V2/V3 switch** sits
-  in the card header where the chain carries both: V3 quotes every fee tier
-  through the Quoter, trades the best by default, and lets a trader pin one.
-- **Liquidity** - pools table (TVL, 24h volume, fee APR), your positions, add
-  liquidity with ratio auto-fill and a first-provider price warning, remove with
-  a percent slider. Every flow shows a summary before the wallet prompt. The same
-  switch turns the page over to **V3**: pools per fee tier, position NFTs with
+- **Swap** - Quoter-quoted trades across every fee tier, live price impact,
+  slippage and deadline control, an approve-then-swap flow, NURA wrap/unwrap, a
+  price chart, and recent trades. High-impact trades demand explicit
+  confirmation. The card trades the best-quoting tier by default and lets a
+  trader pin one.
+- **Liquidity** - pools table per fee tier (price, TVL), your position NFTs with
   their price range and in/out-of-range state, mint with a range (or full range),
-  add to a position, withdraw from one, and collect its fees.
-- **Portfolio** - holdings with USD values, LP positions, and your own on-chain
-  activity.
+  add to a position, withdraw from one, and collect its fees. Every flow shows a
+  summary before the wallet prompt.
+- **Portfolio** - holdings with USD values, your concentrated-liquidity
+  positions, and your own on-chain activity.
 - **Wallets** - every EIP-6963 injected wallet (MetaMask, Rabby, Trust, ...),
   silent session restore, address identicons.
-- **The exchange itself** - UniswapV2 core and periphery, and optionally
-  UniswapV3 alongside it, with the audited math
-  untouched, save for one deliberate change: the swap fee is a factory parameter
-  in basis points (`swapFee`, retunable by `feeToSetter` up to `MAX_SWAP_FEE`)
-  instead of the hardcoded 997/1000. Nothing in this repo assumes a fee - the
-  server reads it at boot, serves it on `/api/market/stats`, and the swap card
-  prints what the factory says. It lives in the **contracts repository**; this
-  repo consumes its deployment artifact.
+- **The exchange itself** - UniswapV3 core, periphery and position manager, with
+  the audited math untouched. It lives in the **contracts repository**; this repo
+  consumes its deployment artifact.
 
 ## Architecture
 
 ```
-shared/        bigint AMM math (V2 reserves and V3 Q64.96 ticks), digit normalization,
-               typed deployment artifacts
+shared/        bigint math (V3 Q64.96 ticks, decimal normalization), typed
+               deployment artifacts
 server/        indexer + market API: chain watcher -> sqlite -> REST (@azerothjs/http)
 application/   the site: compiled .azeroth components on vite (AzerothJS)
 ```
@@ -64,23 +57,23 @@ The exchange runs on **Nura Chain** (chain id 1020, Cosmos EVM):
 | Native coin | NURA (18 decimals), wrapped as WNURA |
 
 The seam with the contracts repository is one file: its deploy script writes a
-typed artifact (chain id, RPC, factory/router/WNURA/multicall addresses, token
-list, start block) that this repo reads from `shared/deployments/1020.json`
-via `shared/src/deployments.ts`. UniswapV3 is an OPTIONAL `v3` block in that same
-artifact (factory, swapRouter, quoter, positionManager, tickLens); an artifact
-written before V3 existed stays valid unedited, the API serves `v3: null`, and
-the app hides its V3 half rather than pointing it at a zero address. Nothing here imports Solidity or an ABI built
+typed artifact (chain id, RPC, WNURA/multicall addresses, the UniswapV3 contract
+set - factory, swapRouter, quoter, positionManager, tickLens - token list, start
+block) that this repo reads from `shared/deployments/1020.json` via
+`shared/src/deployments.ts`. The `v3` block is REQUIRED: an artifact without a
+complete set fails validation rather than half-serving an exchange. Nothing here imports Solidity or an ABI built
 from it - the ABI fragments the app and indexer need are declared inline
 (`application/src/lib/chain.ts`, `server/src/indexer/decode.ts`).
 
-The V3 half is read entirely in the browser - `factory.getPool`, `slot0`, the
-Quoter, and the position manager, over multicall3. The indexer does not follow V3
-events, so V3 pools show their live price and what they hold, and say so where a
-V2 pool would show 24h volume and fee APR. Two contract flavours are probed
-rather than assumed: Quoter vs QuoterV2, and SwapRouter vs SwapRouter02.
+Pricing and positions read the chain directly - `slot0`, the Quoter, and the
+position manager, over multicall3. The indexer follows the V3 event stream
+(`PoolCreated`, pool `Swap`/`Mint`/`Burn`), prices hourly candles off the
+sqrtPriceX96 each swap reports, and refreshes every pool's balances and slot0 on
+its own beat. Two contract flavours are probed rather than assumed: Quoter vs
+QuoterV2, and SwapRouter vs SwapRouter02.
 
-The server tails the chain (`PairCreated`, `Sync`, `Swap`, `Mint`, `Burn`),
-survives chain resets via a chain-identity guard, and serves `/api/market/*`
+The server tails that stream, survives chain resets via a chain-identity guard,
+and serves `/api/market/*`
 (stats, pools, candles, tokens with USD prices, transactions, the active
 deployment). The browser reads quotes and balances straight from the chain and
 signs with the user's wallet - the site never holds funds or keys.
@@ -163,7 +156,7 @@ built-in signer, on purpose. The full walkthrough:
 
 | Suite | Where | Runs |
 | --- | --- | --- |
-| Shared math | `shared/` | `npm test` - V2 quote/impact/decimals math, V3 tick and liquidity math, Persian digit normalization |
+| Shared math | `shared/` | `npm test` - V3 tick and liquidity math, decimal normalization, Persian digit normalization |
 | Server | `server/` | `npm test` - indexer core, candles, API via `app.handle()` |
 | Application | `application/` | `npm test` - render tests, the V3 calldata builders, and the SSR-safety import gate |
 
@@ -245,9 +238,8 @@ money without an independent audit.
 
 ## Security posture
 
-- The AMM is the canonical UniswapV2 source, vendored verbatim with pinned
-  compilers; the only functional edit is the regenerated init-code hash, proven
-  by a CREATE2 test on every run.
+- The AMM is UniswapV3 with the audited math untouched; the contracts are
+  vendored and pinned in the contracts repository.
 - Slippage and deadline bounds are enforced by the router contract, not the UI.
 - There is no in-app signer of any kind: every transaction is signed by the
   user's own wallet extension, in development and production alike.
@@ -267,14 +259,14 @@ money without an independent audit.
 ## Changelog
 
 Every notable change is in [CHANGELOG.md](CHANGELOG.md); the current release
-is 1.0.0.
+is 1.1.1.
 
 ## License
 
 [MIT](LICENSE) - `application/`, `server/`, `shared/`.
 
 The exchange contracts are licensed separately (GPL-3.0, required by the
-vendored Uniswap V2 sources) in the contracts repository, alongside their
+vendored Uniswap sources) in the contracts repository, alongside their
 provenance notes.
 
 ---
