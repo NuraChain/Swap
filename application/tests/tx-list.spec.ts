@@ -1,7 +1,5 @@
-// The activity feed carries both exchanges in one list. That is only readable if
-// every row says which one it came from - the same pair trades at two different
-// prices in the two contracts, and "1 WNURA -> 850 mUSDT" means a different thing
-// depending on which pool filled it.
+// The activity feed. Rows carry the two tokens, the direction, and the amounts -
+// and multi-hop swaps must not collide on their key.
 //
 // The api module is mocked here rather than in components.spec.ts because
 // vi.mock is file-scoped, and TxList is the only component in the inventory that
@@ -27,7 +25,6 @@ function tx(overrides: Partial<TxItem> = {}): TxItem
 {
     return {
         txHash: '0xaaa',
-        protocol: 'v2',
         kind: 'swap',
         timestamp: 1_700_000_000,
         account: ALICE,
@@ -63,27 +60,9 @@ afterEach(() =>
 
 describe('TxList', () =>
 {
-    it('names the exchange on every row, not just the V3 ones', async () =>
+    it('renders both token amounts on a row', async () =>
     {
-        market.txs.mockResolvedValue([
-            tx({ txHash: '0xv3', protocol: 'v3', kind: 'mint' }),
-            tx({ txHash: '0xv2', protocol: 'v2' })
-        ]);
-        const { container } = renderTest(() => TxList({ account: ALICE }));
-        await settled();
-
-        const rows = [...container.querySelectorAll('li')];
-        expect(rows).toHaveLength(2);
-        // An unmarked row would mean "V2" by a convention nobody is told.
-        expect(rows[0].textContent).toContain('V3');
-        expect(rows[0].textContent).toContain('mint');
-        expect(rows[1].textContent).toContain('V2');
-        expect(rows[1].textContent).toContain('swap');
-    });
-
-    it('renders a V3 row with both token amounts, same as a V2 one', async () =>
-    {
-        market.txs.mockResolvedValue([tx({ protocol: 'v3' })]);
+        market.txs.mockResolvedValue([tx()]);
         const { container } = renderTest(() => TxList({ account: ALICE }));
         await settled();
 
@@ -93,12 +72,27 @@ describe('TxList', () =>
         expect(row?.textContent).toContain('850');
     });
 
+    it('renders liquidity events alongside swaps, with the kind badge naming each', async () =>
+    {
+        market.txs.mockResolvedValue([
+            tx({ txHash: '0xmint', kind: 'mint' }),
+            tx({ txHash: '0xswap' })
+        ]);
+        const { container } = renderTest(() => TxList({ account: ALICE }));
+        await settled();
+
+        const rows = [...container.querySelectorAll('li')];
+        expect(rows).toHaveLength(2);
+        expect(rows[0].textContent).toContain('mint');
+        expect(rows[1].textContent).toContain('swap');
+    });
+
     it('keeps the kind filter working across a mixed feed', async () =>
     {
         market.txs.mockResolvedValue([
-            tx({ txHash: '0x1', protocol: 'v3', kind: 'mint' }),
-            tx({ txHash: '0x2', protocol: 'v2', kind: 'swap' }),
-            tx({ txHash: '0x3', protocol: 'v3', kind: 'swap' })
+            tx({ txHash: '0x1', kind: 'mint' }),
+            tx({ txHash: '0x2', kind: 'swap' }),
+            tx({ txHash: '0x3', kind: 'burn' })
         ]);
         const { container } = renderTest(() => TxList({ account: ALICE, filterable: true }));
         await settled();
@@ -109,9 +103,26 @@ describe('TxList', () =>
         await settled();
 
         const rows = [...container.querySelectorAll('li')];
+        expect(rows).toHaveLength(1);
+        expect(rows[0].textContent).toContain('swap');
+    });
+
+    // The regression: rows were keyed by txHash + timestamp alone. A multi-hop
+    // swap emits one Swap event PER POOL inside a single transaction - two rows,
+    // same hash, same second - and colliding keys can drop or duplicate rows.
+    it('renders every leg of a multi-hop swap, not just one of them', async () =>
+    {
+        const hop = (pairAddress: string, amountA: bigint, amountB: bigint): TxItem =>
+            tx({ txHash: '0xmulti', pairAddress, amountA: amountA.toString(), amountB: amountB.toString() });
+        market.txs.mockResolvedValue([
+            hop('0xhop1', 10n ** 18n, 2000n * 10n ** 6n),
+            hop('0xhop2', 2000n * 10n ** 6n, 5n * 10n ** 18n)
+        ]);
+        const { container } = renderTest(() => TxList({ account: ALICE }));
+        await settled();
+
+        const rows = [...container.querySelectorAll('li')];
         expect(rows).toHaveLength(2);
-        // The filter is by kind, so it cuts across both exchanges rather than
-        // quietly becoming a protocol filter.
-        expect(rows.map((row) => (row.textContent?.includes('V3') ?? false))).toEqual([false, true]);
+        expect(rows[0].textContent).not.toBe(rows[1].textContent);
     });
 });

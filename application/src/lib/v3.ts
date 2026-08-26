@@ -21,23 +21,17 @@ import {
     SWAP_ROUTER_ABI,
     V3_FACTORY_ABI,
     V3_POOL_ABI,
+    ZERO_ADDRESS,
     publicClient
 } from './chain.ts';
 import type { Address } from './chain.ts';
 
-export const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as Address;
+export { ZERO_ADDRESS };
 /** SwapRouter02's "pay me, not the caller" sentinel; the original uses address(0). */
 const ADDRESS_THIS_02 = '0x0000000000000000000000000000000000000002' as Address;
 const MAX_UINT128 = (1n << 128n) - 1n;
 /** A position list is a wallet's own NFTs; nobody browses a thousand of them. */
 const MAX_POSITIONS = 120;
-
-/**
- * Which exchange a page is looking at. Not a routing preference: V2 and V3 are
- * separate contracts holding separate liquidity, so the choice decides which
- * pool answers, which router signs, and which allowance is needed.
- */
-export type Protocol = 'v2' | 'v3';
 
 export interface FeeTier
 {
@@ -106,9 +100,14 @@ let tiersCache: FeeTier[] | null = null;
 /**
  * The tiers this factory actually enables. The canonical four are a convention -
  * `feeAmountTickSpacing` is the factory's own answer, and a tier it does not
- * enable has no pool and never will until its owner enables one. An RPC that
- * answers nothing at all falls back to the canonical list WITHOUT caching, so a
- * single bad moment cannot pin the wrong tier set for the life of the tab.
+ * enable has no pool and never will until its owner enables one.
+ *
+ * Only a COMPLETE pass is cached. A tier whose read failed would otherwise be
+ * indistinguishable from a tier the factory disabled - one flaky multicall
+ * response could hide three of the four tiers for the life of the tab. A
+ * partial answer still serves this call (what answered, plus the canonical set
+ * is NOT mixed in: an unproven tier may simply not exist), and the next call
+ * probes again for a clean pass to pin.
  */
 export async function enabledFeeTiers(factory: Address): Promise<FeeTier[]>
 {
@@ -139,7 +138,10 @@ export async function enabledFeeTiers(factory: Address): Promise<FeeTier[]>
             enabled.push({ fee: tier.fee, tickSpacing: spacing });
         }
     });
-    tiersCache = enabled;
+    if (reads.every((read) => read.status === 'success'))
+    {
+        tiersCache = enabled;
+    }
     return enabled;
 }
 
@@ -472,6 +474,11 @@ let routerFlavour: 'v1' | '02' | null = null;
  * the output at the router" sentinel changed from address(0) to address(2).
  * `positionManager()` exists only on 02, so asking for it settles the question
  * with one read instead of a guess that would surface only at signing time.
+ *
+ * Only a DEFINITIVE answer is remembered. A v1 router reverts on the probe -
+ * and so does an unreachable RPC - so a failure answers 'v1' for THIS trade
+ * and leaves the question open: pinning the flavour off an RPC blip encoded
+ * v1 calldata against a real SwapRouter02 for the life of the tab.
  */
 export async function detectRouterFlavour(router: Address): Promise<'v1' | '02'>
 {
@@ -484,8 +491,12 @@ export async function detectRouterFlavour(router: Address): Promise<'v1' | '02'>
         abi: SWAP_ROUTER_ABI,
         functionName: 'positionManager'
     }).catch(() => null);
-    routerFlavour = answer === null ? 'v1' : '02';
-    return routerFlavour;
+    if (answer !== null)
+    {
+        routerFlavour = '02';
+        return '02';
+    }
+    return 'v1';
 }
 
 export interface SwapParams

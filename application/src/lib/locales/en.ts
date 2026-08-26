@@ -8,6 +8,7 @@ export const en = {
         swap: 'Swap',
         liquidity: 'Liquidity',
         portfolio: 'Portfolio',
+        menu: 'Menu',
         home: 'Nura Swap'
     },
     common:
@@ -54,16 +55,16 @@ export const en = {
         statVolume: '24h volume',
         statPools: 'Pools',
         featureSwapTitle: 'Swaps without an order book',
-        featureSwapBody: 'Prices come from the constant-product formula over pooled reserves. Quotes update as the pool moves, and your slippage limit is enforced by the contract, not by trust.',
+        featureSwapBody: 'Prices come from concentrated liquidity: each pool holds a fee tier and prices every trade itself. Quotes update as the pool moves, and your slippage limit is enforced by the contract, not by trust.',
         featureEarnTitle: 'Provide liquidity, earn the fee',
-        featureEarnBody: 'Every trade pays a fee to its pool. Deposit two tokens, receive LP tokens, and your share of every trade accrues to your position until you withdraw.',
+        featureEarnBody: 'Every trade pays a fee to its pool. Deposit two tokens across a price range of your choosing, and your share of the trades that cross it accrues until you withdraw.',
         featureCustodyTitle: 'Self-custody, end to end',
         featureCustodyBody: 'The exchange is a set of audited immutable contracts. This site is a window onto them - it never holds funds, keys, or sessions.',
         howTitle: 'How a swap settles',
         how1Title: 'Connect',
         how1Body: 'Any injected wallet works. The site reads balances and quotes; nothing moves without your signature.',
         how2Title: 'Quote',
-        how2Body: 'The router computes your output from live reserves, shows the price impact, and holds your minimum as a hard bound.',
+        how2Body: 'The quoter computes your output from the pool\'s own price, shows the price impact, and your minimum is held as a hard bound.',
         how3Title: 'Settle',
         how3Body: 'One transaction swaps against the pool. If the price slips past your limit, the contract reverts and nothing is spent but gas.',
         liveTitle: 'Live on-chain',
@@ -145,7 +146,6 @@ export const en = {
         price: 'Price',
         share: 'Pool share',
         pooled: 'Pooled',
-        lpTokens: 'LP tokens',
         searchPools: 'Search pools',
         noPools: 'No pools yet.',
         noPositions: 'No positions. Add liquidity to a pool to start earning the trading fee.',
@@ -162,23 +162,17 @@ export const en = {
         selectPair: 'Select the pair',
         unpriced: 'Unpriced'
     },
-    // UniswapV3: a second exchange living beside the V2 one, not a new view of
-    // it. Every string here names something V2 has no equivalent for - a fee
-    // tier, a price range, a position that can be out of range and idle.
+    // UniswapV3, the exchange. Every string here names something a concentrated
+    // liquidity market has and a plain pool list does not: a fee tier, a price
+    // range, a position that can be out of range and idle.
     v3:
     {
-        protocol: 'Protocol',
-        v2Hint: 'Constant-product pools. One price across the whole curve, and every provider earns on all of it.',
-        v3Hint: 'Concentrated liquidity. Choose a fee tier and a price range: inside it your capital works harder, outside it stops earning.',
         feeTier: 'Fee tier',
         feeTierHint: 'V3 splits a pair across several pools, one per fee. Auto trades through whichever quotes best right now.',
         autoTier: 'Auto',
         bestTier: 'Best',
         noPool: 'No V3 pool for this pair yet',
         noPools: 'No V3 pools yet.',
-        chartFromV2: 'No V3 trades for this pair yet - the chart follows the V2 pool, which prices independently.',
-        chartFromV3: 'No V2 trades for this pair yet - the chart follows the V3 pool, which prices independently.',
-        chainReadNote: 'V3 figures are read straight from the chain: TVL is what each pool holds right now. 24h volume and fee APR come from the indexer, which does not follow V3 yet.',
         positions: 'My V3 positions',
         noPositions: 'No V3 positions. Add liquidity in a price range to start earning.',
         addTitle: 'Add V3 liquidity',

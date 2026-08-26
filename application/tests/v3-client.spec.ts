@@ -53,6 +53,8 @@ interface Script
     /** Every read the module made, for asserting what was NOT called. */
     calls: string[];
     failEveryRead: boolean;
+    /** The next N reads throw - a partial outage, not a total one. */
+    failNextReads: number;
 }
 
 let script: Script;
@@ -75,7 +77,8 @@ function freshScript(): Script
         positions: [],
         owed: { amount0: 0n, amount1: 0n },
         calls: [],
-        failEveryRead: false
+        failEveryRead: false,
+        failNextReads: 0
     };
 }
 
@@ -106,6 +109,11 @@ async function answer(read: ReadArgs): Promise<unknown>
     script.calls.push(read.functionName);
     if (script.failEveryRead)
     {
+        throw new Error('rpc unavailable');
+    }
+    if (script.failNextReads > 0)
+    {
+        script.failNextReads--;
         throw new Error('rpc unavailable');
     }
     switch (read.functionName)
@@ -297,6 +305,29 @@ describe('enabled fee tiers', () =>
         script.tiers = { 3000: 60 };
         expect(await v3.enabledFeeTiers(FACTORY)).toEqual([{ fee: 3000, tickSpacing: 60 }]);
     });
+
+    // A PARTIAL answer is worse than none dressed as a complete one: a tier
+    // whose read failed is indistinguishable from one the factory disabled, so
+    // caching it would hide real tiers until reload. Serve what answered, pin
+    // only a clean pass.
+    it('serves a partial answer without caching it', async () =>
+    {
+        script.failNextReads = 1;
+        script.tiers = { 100: 1, 500: 10 };
+        const v3 = await loadV3();
+        expect(await v3.enabledFeeTiers(FACTORY)).toEqual([{ fee: 500, tickSpacing: 10 }]);
+
+        // The next call probes again - and its clean pass is the one cached.
+        script.tiers = { 100: 1, 500: 10, 3000: 60 };
+        expect(await v3.enabledFeeTiers(FACTORY)).toEqual([
+            { fee: 100, tickSpacing: 1 },
+            { fee: 500, tickSpacing: 10 },
+            { fee: 3000, tickSpacing: 60 }
+        ]);
+        const after = script.calls.length;
+        await v3.enabledFeeTiers(FACTORY);
+        expect(script.calls.length).toBe(after);
+    });
 });
 
 describe('the Quoter probe', () =>
@@ -437,6 +468,23 @@ describe('the SwapRouter probe', () =>
         await v3.buildV3Swap(base);
         expect(script.calls.filter((name) => name === 'positionManager').length).toBe(probes);
         expect(probes).toBe(1);
+    });
+
+    // A v1 router reverts on the probe - but so does an unreachable RPC. A
+    // failure must answer 'v1' for THIS trade and leave the question open:
+    // pinning it off a blip encoded v1 calldata against a real 02 until reload.
+    it('re-probes after a failed router read instead of pinning v1', async () =>
+    {
+        script.failEveryRead = true;
+        const v3 = await loadV3();
+        expect(await v3.detectRouterFlavour(ROUTER)).toBe('v1');
+
+        script.failEveryRead = false;
+        script.router = '02';
+        expect(await v3.detectRouterFlavour(ROUTER)).toBe('02');
+        const probes = script.calls.filter((name) => name === 'positionManager').length;
+        expect(await v3.detectRouterFlavour(ROUTER)).toBe('02');
+        expect(script.calls.filter((name) => name === 'positionManager').length).toBe(probes);
     });
 
     it('sends the input as value when paying in NURA', async () =>

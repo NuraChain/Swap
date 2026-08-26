@@ -24,8 +24,6 @@ const INFO = {
     explorerUrl: 'https://explorer.nurachain.net',
     faucet: false,
     contracts: {
-        factory: '0x00000000000000000000000000000000000000f0',
-        router: '0x00000000000000000000000000000000000000f1',
         wnura: '0x00000000000000000000000000000000000000b0',
         multicall3: '0x00000000000000000000000000000000000000f2'
     },
@@ -196,7 +194,7 @@ describe('explorer links', () =>
 
 describe('the V3 half', () =>
 {
-    it('reports the addresses when the chain carries them', async () =>
+    it('reports the addresses once the deployment has loaded', async () =>
     {
         deploymentCall.mockResolvedValue(INFO);
         const chain = await loadChain();
@@ -208,22 +206,6 @@ describe('the V3 half', () =>
     {
         const chain = await loadChain();
         expect(chain.v3Addresses()).toBeNull();
-    });
-
-    // Both shapes an artifact can take: the key absent entirely (written before
-    // V3 existed) and the key present as null (a chain with only V2 deployed).
-    it('reports null for a chain with no V3, however the artifact says so', async () =>
-    {
-        deploymentCall.mockResolvedValue({ ...INFO, v3: null });
-        const withNull = await loadChain();
-        await withNull.ensureDeployment();
-        expect(withNull.v3Addresses()).toBeNull();
-
-        const { v3: _omitted, ...withoutKey } = INFO;
-        deploymentCall.mockResolvedValue(withoutKey);
-        const missing = await loadChain();
-        await missing.ensureDeployment();
-        expect(missing.v3Addresses()).toBeNull();
     });
 });
 
@@ -238,17 +220,13 @@ describe('the ABI fragments', () =>
         chain = await loadChain();
     });
 
-    it('declares every function the app calls on a V2 pair and router', () =>
+    it('declares every function the app calls on tokens and the wrapper', () =>
     {
         const named = (abi: readonly unknown[]): string[] =>
             (abi as Array<{ type: string; name?: string }>)
                 .filter((entry) => entry.type === 'function')
                 .map((entry) => entry.name as string);
-        expect(named(chain.ROUTER_ABI)).toContain('swapExactTokensForTokens');
-        expect(named(chain.ROUTER_ABI)).toContain('addLiquidityETH');
-        expect(named(chain.PAIR_ABI)).toContain('getReserves');
-        expect(named(chain.FACTORY_ABI)).toContain('swapFee');
-        expect(named(chain.ERC20_ABI)).toContain('allowance');
+        expect(named(chain.ERC20_ABI)).toEqual(expect.arrayContaining(['allowance', 'approve', 'decimals']));
         expect(named(chain.WNURA_ABI)).toEqual(expect.arrayContaining(['deposit', 'withdraw']));
     });
 

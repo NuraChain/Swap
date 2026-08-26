@@ -1,8 +1,7 @@
-// The swap page on a chain that carries UniswapV3, in its own file for a real
-// reason: the deployment is fetched once per tab by design, so "this chain has
-// V3" and "this chain does not" are two different tabs. Resetting the module
-// registry mid-file would give the page a different reactive runtime than the
-// test helper mounted it with.
+// The trading pages against a V3-capable deployment - which is now the only
+// shape an artifact can take. In its own file for a real reason: the deployment
+// is fetched once per tab by design, so these journeys run against their own
+// module registry rather than mixing with pages.spec's mocks.
 
 import { cleanup, fire, renderTest } from '@azerothjs/testing';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -25,9 +24,7 @@ const V3 = {
 const market = {
     stats: vi.fn().mockResolvedValue({
         chainId: 1020,
-        pairCount: 1,
         poolCount: 1,
-        swapFeeBps: 25,
         tvlUsd: 0,
         volume24hUsd: 0,
         indexedBlock: 1,
@@ -35,6 +32,7 @@ const market = {
     }),
     pools: vi.fn().mockResolvedValue([]),
     pool: vi.fn().mockResolvedValue({ candles: [] }),
+    traded: vi.fn().mockResolvedValue({ traded: false }),
     tokens: vi.fn().mockResolvedValue(TOKENS),
     txs: vi.fn().mockResolvedValue([]),
     deployment: vi.fn().mockResolvedValue({
@@ -44,8 +42,6 @@ const market = {
         explorerUrl: null,
         faucet: false,
         contracts: {
-            factory: '0x00000000000000000000000000000000000000f0',
-            router: '0x00000000000000000000000000000000000000f1',
             wnura: TOKENS[0].address,
             multicall3: '0x00000000000000000000000000000000000000f2'
         },
@@ -101,54 +97,46 @@ afterEach(() =>
     setLang('en');
 });
 
-describe('the swap page where the chain carries V3', () =>
+describe('the trading pages on the one exchange', () =>
 {
-    it('offers the protocol switch and starts on V2', async () =>
+    // The regression this pins: there is exactly one exchange, so any switch
+    // control left behind would be an offer of something that does not exist.
+    it('mounts the swap card with no protocol switch anywhere on it', async () =>
     {
         const { container } = renderTest(() => App({ url: '/swap' }));
-        await until(() => container.querySelector('[data-testid="protocol-v3"]') !== null);
-        expect(container.querySelector('[data-testid="protocol-v2"]')?.getAttribute('aria-pressed')).toBe('true');
-        expect(container.querySelector('[data-testid="protocol-v3"]')?.getAttribute('aria-pressed')).toBe('false');
-    });
-
-    it('moves the card onto V3 when the switch is used', async () =>
-    {
-        const { container } = renderTest(() => App({ url: '/swap' }));
-        await until(() => container.querySelector('[data-testid="protocol-v3"]') !== null);
-        fire(container.querySelector('[data-testid="protocol-v3"]') as HTMLElement, 'click');
-        await until(() => container.querySelector('[data-testid="protocol-v3"]')?.getAttribute('aria-pressed') === 'true');
-        expect(container.querySelector('[data-testid="protocol-v2"]')?.getAttribute('aria-pressed')).toBe('false');
-        // Still one trading card, both sides intact - the switch changes which
-        // exchange answers, not what the page is.
-        expect(container.querySelector('[data-testid="amount-in"]')).not.toBeNull();
+        await until(() => container.querySelector('[data-testid="amount-in"]') !== null);
+        expect(container.querySelector('[data-testid="protocol-v2"]')).toBeNull();
+        expect(container.querySelector('[data-testid="protocol-v3"]')).toBeNull();
+        // Both sides of the trade survive the simplification.
         expect(container.querySelector('[data-testid="amount-out"]')).not.toBeNull();
     });
 
-    // The choice rides with the other swap settings so a V3 trader is not put
-    // back on V2 by a page reload.
-    it('remembers the protocol across a reload', async () =>
+    // A stored 'protocol' key from before the removal must be inert: ignored on
+    // read, and overwritten by the first settings save.
+    it('ignores a stale persisted protocol setting', async () =>
     {
-        const first = renderTest(() => App({ url: '/swap' }));
-        await until(() => first.container.querySelector('[data-testid="protocol-v3"]') !== null);
-        fire(first.container.querySelector('[data-testid="protocol-v3"]') as HTMLElement, 'click');
-        await until(() =>
-            (window.localStorage.getItem('nuraswap.swap-settings') ?? '').includes('"protocol":"v3"'));
-        first.unmount();
-
-        const second = renderTest(() => App({ url: '/swap' }));
-        await until(() =>
-            second.container.querySelector('[data-testid="protocol-v3"]')?.getAttribute('aria-pressed') === 'true');
-        expect(second.container.querySelector('[data-testid="protocol-v2"]')?.getAttribute('aria-pressed')).toBe('false');
+        window.localStorage.setItem('nuraswap.swap-settings', JSON.stringify({ slippageBps: 100, protocol: 'v2' }));
+        const { container } = renderTest(() => App({ url: '/swap' }));
+        await until(() => container.textContent?.includes('You pay') === true);
+        expect(container.querySelector('[data-testid="protocol-v2"]')).toBeNull();
     });
 
-    it('shows the liquidity page its own protocol switch', async () =>
+    it('shows the liquidity page its V3 positions heading and its empty state', async () =>
     {
         const { container } = renderTest(() => App({ url: '/liquidity' }));
-        await until(() => container.querySelector('[data-testid="protocol-v3"]') !== null);
-        fire(container.querySelector('[data-testid="protocol-v3"]') as HTMLElement, 'click');
         await until(() => container.textContent?.includes('My V3 positions') === true);
-        // The V3 half is read from the chain, and says so where a V2 pool would
-        // show indexed volume.
-        expect(container.textContent).toContain('read straight from the chain');
+        // The pool table is assembled from on-chain discovery; offline, the empty
+        // state has to say so rather than spin forever.
+        await until(() => container.textContent?.includes('No V3 pools yet.') === true);
+        expect(container.querySelector('[data-testid="pool-search"]')).not.toBeNull();
+    });
+
+    it('keeps the add button working as a sheet trigger on the liquidity page', async () =>
+    {
+        const { container } = renderTest(() => App({ url: '/liquidity' }));
+        await until(() => container.querySelector('[data-testid="open-add"]') !== null);
+        fire(container.querySelector('[data-testid="open-add"]') as HTMLElement, 'click');
+        // The sheet portals itself to the body, like every modal in the inventory.
+        await until(() => document.body.querySelector('[role="dialog"]') !== null);
     });
 });

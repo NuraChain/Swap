@@ -6,9 +6,65 @@ import { createSignal } from 'azerothjs';
 import { createPublicClient, defineChain, http, parseAbi, type Chain, type PublicClient } from 'viem';
 
 import { client } from '../api.ts';
-import type { DeploymentInfo } from '../api.ts';
+import type { DeploymentInfo, TokenRef } from '../api.ts';
 
 export type Address = `0x${ string }`;
+
+/** The zero address - what a factory answers for "no such pool". */
+export const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as Address;
+
+// The native pseudo-token: swaps route through the router's ETH entrypoints and
+// WNURA<->NURA is a direct wrap. Everything else treats it as WNURA - hopAddress
+// maps it to the wrapper before any contract call.
+export const NATIVE_TOKEN: TokenRef = { address: 'nura', symbol: 'NURA', name: 'NURA', decimals: 18 };
+
+export function isNativeToken(token: TokenRef | null): boolean
+{
+    return token?.address === NATIVE_TOKEN.address;
+}
+
+/** Slippage tolerance for the liquidity flows, in basis points. The swap card
+ *  keeps its own user-set one; these deposits/withdrawals use this fixed band. */
+export const LIQUIDITY_SLIPPAGE_BPS = 100;
+
+/**
+ * Chain time, not wall time: a local chain's clock can be offset and a user's
+ * clock can skew, so deadlines are anchored to the node's own LATEST block -
+ * on an automining chain that pending-ish block is the referee the router will
+ * actually consult.
+ */
+export async function chainDeadline(extraSeconds: number): Promise<bigint>
+{
+    const reader = publicClient();
+    const block = await reader.getBlock({ blockTag: 'pending' }).catch(() => reader.getBlock());
+    return block.timestamp + BigInt(extraSeconds);
+}
+
+/**
+ * Refreshes the ERC20 allowances a flow's non-native sides need. The caller
+ * paints "approved until the read says otherwise" first; this re-reads the
+ * chain over it. Each read stands alone - one transient RPC failure must not
+ * take its sibling down or leak a rejection.
+ */
+export function refreshAllowances(
+    owner: Address,
+    entries: ReadonlyArray<{ token: TokenRef | null; spender: Address; onValue: (value: bigint) => void }>
+): void
+{
+    for (const entry of entries)
+    {
+        if (entry.token === null || isNativeToken(entry.token))
+        {
+            continue;
+        }
+        void publicClient().readContract({
+            address: entry.token.address as Address,
+            abi: ERC20_ABI,
+            functionName: 'allowance',
+            args: [owner, entry.spender]
+        }).then((value) => entry.onValue(value as bigint)).catch(() => undefined);
+    }
+}
 
 export const ERC20_ABI = parseAbi([
     'function balanceOf(address owner) view returns (uint256)',
@@ -27,35 +83,6 @@ export const ERC20_BYTES32_ABI = parseAbi([
 
 export const MOCK_TOKEN_ABI = parseAbi([
     'function faucet(uint256 amount)'
-]);
-
-export const FACTORY_ABI = parseAbi([
-    'function getPair(address tokenA, address tokenB) view returns (address)',
-    'function createPair(address tokenA, address tokenB) returns (address)',
-    // Basis points, and NOT the 30 that stock UniswapV2 hardcodes: this factory
-    // holds the fee and feeToSetter can retune it, so the number on screen and
-    // the number in the impact maths are both read from here.
-    'function swapFee() view returns (uint32)'
-]);
-
-export const PAIR_ABI = parseAbi([
-    'function getReserves() view returns (uint112 reserve0, uint112 reserve1, uint32 blockTimestampLast)',
-    'function token0() view returns (address)',
-    'function token1() view returns (address)',
-    'function totalSupply() view returns (uint256)',
-    'function balanceOf(address owner) view returns (uint256)',
-    'function approve(address spender, uint256 value) returns (bool)'
-]);
-
-export const ROUTER_ABI = parseAbi([
-    'function getAmountsOut(uint256 amountIn, address[] path) view returns (uint256[] amounts)',
-    'function swapExactTokensForTokens(uint256 amountIn, uint256 amountOutMin, address[] path, address to, uint256 deadline) returns (uint256[] amounts)',
-    'function swapExactETHForTokens(uint256 amountOutMin, address[] path, address to, uint256 deadline) payable returns (uint256[] amounts)',
-    'function swapExactTokensForETH(uint256 amountIn, uint256 amountOutMin, address[] path, address to, uint256 deadline) returns (uint256[] amounts)',
-    'function addLiquidity(address tokenA, address tokenB, uint256 amountADesired, uint256 amountBDesired, uint256 amountAMin, uint256 amountBMin, address to, uint256 deadline) returns (uint256 amountA, uint256 amountB, uint256 liquidity)',
-    'function addLiquidityETH(address token, uint256 amountTokenDesired, uint256 amountTokenMin, uint256 amountETHMin, address to, uint256 deadline) payable returns (uint256 amountToken, uint256 amountETH, uint256 liquidity)',
-    'function removeLiquidity(address tokenA, address tokenB, uint256 liquidity, uint256 amountAMin, uint256 amountBMin, address to, uint256 deadline) returns (uint256 amountA, uint256 amountB)',
-    'function removeLiquidityETH(address token, uint256 liquidity, uint256 amountTokenMin, uint256 amountETHMin, address to, uint256 deadline) returns (uint256 amountToken, uint256 amountETH)'
 ]);
 
 export const WNURA_ABI = parseAbi([
@@ -213,16 +240,15 @@ export interface V3Addresses
 }
 
 /**
- * The V3 deployment, or null on a chain that carries the V2 factory alone. Reads
- * the deployment SIGNAL, so a component that guards on it re-renders the moment
- * the artifact lands - which is what lets the protocol switch appear with the
- * rest of the page instead of after a refresh.
+ * The V3 contract addresses, or null while the deployment is still loading.
+ * Reads the deployment SIGNAL, so a component that guards on it re-renders the
+ * moment the artifact lands - which is what lets the page appear whole instead
+ * of after a refresh.
  */
 export function v3Addresses(): V3Addresses | null
 {
-    const info = deploymentSignal();
-    const v3 = info?.v3;
-    if (v3 === null || v3 === undefined)
+    const v3 = deploymentSignal()?.v3;
+    if (v3 === undefined)
     {
         return null;
     }

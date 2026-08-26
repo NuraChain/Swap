@@ -15,11 +15,12 @@ type Kind = 'swap' | 'mint' | 'burn';
 
 const KINDS: Kind[] = ['swap', 'mint', 'burn'];
 
-// One feed, two exchanges. The protocol is spelled on EVERY row rather than
-// only on the V3 ones: an unmarked row would mean 'V2' by a convention the
-// reader has to be told, and the same pair trades at two different prices in
-// the two contracts. Casing matches the protocol switch on the liquidity page.
-const PROTOCOL_LABEL = { v2: 'V2', v3: 'V3' } as const;
+// A row's identity. txHash + timestamp alone collide: a multi-hop swap emits
+// one Swap event PER POOL inside a single transaction, and the feed shows every
+// one of them - two rows, same hash, same second. The pool, direction and
+// amounts separate them.
+const rowKey = (tx: TxItem): string =>
+    `${ tx.txHash }-${ tx.pairAddress }-${ tx.kind }-${ tx.amountA }-${ tx.amountB }-${ tx.timestamp }`;
 
 export default component TxList(props: {
     limit?: number;
@@ -88,7 +89,7 @@ export default component TxList(props: {
             fallback={ <EmptyState title={ props.account === undefined ? t().swap.chartEmpty : t().portfolio.noHistory } /> }
         >
             <ul class="flex flex-col">
-                <For each={ visible } key={ (tx) => tx.txHash + tx.timestamp } let={ tx }>
+                <For each={ visible } key={ rowKey } let={ tx }>
                     <li class="flex items-center gap-3 border-b border-line py-2.5 last:border-b-0">
                         <span class="flex -space-x-2" data-ltr>
                             <TokenIcon symbol={ tx.tokenA.symbol } address={ tx.tokenA.address } size={ 22 } />
@@ -103,7 +104,6 @@ export default component TxList(props: {
                             <span class="block text-[10px] text-faint">{ fmtTime(tx.timestamp) }</span>
                         </span>
                         <span class="flex items-center gap-1.5">
-                            <Badge ltr>{ PROTOCOL_LABEL[tx.protocol as keyof typeof PROTOCOL_LABEL] }</Badge>
                             <Tooltip label={ tx.txHash }>
                                 <Badge tone={ KIND_TONE[tx.kind as keyof typeof KIND_TONE] }>{ tx.kind }</Badge>
                             </Tooltip>

@@ -3,7 +3,7 @@ import { Link } from 'azerothjs';
 import { formatTokenAmount } from '@nuraswap/shared/digits';
 
 import { client } from '../api.ts';
-import type { Pool, TokenWithPrice } from '../api.ts';
+import type { TokenWithPrice } from '../api.ts';
 import { deployment, ensureDeployment } from '../lib/chain.ts';
 import type { Address } from '../lib/chain.ts';
 import { fmtAmount, fmtUsdPrice } from '../lib/format.ts';
@@ -11,9 +11,9 @@ import { fmtUsd, t } from '../lib/i18n.ts';
 import { account, balances, nativeBalance, txEpoch, watchTokens } from '../lib/wallet/store.ts';
 
 import FaucetButton from '../components/market/faucet-button.component.azeroth';
-import PositionsGrid from '../components/market/positions-grid.component.azeroth';
 import TokenIcon from '../components/market/token-icon.component.azeroth';
 import TxList from '../components/market/tx-list.component.azeroth';
+import V3PositionsGrid from '../components/market/v3-positions-grid.component.azeroth';
 import WalletModal from '../components/market/wallet-modal.component.azeroth';
 import Button from '../components/ui/button.component.azeroth';
 import EmptyState from '../components/ui/empty-state.component.azeroth';
@@ -33,15 +33,12 @@ interface Holding
 export default component Portfolio()
 {
     state tokens: TokenWithPrice[] = [];
-    state pools: Pool[] = [];
     state walletOpen = false;
 
-    mount
+    // One fetch path: the epoch effect runs at mount too, so a separate mount
+    // fetch used to hit /api/market/tokens twice on every page load.
+    effect (txEpoch())
     {
-        // The rejection is swallowed for the same reason App swallows its own
-        // warm-up: an api half that is down is a state this page already renders
-        // (empty tables, an empty registry), and letting it through would add an
-        // unhandled rejection to the console of every visitor during an outage.
         void (async () =>
         {
             await ensureDeployment();
@@ -49,12 +46,6 @@ export default component Portfolio()
             tokens = served;
             watchTokens(served.map((token) => token.address as Address));
         })().catch(() => undefined);
-    }
-
-    effect (txEpoch())
-    {
-        void client.market.pools().then((list) => { pools = list; }).catch(() => undefined);
-        void client.market.tokens().then((list) => { tokens = list; }).catch(() => undefined);
     }
 
     // Native NURA rides the WNURA price; ERC20 balances come from the wallet store.
@@ -200,8 +191,8 @@ export default component Portfolio()
             </div>
 
             <div class="mt-10">
-                <h2 class="eyebrow">{ t().liquidity.myPositions }</h2>
-                <PositionsGrid pools={ pools } />
+                <h2 class="eyebrow">{ t().v3.positions }</h2>
+                <V3PositionsGrid />
             </div>
 
             <div class="mt-10">

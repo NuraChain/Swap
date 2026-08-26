@@ -9,7 +9,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import AmountField from '../src/components/market/amount-field.component.azeroth';
 import FeeTierSelect from '../src/components/market/fee-tier-select.component.azeroth';
-import ProtocolSwitch from '../src/components/market/protocol-switch.component.azeroth';
 import TokenSelect from '../src/components/market/token-select.component.azeroth';
 import Badge from '../src/components/ui/badge.component.azeroth';
 import Button from '../src/components/ui/button.component.azeroth';
@@ -142,33 +141,6 @@ describe('Pagination', () =>
         fire(byTestId(container, 'page-last'), 'click');
         fire(byTestId(container, 'page-4'), 'click');
         expect(onPage.mock.calls.map((call) => call[0])).toEqual([4, 2, 1, 10, 4]);
-    });
-});
-
-describe('ProtocolSwitch', () =>
-{
-    it('shows which exchange is selected', () =>
-    {
-        const { container } = renderTest(() => ProtocolSwitch({ value: 'v3', onChange: () => undefined }));
-        // "true"/"false" as strings: aria-pressed is an enumerated attribute,
-        // and an empty value tells a screen reader nothing about the state.
-        expect(byTestId(container, 'protocol-v3').getAttribute('aria-pressed')).toBe('true');
-        expect(byTestId(container, 'protocol-v2').getAttribute('aria-pressed')).toBe('false');
-    });
-
-    it('reports the protocol that was clicked', () =>
-    {
-        const onChange = vi.fn();
-        const { container } = renderTest(() => ProtocolSwitch({ value: 'v2', onChange }));
-        fire(byTestId(container, 'protocol-v3'), 'click');
-        expect(onChange).toHaveBeenCalledWith('v3');
-    });
-
-    it('labels the group for assistive technology', () =>
-    {
-        const { container } = renderTest(() => ProtocolSwitch({ value: 'v2', onChange: () => undefined }));
-        const group = container.querySelector('[role="group"]');
-        expect(group?.getAttribute('aria-label')).toBeTruthy();
     });
 });
 

@@ -2,21 +2,17 @@ import { formatTokenAmount } from '@nuraswap/shared/digits';
 import { priceWadFromSqrtX96 } from '@nuraswap/shared/v3-math';
 
 import { client } from '../api.ts';
-import type { Pool, TokenRef, TokenWithPrice } from '../api.ts';
-import { ensureDeployment, v3Addresses } from '../lib/chain.ts';
+import type { TokenRef, TokenWithPrice } from '../api.ts';
+import { NATIVE_TOKEN, ensureDeployment, v3Addresses } from '../lib/chain.ts';
 import type { Address } from '../lib/chain.ts';
 import { fmtPercentBps, shortAddress } from '../lib/format.ts';
 import { fmtUsd, t } from '../lib/i18n.ts';
 import { discoverPools, poolBalances } from '../lib/v3.ts';
-import type { PositionView, Protocol, V3PoolState } from '../lib/v3.ts';
+import type { PositionView, V3PoolState } from '../lib/v3.ts';
 import { account, txEpoch, watchTokens } from '../lib/wallet/store.ts';
 
-import AddLiquidity from '../components/market/add-liquidity.component.azeroth';
 import AddV3Liquidity from '../components/market/add-v3-liquidity.component.azeroth';
 import ManageV3Position from '../components/market/manage-v3-position.component.azeroth';
-import PositionsGrid from '../components/market/positions-grid.component.azeroth';
-import ProtocolSwitch from '../components/market/protocol-switch.component.azeroth';
-import RemoveLiquidity from '../components/market/remove-liquidity.component.azeroth';
 import TokenIcon from '../components/market/token-icon.component.azeroth';
 import V3PositionsGrid from '../components/market/v3-positions-grid.component.azeroth';
 import WalletModal from '../components/market/wallet-modal.component.azeroth';
@@ -27,21 +23,19 @@ import Icon from '../components/ui/icon.component.azeroth';
 import Input from '../components/ui/input.component.azeroth';
 import Pagination from '../components/ui/pagination.component.azeroth';
 
-const NATIVE: TokenRef = { address: 'nura', symbol: 'NURA', name: 'NURA', decimals: 18 };
 const PAGE_SIZE = 10;
-// The V2 table is one API call; the V3 one is a pool sweep over every pair and
-// tier plus a balance read each. txEpoch ticks every five seconds while a wallet
-// is connected, and running that sweep at that cadence would hammer a public RPC
-// for a table nobody is watching change second to second.
-const V3_REFRESH_MS = 30_000;
+// The pool table is a sweep over every pair and tier plus a balance read each.
+// txEpoch ticks every five seconds while a wallet is connected, and running that
+// sweep at that cadence would hammer a public RPC for a table nobody is watching
+// change second to second.
+const POOL_REFRESH_MS = 30_000;
 
-// A V3 pool row. TVL is what the pool contract HOLDS, not a reserve-derived
-// figure: V3 has no reserves to derive one from, and the balances are the only
+// A pool row. TVL is what the pool contract HOLDS, not a reserve-derived
+// figure: a concentrated pool has no reserves, and its balances are the only
 // honest answer available without an indexer. Volume and fee APR need AGGREGATED
-// events: the indexer stores V3 swaps for the activity feed, but prices its
-// hourly candles off a pair's reserves, which a concentrated pool has none of -
-// so the table says unknown rather than printing a zero that reads as "no trades".
-interface V3Row
+// events, which this client-side sweep does not read - so those columns live on
+// the server-backed views rather than printing a zero that reads as "no trades".
+interface PoolRow
 {
     pool: V3PoolState;
     ref0: TokenRef;
@@ -52,28 +46,24 @@ interface V3Row
 
 export default component Liquidity()
 {
-    state protocol: Protocol = 'v2';
-    state pools: Pool[] = [];
-    state tokenList: TokenRef[] = [NATIVE];
+    state tokenList: TokenRef[] = [NATIVE_TOKEN];
     state priced: TokenWithPrice[] = [];
-    state v3Rows: V3Row[] = [];
-    state v3Loading = false;
+    state rows: PoolRow[] = [];
+    state loading = false;
     state query = '';
     state page = 1;
-    state adding: { a?: TokenRef; b?: TokenRef } | null = null;
-    state addingV3: { a?: TokenRef; b?: TokenRef; fee?: number } | null = null;
-    state removing: Pool | null = null;
+    state adding: { a?: TokenRef; b?: TokenRef; fee?: number } | null = null;
     state managing: PositionView | null = null;
     state walletOpen = false;
-    let v3LoadedAt = 0;
-    let v3Shape = '';
+    let loadedAt = 0;
+    let shape = '';
 
     mount
     {
         // The rejection is swallowed for the same reason App swallows its own
         // warm-up: an api half that is down is a state this page already renders
-        // (empty tables, an empty registry), and letting it through would add an
-        // unhandled rejection to the console of every visitor during an outage.
+        // (an empty registry), and letting it through would add an unhandled
+        // rejection to the console of every visitor during an outage.
         void (async () =>
         {
             await ensureDeployment();
@@ -81,15 +71,10 @@ export default component Liquidity()
             batch
             {
                 priced = served;
-                tokenList = [NATIVE, ...served];
+                tokenList = [NATIVE_TOKEN, ...served];
             }
             watchTokens(served.map((token) => token.address as Address));
         })().catch(() => undefined);
-    }
-
-    effect (txEpoch())
-    {
-        void client.market.pools().then((list) => { pools = list; }).catch(() => undefined);
     }
 
     const tokenOf = (address: Address): TokenRef =>
@@ -105,34 +90,33 @@ export default component Liquidity()
         return token?.anchored === true ? token.priceUsd : 0;
     };
 
-    // The V3 table is assembled in the browser: one multicall finds the pools
-    // across every pair and tier, a second reads what they hold. It runs only
-    // while the V3 half is on screen - a V2 trader should not pay for it - and
-    // no more than once per V3_REFRESH_MS unless the switch or the token list
-    // moved, which are the two changes that make the table plainly wrong.
-    effect (protocol, priced, txEpoch())
+    // The pool table is assembled in the browser: one multicall finds the pools
+    // across every pair and tier, a second reads what they hold. It runs no more
+    // than once per POOL_REFRESH_MS unless the token list moved, which is the one
+    // change that makes the table plainly wrong.
+    effect (priced, txEpoch())
     {
         const v3 = v3Addresses();
-        if (protocol !== 'v3' || v3 === null || priced.length === 0)
+        if (v3 === null || priced.length === 0)
         {
             return;
         }
-        const shape = `${ protocol }|${ priced.length }`;
+        const nextShape = String(priced.length);
         const now = Date.now();
-        if (shape === v3Shape && now - v3LoadedAt < V3_REFRESH_MS)
+        if (nextShape === shape && now - loadedAt < POOL_REFRESH_MS)
         {
             return;
         }
-        v3Shape = shape;
-        v3LoadedAt = now;
-        v3Loading = v3Rows.length === 0;
+        shape = nextShape;
+        loadedAt = now;
+        loading = rows.length === 0;
         void (async () =>
         {
             try
             {
                 const found = await discoverPools(v3.factory, priced.map((token) => token.address as Address));
                 const held = await poolBalances(found);
-                v3Rows = found.map((pool) =>
+                rows = found.map((pool) =>
                 {
                     const ref0 = tokenOf(pool.token0);
                     const ref1 = tokenOf(pool.token1);
@@ -154,20 +138,11 @@ export default component Liquidity()
             {
                 // The next tx epoch retries; the table keeps whatever it had.
             }
-            v3Loading = false;
+            loading = false;
         })();
     }
 
-    derived filtered = pools.filter((pool) =>
-    {
-        const needle = query.trim().toLowerCase();
-        return needle === ''
-            || pool.token0.symbol.toLowerCase().includes(needle)
-            || pool.token1.symbol.toLowerCase().includes(needle)
-            || pool.address.toLowerCase() === needle;
-    });
-
-    derived filteredV3 = v3Rows.filter((row) =>
+    derived filtered = rows.filter((row) =>
     {
         const needle = query.trim().toLowerCase();
         return needle === ''
@@ -176,67 +151,38 @@ export default component Liquidity()
             || row.pool.address.toLowerCase() === needle;
     });
 
-    derived rowCount = protocol === 'v3' ? filteredV3.length : filtered.length;
-    derived pages = Math.max(1, Math.ceil(rowCount / PAGE_SIZE));
+    derived pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
     derived visible = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-    derived visibleV3 = filteredV3.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-    effect (query, protocol)
+    effect (query)
     {
         page = 1;
     }
 
-    // A chain with no V3 half never renders the switch; a stored or stale 'v3'
-    // would otherwise leave the page asking a factory that is not there.
-    effect (txEpoch())
-    {
-        if (protocol === 'v3' && v3Addresses() === null)
-        {
-            protocol = 'v2';
-        }
-    }
-
-    // Closing a V3 sheet may mean a position was just minted or a pool created.
+    // Closing a sheet may mean a position was just minted or a pool created.
     // The sweep is throttled, so say explicitly that the table is now stale
     // rather than leaving a brand new pool invisible for half a minute.
-    const closeV3Sheet = (): void =>
+    const closeSheet = (): void =>
     {
-        v3LoadedAt = 0;
+        loadedAt = 0;
         batch
         {
-            addingV3 = null;
+            adding = null;
             managing = null;
-        }
-    };
-
-    const openAdd = (): void =>
-    {
-        if (protocol === 'v3')
-        {
-            addingV3 = {};
-        }
-        else
-        {
-            adding = {};
         }
     };
 
     <section class="mx-auto max-w-6xl px-4 py-8 sm:py-12">
         <div class="flex flex-wrap items-center justify-between gap-4">
             <h1 class="font-display text-xl font-medium">{ t().liquidity.title }</h1>
-            <div class="flex items-center gap-2">
-                <Show when={ v3Addresses() !== null }>
-                    <ProtocolSwitch value={ protocol } onChange={ (next) => { protocol = next; } } />
-                </Show>
-                <Button testId="open-add" onClick={ openAdd }>
-                    <Icon name="plus" size={ 16 } />
-                    <span>{ t().liquidity.add }</span>
-                </Button>
-            </div>
+            <Button testId="open-add" onClick={ () => { adding = {}; } }>
+                <Icon name="plus" size={ 16 } />
+                <span>{ t().liquidity.add }</span>
+            </Button>
         </div>
 
         <div class="mt-8">
-            <h2 class="eyebrow">{ protocol === 'v3' ? t().v3.positions : t().liquidity.myPositions }</h2>
+            <h2 class="eyebrow">{ t().v3.positions }</h2>
             <Show
                 when={ account() !== null }
                 fallback={
@@ -247,18 +193,7 @@ export default component Liquidity()
                     </div>
                 }
             >
-                <Show
-                    when={ protocol === 'v3' }
-                    fallback={
-                        <PositionsGrid
-                            pools={ pools }
-                            onAdd={ (pool) => { adding = { a: pool.token0, b: pool.token1 }; } }
-                            onRemove={ (pool) => { removing = pool; } }
-                        />
-                    }
-                >
-                    <V3PositionsGrid tokens={ tokenList } onManage={ (view) => { managing = view; } } />
-                </Show>
+                <V3PositionsGrid tokens={ tokenList } onManage={ (view) => { managing = view; } } />
             </Show>
         </div>
 
@@ -270,131 +205,70 @@ export default component Liquidity()
                 </div>
             </div>
 
-            <Show when={ protocol === 'v3' }>
-                <p class="mt-3 text-xs leading-relaxed text-faint">{ t().v3.chainReadNote }</p>
-            </Show>
-
             <Show
-                when={ protocol === 'v3' }
+                when={ visible.length > 0 }
                 fallback={
-                    <Show
-                        when={ visible.length > 0 }
-                        fallback={
-                            <div class="card mt-3">
-                                <EmptyState title={ t().liquidity.noPools } />
-                            </div>
-                        }
-                    >
-                        <div class="card mt-3 overflow-x-auto">
-                            <table class="w-full min-w-[540px] text-sm">
-                                <thead>
-                                    <tr class="border-b border-line text-xs text-faint">
-                                        <th class="px-4 py-3 text-start font-normal">{ t().liquidity.pools }</th>
-                                        <th class="px-4 py-3 text-end font-normal">{ t().liquidity.tvl }</th>
-                                        <th class="px-4 py-3 text-end font-normal">{ t().liquidity.volume }</th>
-                                        <th class="px-4 py-3 text-end font-normal">{ t().liquidity.apr }</th>
-                                        <th class="px-4 py-3"></th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <For each={ visible } key={ (pool) => pool.address } let={ pool }>
-                                        <tr class="border-b border-line last:border-b-0 hover:bg-ink/4">
-                                            <td class="px-4 py-3">
-                                                <span class="flex items-center gap-2">
-                                                    <span class="flex -space-x-2" data-ltr>
-                                                        <TokenIcon symbol={ pool.token0.symbol } address={ pool.token0.address } size={ 24 } />
-                                                        <TokenIcon symbol={ pool.token1.symbol } address={ pool.token1.address } size={ 24 } />
-                                                    </span>
-                                                    <span class="font-medium" data-ltr>{ `${ pool.token0.symbol }/${ pool.token1.symbol }` }</span>
-                                                </span>
-                                            </td>
-                                            <td class="px-4 py-3 text-end text-val"><span class={ pool.tvlUsd === 0 ? '' : 'font-mono' }>{ pool.tvlUsd === 0 ? t().liquidity.unpriced : fmtUsd(pool.tvlUsd) }</span></td>
-                                            <td class="px-4 py-3 text-end"><span class={ pool.tvlUsd === 0 ? '' : 'font-mono' }>{ pool.tvlUsd === 0 ? t().liquidity.unpriced : fmtUsd(pool.volume24hUsd) }</span></td>
-                                            <td class="px-4 py-3 text-end">
-                                                <Badge tone="rise">{ fmtPercentBps(pool.feeAprBps) }</Badge>
-                                            </td>
-                                            <td class="px-4 py-3 text-end">
-                                                <Button
-                                                    variant="ghost"
-                                                    size="sm"
-                                                    onClick={ () => { adding = { a: pool.token0, b: pool.token1 }; } }
-                                                >
-                                                    { t().liquidity.add }
-                                                </Button>
-                                            </td>
-                                        </tr>
-                                    </For>
-                                </tbody>
-                            </table>
-                        </div>
-                    </Show>
+                    <div class="card mt-3">
+                        <EmptyState title={ loading ? t().common.loading : t().v3.noPools } />
+                    </div>
                 }
             >
-                <Show
-                    when={ visibleV3.length > 0 }
-                    fallback={
-                        <div class="card mt-3">
-                            <EmptyState title={ v3Loading ? t().common.loading : t().v3.noPools } />
-                        </div>
-                    }
-                >
-                    <div class="card mt-3 overflow-x-auto">
-                        <table class="w-full min-w-[540px] text-sm">
-                            <thead>
-                                <tr class="border-b border-line text-xs text-faint">
-                                    <th class="px-4 py-3 text-start font-normal">{ t().liquidity.pools }</th>
-                                    <th class="px-4 py-3 text-end font-normal">{ t().v3.feeTier }</th>
-                                    <th class="px-4 py-3 text-end font-normal">{ t().liquidity.price }</th>
-                                    <th class="px-4 py-3 text-end font-normal">{ t().liquidity.tvl }</th>
-                                    <th class="px-4 py-3"></th>
+                <div class="card mt-3 overflow-x-auto">
+                    <table class="w-full min-w-[540px] text-sm">
+                        <thead>
+                            <tr class="border-b border-line text-xs text-faint">
+                                <th class="px-4 py-3 text-start font-normal">{ t().liquidity.pools }</th>
+                                <th class="px-4 py-3 text-end font-normal">{ t().v3.feeTier }</th>
+                                <th class="px-4 py-3 text-end font-normal">{ t().liquidity.price }</th>
+                                <th class="px-4 py-3 text-end font-normal">{ t().liquidity.tvl }</th>
+                                <th class="px-4 py-3"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <For each={ visible } key={ (row) => row.pool.address } let={ row }>
+                                <tr class="border-b border-line last:border-b-0 hover:bg-ink/4">
+                                    <td class="px-4 py-3">
+                                        <span class="flex items-center gap-2">
+                                            <span class="flex -space-x-2" data-ltr>
+                                                <TokenIcon symbol={ row.ref0.symbol } address={ row.ref0.address } size={ 24 } />
+                                                <TokenIcon symbol={ row.ref1.symbol } address={ row.ref1.address } size={ 24 } />
+                                            </span>
+                                            <span class="font-medium" data-ltr>{ `${ row.ref0.symbol }/${ row.ref1.symbol }` }</span>
+                                        </span>
+                                    </td>
+                                    <td class="px-4 py-3 text-end">
+                                        <Badge tone="ice" ltr>{ fmtPercentBps(row.pool.fee / 100) }</Badge>
+                                    </td>
+                                    <td class="px-4 py-3 text-end font-mono" data-ltr>
+                                        <span>{ formatTokenAmount(row.priceWad, 18, 6) }</span>
+                                    </td>
+                                    <td class="px-4 py-3 text-end text-val">
+                                        <span class={ row.tvlUsd === 0 ? '' : 'font-mono' }>
+                                            { row.tvlUsd === 0 ? t().liquidity.unpriced : fmtUsd(row.tvlUsd) }
+                                        </span>
+                                    </td>
+                                    <td class="px-4 py-3 text-end">
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={ () => { adding = { a: row.ref0, b: row.ref1, fee: row.pool.fee }; } }
+                                        >
+                                            { t().liquidity.add }
+                                        </Button>
+                                    </td>
                                 </tr>
-                            </thead>
-                            <tbody>
-                                <For each={ visibleV3 } key={ (row) => row.pool.address } let={ row }>
-                                    <tr class="border-b border-line last:border-b-0 hover:bg-ink/4">
-                                        <td class="px-4 py-3">
-                                            <span class="flex items-center gap-2">
-                                                <span class="flex -space-x-2" data-ltr>
-                                                    <TokenIcon symbol={ row.ref0.symbol } address={ row.ref0.address } size={ 24 } />
-                                                    <TokenIcon symbol={ row.ref1.symbol } address={ row.ref1.address } size={ 24 } />
-                                                </span>
-                                                <span class="font-medium" data-ltr>{ `${ row.ref0.symbol }/${ row.ref1.symbol }` }</span>
-                                            </span>
-                                        </td>
-                                        <td class="px-4 py-3 text-end">
-                                            <Badge tone="ice" ltr>{ fmtPercentBps(row.pool.fee / 100) }</Badge>
-                                        </td>
-                                        <td class="px-4 py-3 text-end font-mono" data-ltr>
-                                            <span>{ formatTokenAmount(row.priceWad, 18, 6) }</span>
-                                        </td>
-                                        <td class="px-4 py-3 text-end text-val">
-                                            <span class={ row.tvlUsd === 0 ? '' : 'font-mono' }>
-                                                { row.tvlUsd === 0 ? t().liquidity.unpriced : fmtUsd(row.tvlUsd) }
-                                            </span>
-                                        </td>
-                                        <td class="px-4 py-3 text-end">
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                onClick={ () => { addingV3 = { a: row.ref0, b: row.ref1, fee: row.pool.fee }; } }
-                                            >
-                                                { t().liquidity.add }
-                                            </Button>
-                                        </td>
-                                    </tr>
-                                </For>
-                            </tbody>
-                        </table>
-                    </div>
-                </Show>
+                            </For>
+                        </tbody>
+                    </table>
+                </div>
             </Show>
 
-            <Show when={ rowCount > 0 }>
+            <Show when={ filtered.length > 0 }>
                 <div class="mt-4">
                     <Pagination
                         page={ page }
                         pages={ pages }
-                        total={ rowCount }
+                        total={ filtered.length }
                         pageSize={ PAGE_SIZE }
                         onPage={ (next) => { page = next; } }
                     />
@@ -403,27 +277,16 @@ export default component Liquidity()
         </div>
 
         <Show when={ adding !== null }>
-            <AddLiquidity
+            <AddV3Liquidity
                 tokens={ tokenList }
                 initialA={ (adding as { a?: TokenRef }).a }
                 initialB={ (adding as { b?: TokenRef }).b }
-                onClose={ () => { adding = null; } }
+                initialFee={ (adding as { fee?: number }).fee }
+                onClose={ closeSheet }
             />
-        </Show>
-        <Show when={ addingV3 !== null }>
-            <AddV3Liquidity
-                tokens={ tokenList }
-                initialA={ (addingV3 as { a?: TokenRef }).a }
-                initialB={ (addingV3 as { b?: TokenRef }).b }
-                initialFee={ (addingV3 as { fee?: number }).fee }
-                onClose={ closeV3Sheet }
-            />
-        </Show>
-        <Show when={ removing } let={ pool }>
-            <RemoveLiquidity pool={ pool } onClose={ () => { removing = null; } } />
         </Show>
         <Show when={ managing } let={ view }>
-            <ManageV3Position view={ view } onClose={ closeV3Sheet } />
+            <ManageV3Position view={ view } onClose={ closeSheet } />
         </Show>
         <Show when={ walletOpen }>
             <WalletModal onClose={ () => { walletOpen = false; } } />

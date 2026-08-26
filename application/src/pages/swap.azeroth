@@ -1,17 +1,27 @@
 import { onCleanup, useQuery } from 'azerothjs';
 
-import { minOutForSlippage, priceImpactBps } from '@nuraswap/shared/math';
+import { MAX_UINT256, minOutForSlippage } from '@nuraswap/shared/math';
 import { priceImpactBpsFromMid, rawPriceWadFromSqrtX96 } from '@nuraswap/shared/v3-math';
 import { formatTokenAmount, parseTokenAmount } from '@nuraswap/shared/digits';
 
 import { client } from '../api.ts';
 import type { DeploymentInfo, TokenRef } from '../api.ts';
-import { ERC20_ABI, FACTORY_ABI, PAIR_ABI, ROUTER_ABI, WNURA_ABI, deployment, ensureDeployment, publicClient, v3Addresses } from '../lib/chain.ts';
+import {
+    ERC20_ABI,
+    NATIVE_TOKEN,
+    WNURA_ABI,
+    chainDeadline,
+    deployment,
+    ensureDeployment,
+    isNativeToken,
+    refreshAllowances,
+    v3Addresses
+} from '../lib/chain.ts';
 import type { Address } from '../lib/chain.ts';
 import { fmtPercentBps } from '../lib/format.ts';
 import { t } from '../lib/i18n.ts';
 import { bestTier, buildV3Swap, poolsForPair, quoteAllTiers } from '../lib/v3.ts';
-import type { Protocol, TierQuote, V3PoolState } from '../lib/v3.ts';
+import type { TierQuote, V3PoolState } from '../lib/v3.ts';
 import {
     account,
     balances,
@@ -27,7 +37,6 @@ import {
 import AmountField from '../components/market/amount-field.component.azeroth';
 import FeeTierSelect from '../components/market/fee-tier-select.component.azeroth';
 import PriceChart from '../components/market/price-chart.component.azeroth';
-import ProtocolSwitch from '../components/market/protocol-switch.component.azeroth';
 import TokenSelect from '../components/market/token-select.component.azeroth';
 import TxList from '../components/market/tx-list.component.azeroth';
 import WalletModal from '../components/market/wallet-modal.component.azeroth';
@@ -35,32 +44,26 @@ import Button from '../components/ui/button.component.azeroth';
 import Icon from '../components/ui/icon.component.azeroth';
 import Tooltip from '../components/ui/tooltip.component.azeroth';
 
-// The native pseudo-token: swaps route through the router's ETH entrypoints and
-// WNURA<->NURA is a direct wrap. Everything else treats it as WNURA.
-const NATIVE: TokenRef = { address: 'nura', symbol: 'NURA', name: 'NURA', decimals: 18 };
-const MAX_UINT256 = (1n << 256n) - 1n;
 const HIGH_IMPACT_BPS = 1500;
 
 // The route and the price age on their own: the pool moves under trades nobody
 // on this page made. Half a minute is short enough that a displayed price is
 // still the one the router would honour, and long enough not to hammer a public
-// RPC with a full re-quote (pair lookups, getAmountsOut, per-hop reserves).
+// RPC with a full re-quote (tier probing against the quoter).
 const QUOTE_REFRESH_MS = 30_000;
 
 interface QuoteState
 {
     out: bigint;
     impactBps: number;
-    /** The V2 hop list. Empty on a V3 quote, which is single-hop by tier. */
-    path: Address[];
-    /** The V3 fee tier this quote came from, in ppm; null on a V2 quote. */
+    /** The fee tier this quote came from, in ppm. Null only on a wrap pair. */
     fee: number | null;
 }
 
 export default component Swap()
 {
     state info: DeploymentInfo | null = null;
-    state tokenIn: TokenRef = NATIVE;
+    state tokenIn: TokenRef = NATIVE_TOKEN;
     state tokenOut: TokenRef | null = null;
     state amountText = '';
     state quote: QuoteState | null = null;
@@ -73,15 +76,7 @@ export default component Swap()
     state settingsOpen = false;
     state confirmedHighImpact = false;
     state quoteTick = 0;
-    // The pool's fee, in basis points, straight from the factory. Null until it
-    // answers, and nothing quotes before then: an impact figure computed against
-    // a guessed fee reports the guess, not the trade.
-    state feeBps: number | null = null;
-    // Which exchange this card is trading. V2 unless the trader says otherwise,
-    // and forced back to V2 on a chain whose deployment carries no V3 - the
-    // switch is not rendered there, so a stored 'v3' would strand the page.
-    state protocol: Protocol = 'v2';
-    // The pinned V3 fee tier, or null for "whichever quotes best". Pinning is a
+    // The pinned fee tier, or null for "whichever quotes best". Pinning is a
     // per-trade decision, so unlike slippage it is deliberately not persisted.
     state feeTier: number | null = null;
     state tierQuotes: TierQuote[] = [];
@@ -89,7 +84,7 @@ export default component Swap()
     state deadlineMinutes = 20;
     state infiniteApprove = false;
 
-    state tokenList: TokenRef[] = [NATIVE];
+    state tokenList: TokenRef[] = [NATIVE_TOKEN];
 
     /** The token+account+spender the allowance was read for; a refresh of the same key keeps it. */
     let allowanceKey = '';
@@ -102,7 +97,7 @@ export default component Swap()
         try
         {
             const stored = JSON.parse(window.localStorage.getItem('nuraswap.swap-settings') ?? '{}') as
-                { slippageBps?: number; deadlineMinutes?: number; infiniteApprove?: boolean; protocol?: string };
+                { slippageBps?: number; deadlineMinutes?: number; infiniteApprove?: boolean };
             if (typeof stored.slippageBps === 'number' && stored.slippageBps > 0 && stored.slippageBps <= 5000)
             {
                 slippageBps = stored.slippageBps;
@@ -115,10 +110,6 @@ export default component Swap()
             {
                 infiniteApprove = stored.infiniteApprove;
             }
-            if (stored.protocol === 'v3')
-            {
-                protocol = 'v3';
-            }
         }
         catch
         {
@@ -127,13 +118,8 @@ export default component Swap()
         void (async () =>
         {
             info = await ensureDeployment();
-            void publicClient().readContract({
-                address: (info as DeploymentInfo).contracts.factory as Address,
-                abi: FACTORY_ABI,
-                functionName: 'swapFee'
-            }).then((bps) => { feeBps = Number(bps); }).catch(() => undefined);
             const served = await client.market.tokens();
-            tokenList = [NATIVE, ...served];
+            tokenList = [NATIVE_TOKEN, ...served];
             tokenOut = served.find((token) => token.symbol === 'NURA') ?? served[0] ?? null;
             watchTokens(served.map((token) => token.address as Address));
 
@@ -148,9 +134,9 @@ export default component Swap()
                 {
                     return null;
                 }
-                if (value.toLowerCase() === NATIVE.address)
+                if (value.toLowerCase() === NATIVE_TOKEN.address)
                 {
-                    return NATIVE;
+                    return NATIVE_TOKEN;
                 }
                 return served.find((token) => token.address.toLowerCase() === value.toLowerCase()) ?? null;
             };
@@ -195,13 +181,13 @@ export default component Swap()
         });
     }
 
-    effect (slippageBps, deadlineMinutes, infiniteApprove, protocol) with { skipInitial: true }
+    effect (slippageBps, deadlineMinutes, infiniteApprove) with { skipInitial: true }
     {
         try
         {
             window.localStorage.setItem(
                 'nuraswap.swap-settings',
-                JSON.stringify({ slippageBps, deadlineMinutes, infiniteApprove, protocol })
+                JSON.stringify({ slippageBps, deadlineMinutes, infiniteApprove })
             );
         }
         catch
@@ -210,42 +196,20 @@ export default component Swap()
         }
     }
 
-    // A chain with no V3 half never renders the switch, so a 'v3' left in storage
-    // by a chain that HAD one would point this card at nothing at all.
-    effect (info)
-    {
-        if (info !== null && v3Addresses() === null)
-        {
-            protocol = 'v2';
-        }
-    }
-
     const wnuraAddress = (): Address => (deployment()?.contracts.wnura ?? '0x') as Address;
-    const routerAddress = (): Address => (deployment()?.contracts.router ?? '0x') as Address;
-    // Allowances and swaps go to DIFFERENT contracts per protocol: V2 pulls
-    // through the V2 router, V3 through the SwapRouter. Approving one and then
-    // swapping through the other reverts inside a token transfer, which is the
-    // least legible way for a trade to fail.
-    const spender = (): Address =>
-    {
-        const v3 = protocol === 'v3' ? v3Addresses() : null;
-        return v3 === null ? routerAddress() : v3.swapRouter;
-    };
-    const isNative = (token: TokenRef): boolean => token.address === 'nura';
+    // Approvals and swaps both land on the SwapRouter: approving a different
+    // contract than the one that pulls the tokens is the least legible way for
+    // a trade to fail.
+    const spender = (): Address => v3Addresses()?.swapRouter ?? '0x' as Address;
     const hopAddress = (token: TokenRef): Address =>
-        (isNative(token) ? wnuraAddress() : token.address) as Address;
+        (isNativeToken(token) ? wnuraAddress() : token.address) as Address;
 
     derived parsedIn = parseTokenAmount(amountText, tokenIn.decimals);
 
-    // The charted pool: the selected exchange's own pool for the pair when it
-    // exists, else the out-token's WNURA pool - there is always a price story
-    // next to the trade.
+    // The charted pool: the pinned tier's pool when one is pinned, else the
+    // deepest - the deepest is both where a quote almost always routes and
+    // where the trades already are.
     state chartPair: Address | null = null;
-    // Which exchange the chart ended up on when it is NOT the selected one, so
-    // the note under it can name the right pool. The two price independently -
-    // this pair sits at a different number on each - so borrowing a chart is
-    // something to say out loud, never something to do silently.
-    state chartNote: Protocol | null = null;
     let chartLookup = 0;
 
     // Every address is captured BEFORE the first await: a reactive read inside an
@@ -253,21 +217,22 @@ export default component Swap()
     // resolved pair never landed after a re-run and the chart stayed blank. The
     // last resolved pair also stays on screen while a new one resolves, so
     // flipping direction never blanks the chart.
-    effect (tokenIn, tokenOut, info, protocol, feeTier)
+    effect (tokenIn, tokenOut, info, feeTier)
     {
         const out = tokenOut;
         const current = info;
-        const selected = protocol;
         const pinnedTier = feeTier;
         if (current === null || out === null)
         {
             chartPair = null;
-            chartNote = null;
             return;
         }
-        const factory = (current as DeploymentInfo).contracts.factory as Address;
         const v3 = v3Addresses();
-        const wnura = wnuraAddress();
+        if (v3 === null)
+        {
+            chartPair = null;
+            return;
+        }
         const from = hopAddress(tokenIn);
         const to = hopAddress(out);
         // Only the newest lookup may write: two runs in flight can resolve out of
@@ -275,34 +240,13 @@ export default component Swap()
         chartLookup++;
         const generation = chartLookup;
 
-        // The V2 pair for this trade: the direct one, else the out-token's WNURA
-        // pool, so there is always a price story next to the trade.
-        const v2PairOf = async (): Promise<Address | null> =>
+        void (async () =>
         {
-            const zero = '0x0000000000000000000000000000000000000000';
-            const direct = await publicClient().readContract({
-                address: factory, abi: FACTORY_ABI, functionName: 'getPair', args: [from, to]
-            }).catch(() => zero) as Address;
-            if (direct !== zero)
-            {
-                return direct;
-            }
-            const viaWnura = await publicClient().readContract({
-                address: factory, abi: FACTORY_ABI, functionName: 'getPair', args: [to, wnura]
-            }).catch(() => zero) as Address;
-            return viaWnura === zero ? null : viaWnura;
-        };
-
-        // The V3 pool for this trade: the pinned tier is the one the trade will
-        // actually touch. On Auto nothing is pinned, and the deepest pool is both
-        // where a quote almost always routes and where the trades already are.
-        const v3PoolOf = async (): Promise<Address | null> =>
-        {
-            if (v3 === null)
-            {
-                return null;
-            }
             const pools = await poolsForPair(v3.factory, from, to).catch((): V3PoolState[] => []);
+            if (generation !== chartLookup)
+            {
+                return;
+            }
             const pinned = pinnedTier === null
                 ? null
                 : pools.find((pool) => pool.fee === pinnedTier) ?? null;
@@ -310,63 +254,7 @@ export default component Swap()
                 (best, pool) => (best === null || pool.liquidity > best.liquidity ? pool : best),
                 null
             );
-            return (pinned ?? deepest)?.address ?? null;
-        };
-
-        // A pool with liquidity but no trades charts NOTHING - the series is drawn
-        // from swaps, and a deposit is deliberately not one. That is the whole
-        // reason to look at the other exchange before settling for an empty card.
-        const hasTrades = async (address: Address): Promise<boolean> =>
-            client.market.pool({ params: { address } })
-                .then((detail) => detail.candles.some(
-                    (candle) => candle.volume0 !== '0' || candle.volume1 !== '0'
-                ))
-                .catch(() => false);
-
-        void (async () =>
-        {
-            const own = selected === 'v3' ? await v3PoolOf() : await v2PairOf();
-            if (generation !== chartLookup)
-            {
-                return;
-            }
-            // The selected exchange's own pool wins whenever it has anything to
-            // draw: the chart must match the trade being quoted, not the busier
-            // market next door.
-            if (own !== null && await hasTrades(own))
-            {
-                if (generation === chartLookup)
-                {
-                    chartPair = own;
-                    chartNote = null;
-                }
-                return;
-            }
-            if (generation !== chartLookup)
-            {
-                return;
-            }
-            const other = selected === 'v3' ? await v2PairOf() : await v3PoolOf();
-            if (generation !== chartLookup)
-            {
-                return;
-            }
-            if (other !== null && await hasTrades(other))
-            {
-                if (generation === chartLookup)
-                {
-                    chartPair = other;
-                    chartNote = selected === 'v3' ? 'v2' : 'v3';
-                }
-                return;
-            }
-            // Neither has traded. Stay on the selected exchange's own pool and let
-            // the chart say so, rather than borrowing an equally empty one.
-            if (generation === chartLookup)
-            {
-                chartPair = own ?? other;
-                chartNote = null;
-            }
+            chartPair = (pinned ?? deepest)?.address ?? null;
         })();
     }
 
@@ -380,25 +268,23 @@ export default component Swap()
         left.toLowerCase() === right.toLowerCase();
 
     derived isWrapPair = tokenOut !== null
-        && ((isNative(tokenIn) && sameToken(hopAddress(tokenOut as TokenRef), wnuraAddress()) && !isNative(tokenOut as TokenRef))
-            || (isNative(tokenOut as TokenRef) && sameToken(hopAddress(tokenIn), wnuraAddress()) && !isNative(tokenIn)));
+        && ((isNativeToken(tokenIn) && sameToken(hopAddress(tokenOut as TokenRef), wnuraAddress()) && !isNativeToken(tokenOut as TokenRef))
+            || (isNativeToken(tokenOut as TokenRef) && sameToken(hopAddress(tokenIn), wnuraAddress()) && !isNativeToken(tokenIn)));
 
-    derived balanceIn = isNative(tokenIn)
+    derived balanceIn = isNativeToken(tokenIn)
         ? nativeBalance()
         : balances()[tokenIn.address.toLowerCase()] ?? 0n;
 
     derived balanceOut = tokenOut === null
         ? null
-        : isNative(tokenOut as TokenRef)
+        : isNativeToken(tokenOut as TokenRef)
             ? nativeBalance()
             : balances()[(tokenOut as TokenRef).address.toLowerCase()] ?? 0n;
 
-    // Quote: authoritative amounts from the router, impact from per-hop reserves.
-    // Reruns on every input change and on the QUOTE_REFRESH_MS tick - it used to
-    // ride the wallet store's txEpoch, which meant a connected wallet re-quoted
-    // every 5 seconds and a page with no wallet never re-quoted at all. The route
-    // is re-read with the price: a pair that did not exist a minute ago is a
-    // route now, and one that drained is not.
+    // Quote: authoritative amounts from the quoter, impact against the pool's own
+    // mid price. Reruns on every input change and on the QUOTE_REFRESH_MS tick -
+    // it used to ride the wallet store's txEpoch, which meant a connected wallet
+    // re-quoted every 5 seconds and a page with no wallet never re-quoted at all.
     //
     // A tick with the SAME inputs is a refresh, and a refresh keeps what is on
     // screen: the numbers stay, the button stays live, and the new answer
@@ -406,11 +292,11 @@ export default component Swap()
     // minute reads as a glitch.
     let quoteKey = '';
 
-    effect (amountText, tokenIn, tokenOut, quoteTick, feeBps, protocol, feeTier, info)
+    effect (amountText, tokenIn, tokenOut, quoteTick, feeTier)
     {
         const out = tokenOut;
         const amount = parsedIn;
-        const key = `${ amountText }|${ tokenIn.address }|${ out?.address ?? '' }|${ protocol }|${ feeTier ?? 'auto' }`;
+        const key = `${ amountText }|${ tokenIn.address }|${ out?.address ?? '' }|${ feeTier ?? 'auto' }`;
         const refreshing = key === quoteKey && quote !== null;
         quoteKey = key;
         if (!refreshing)
@@ -419,162 +305,72 @@ export default component Swap()
             noRoute = false;
             confirmedHighImpact = false;
         }
-        // The factory's swapFee gates a V2 quote and only a V2 quote: a V3 trade
-        // is priced by its tier, and waiting on a number it never reads would
-        // leave the V3 card blank whenever that one read failed.
-        if (info === null || out === null || amount === null || amount <= 0n
-            || (protocol === 'v2' && feeBps === null))
+        if (out === null || amount === null || amount <= 0n)
         {
             return;
         }
         if (isWrapPair)
         {
-            quote = { out: amount, impactBps: 0, path: [], fee: null };
+            quote = { out: amount, impactBps: 0, fee: null };
             return;
         }
         // A high-impact trade was confirmed at ITS impact. If the refresh comes
         // back worse, that consent does not carry over to the new price.
         const confirmedAt = refreshing ? (quote as QuoteState).impactBps : 0;
         quoting = !refreshing;
-        const requestToken = amountText + out.address + tokenIn.address;
-        if (protocol === 'v3')
+        tierQuotes = [];
+        const v3 = v3Addresses();
+        if (v3 === null)
         {
-            const v3 = v3Addresses();
-            if (v3 === null)
-            {
-                noRoute = true;
-                quoting = false;
-                return;
-            }
-            void (async () =>
-            {
-                try
-                {
-                    const from = hopAddress(tokenIn);
-                    const to = hopAddress(out);
-                    const quotes = await quoteAllTiers(v3.factory, v3.quoter, from, to, amount);
-                    if (requestToken !== amountText + (tokenOut as TokenRef).address + tokenIn.address)
-                    {
-                        quoting = false;
-                        return;
-                    }
-                    tierQuotes = quotes;
-                    // A pinned tier that cannot fill THIS size falls back to the
-                    // best one rather than reporting no route: the pool is there,
-                    // it is this amount it cannot take.
-                    const pinned = feeTier === null
-                        ? null
-                        : quotes.find((tier) => tier.fee === feeTier && tier.out > 0n) ?? null;
-                    const chosen = pinned ?? bestTier(quotes);
-                    if (chosen === null)
-                    {
-                        quote = null;
-                        noRoute = true;
-                        quoting = false;
-                        return;
-                    }
-                    // Impact against the pool's own mid price with the fee taken
-                    // out - the same measure the V2 card reports, so a trader
-                    // comparing the two protocols is comparing like with like.
-                    const zeroForOne = from.toLowerCase() === chosen.pool.token0.toLowerCase();
-                    const mid = rawPriceWadFromSqrtX96(chosen.pool.sqrtPriceX96, zeroForOne);
-                    const impact = priceImpactBpsFromMid(amount, chosen.out, mid, chosen.fee);
-                    quote = { out: chosen.out, impactBps: impact, path: [], fee: chosen.fee };
-                    if (impact > confirmedAt)
-                    {
-                        confirmedHighImpact = false;
-                    }
-                }
-                catch
-                {
-                    quote = null;
-                    noRoute = true;
-                }
-                quoting = false;
-            })();
+            noRoute = true;
+            quoting = false;
             return;
         }
-        tierQuotes = [];
+        const requestToken = amountText + out.address + tokenIn.address;
         void (async () =>
         {
             try
             {
-                const reader = publicClient();
-                const factory = (info as DeploymentInfo).contracts.factory as Address;
                 const from = hopAddress(tokenIn);
                 const to = hopAddress(out);
-                const direct = await reader.readContract({
-                    address: factory,
-                    abi: FACTORY_ABI,
-                    functionName: 'getPair',
-                    args: [from, to]
-                }) as Address;
-                let path: Address[];
-                if (direct !== '0x0000000000000000000000000000000000000000')
+                const quotes = await quoteAllTiers(v3.factory, v3.quoter, from, to, amount);
+                if (requestToken !== amountText + (tokenOut as TokenRef).address + tokenIn.address)
                 {
-                    path = [from, to];
+                    quoting = false;
+                    return;
                 }
-                else
+                tierQuotes = quotes;
+                // A pinned tier that cannot fill THIS size falls back to the
+                // best one rather than reporting no route: the pool is there,
+                // it is this amount it cannot take.
+                const pinned = feeTier === null
+                    ? null
+                    : quotes.find((tier) => tier.fee === feeTier && tier.out > 0n) ?? null;
+                const chosen = pinned ?? bestTier(quotes);
+                if (chosen === null)
                 {
-                    const wnura = wnuraAddress();
-                    const legIn = await reader.readContract({
-                        address: factory, abi: FACTORY_ABI, functionName: 'getPair', args: [from, wnura]
-                    }) as Address;
-                    const legOut = await reader.readContract({
-                        address: factory, abi: FACTORY_ABI, functionName: 'getPair', args: [wnura, to]
-                    }) as Address;
-                    if (legIn === '0x0000000000000000000000000000000000000000'
-                        || legOut === '0x0000000000000000000000000000000000000000')
-                    {
-                        // The route a refresh was re-reading is gone; so is its price.
-                        quote = null;
-                        noRoute = true;
-                        quoting = false;
-                        return;
-                    }
-                    path = [from, wnura, to];
+                    quote = null;
+                    noRoute = true;
+                    quoting = false;
+                    return;
                 }
-
-                const amounts = await reader.readContract({
-                    address: routerAddress(),
-                    abi: ROUTER_ABI,
-                    functionName: 'getAmountsOut',
-                    args: [amount, path]
-                }) as bigint[];
-
-                // Per-hop impact from live reserves, compounded over the route.
-                let impact = 0;
-                for (let hop = 0; hop < path.length - 1; hop++)
+                // Impact against the pool's own mid price with the fee taken
+                // out - what the number measures is the pool moving, never the
+                // charge itself.
+                const zeroForOne = from.toLowerCase() === chosen.pool.token0.toLowerCase();
+                const mid = rawPriceWadFromSqrtX96(chosen.pool.sqrtPriceX96, zeroForOne);
+                const impact = priceImpactBpsFromMid(amount, chosen.out, mid, chosen.fee);
+                quote = { out: chosen.out, impactBps: impact, fee: chosen.fee };
+                if (impact > confirmedAt)
                 {
-                    const pair = await reader.readContract({
-                        address: factory, abi: FACTORY_ABI, functionName: 'getPair', args: [path[hop], path[hop + 1]]
-                    }) as Address;
-                    const [reserve0, reserve1] = await reader.readContract({
-                        address: pair, abi: PAIR_ABI, functionName: 'getReserves'
-                    }) as [bigint, bigint, number];
-                    const token0 = await reader.readContract({
-                        address: pair, abi: PAIR_ABI, functionName: 'token0'
-                    }) as Address;
-                    const [reserveIn, reserveOut] = token0.toLowerCase() === path[hop].toLowerCase()
-                        ? [reserve0, reserve1]
-                        : [reserve1, reserve0];
-                    impact += priceImpactBps(amounts[hop], amounts[hop + 1], reserveIn, reserveOut, feeBps as number);
-                }
-
-                if (requestToken === amountText + (tokenOut as TokenRef).address + tokenIn.address)
-                {
-                    quote = { out: amounts[amounts.length - 1], impactBps: impact, path, fee: null };
-                    if (impact > confirmedAt)
-                    {
-                        confirmedHighImpact = false;
-                    }
+                    confirmedHighImpact = false;
                 }
             }
             catch
             {
                 // A refresh that fails drops the price it was refreshing: an
                 // unreachable RPC is not a reason to keep quoting an old number
-                // as if the router had just said it.
+                // as if the quoter had just said it.
                 quote = null;
                 noRoute = true;
             }
@@ -582,8 +378,7 @@ export default component Swap()
         })();
     }
 
-    // Allowance follows the input token, the account, the protocol (each has its
-    // own router to approve) and every confirmed tx.
+    // Allowance follows the input token, the account, and every confirmed tx.
     //
     // "Approved until the read says otherwise" is the right first paint, but only
     // ONCE per token+account+spender: this effect also reruns on the 5s refresh
@@ -591,7 +386,7 @@ export default component Swap()
     // the length of an RPC round-trip, every five seconds. The action button
     // flipped between "Approve X" and "Swap" on its own, and a click that landed
     // in the gap sent a swap the router had no allowance for - which reverts.
-    effect (tokenIn, account(), txEpoch(), protocol, info)
+    effect (tokenIn, account(), txEpoch(), info)
     {
         const owner = account();
         const key = `${ owner ?? '' }|${ tokenIn.address }|${ info === null ? '' : spender() }`;
@@ -600,16 +395,11 @@ export default component Swap()
             allowanceKey = key;
             allowance = MAX_UINT256;
         }
-        if (info === null || owner === null || isNative(tokenIn))
+        if (info === null || owner === null || isNativeToken(tokenIn))
         {
             return;
         }
-        void publicClient().readContract({
-            address: tokenIn.address as Address,
-            abi: ERC20_ABI,
-            functionName: 'allowance',
-            args: [owner, spender()]
-        }).then((value) => { allowance = value as bigint; }).catch(() => undefined);
+        refreshAllowances(owner, [{ token: tokenIn, spender: spender(), onValue: (value) => { allowance = value; } }]);
     }
 
     // Holes under a <Show> re-evaluate while the guard is reacting, so markup
@@ -621,7 +411,7 @@ export default component Swap()
     // withdraw() burns the caller's OWN balance - neither moves tokens through
     // the router, so demanding approval here would cost a pointless transaction.
     derived needsApprove = !isWrapPair
-        && !isNative(tokenIn)
+        && !isNativeToken(tokenIn)
         && parsedIn !== null
         && allowance < (parsedIn as bigint);
 
@@ -629,37 +419,11 @@ export default component Swap()
 
     derived highImpact = quote !== null && (quote as QuoteState).impactBps >= HIGH_IMPACT_BPS;
 
-    // Chain time, not wall time: the local chain's clock is offset by the seed
-    // tape and a user's clock can skew. And on an automining chain the LATEST
-    // block lags the node's clock by the whole idle gap - the pending block is
-    // the referee the router will actually consult.
-    const deadline = async (): Promise<bigint> =>
-    {
-        const reader = publicClient();
-        const block = await reader.getBlock({ blockTag: 'pending' }).catch(() => reader.getBlock());
-        return block.timestamp + BigInt(deadlineMinutes * 60);
-    };
+    const deadline = (): Promise<bigint> => chainDeadline(deadlineMinutes * 60);
 
-    // Switching protocol drops the pinned tier and the tiers themselves: they
-    // describe V3 pools, and carrying them across would offer a V2 trader a
-    // choice that does not exist on their side of the exchange.
-    const chooseProtocol = (next: Protocol): void =>
-    {
-        if (next === protocol)
-        {
-            return;
-        }
-        batch
-        {
-            protocol = next;
-            feeTier = null;
-            tierQuotes = [];
-        }
-    };
-
-    // The fee on screen: the factory's for V2, the quoted tier's for V3. Tiers
-    // are parts per million and this reads basis points, hence the /100.
-    derived shownFeeBps = protocol === 'v3' ? (quote?.fee ?? 0) / 100 : feeBps ?? 0;
+    // The fee on screen: the quoted tier's. Tiers are parts per million and this
+    // reads basis points, hence the /100.
+    derived shownFeeBps = (quote?.fee ?? 0) / 100;
 
     // Batched: written one at a time, the halfway state has the SAME token on both
     // sides, and the quote and chart effects run against a pair that cannot exist.
@@ -712,8 +476,8 @@ export default component Swap()
         if (isWrapPair)
         {
             await sendTx(
-                isNative(tokenIn) ? t().swap.wrap : t().swap.unwrap,
-                () => (isNative(tokenIn)
+                isNativeToken(tokenIn) ? t().swap.wrap : t().swap.unwrap,
+                () => (isNativeToken(tokenIn)
                     ? requiredWallet().writeContract({
                         address: wnuraAddress(), abi: WNURA_ABI, functionName: 'deposit', value: amount
                     } as never)
@@ -728,60 +492,29 @@ export default component Swap()
             const when = await deadline();
             // FSI/PDI isolate the Latin pair so the toast renders deterministically in RTL.
             const label = `${ t().swap.swapAction } ⁨${ tokenIn.symbol } → ${ out.symbol }⁩`;
-            if (protocol === 'v3')
+            const v3 = v3Addresses();
+            // The tier signed is the QUOTE's tier, never the picker's: under
+            // Auto the picker says nothing at all, and under a pin that could
+            // not fill they differ - either way, swapping through a pool that
+            // did not produce the number on screen is not the trade shown.
+            if (v3 === null || current.fee === null)
             {
-                const v3 = v3Addresses();
-                // The tier signed is the QUOTE's tier, never the picker's: under
-                // Auto the picker says nothing at all, and under a pin that could
-                // not fill they differ - either way, swapping through a pool that
-                // did not produce the number on screen is not the trade shown.
-                if (v3 === null || current.fee === null)
-                {
-                    busy = false;
-                    return;
-                }
-                const request = await buildV3Swap({
-                    router: v3.swapRouter,
-                    tokenIn: hopAddress(tokenIn),
-                    tokenOut: hopAddress(out),
-                    fee: current.fee,
-                    amountIn: amount,
-                    amountOutMin: minOut,
-                    recipient: owner,
-                    deadline: when,
-                    nativeIn: isNative(tokenIn),
-                    nativeOut: isNative(out)
-                });
-                await sendTx(label, () => requiredWallet().writeContract(request as never));
+                busy = false;
+                return;
             }
-            else if (isNative(tokenIn))
-            {
-                await sendTx(label, () => requiredWallet().writeContract({
-                    address: routerAddress(),
-                    abi: ROUTER_ABI,
-                    functionName: 'swapExactETHForTokens',
-                    args: [minOut, current.path, owner, when],
-                    value: amount
-                } as never));
-            }
-            else if (isNative(out))
-            {
-                await sendTx(label, () => requiredWallet().writeContract({
-                    address: routerAddress(),
-                    abi: ROUTER_ABI,
-                    functionName: 'swapExactTokensForETH',
-                    args: [amount, minOut, current.path, owner, when]
-                } as never));
-            }
-            else
-            {
-                await sendTx(label, () => requiredWallet().writeContract({
-                    address: routerAddress(),
-                    abi: ROUTER_ABI,
-                    functionName: 'swapExactTokensForTokens',
-                    args: [amount, minOut, current.path, owner, when]
-                } as never));
-            }
+            const request = await buildV3Swap({
+                router: v3.swapRouter,
+                tokenIn: hopAddress(tokenIn),
+                tokenOut: hopAddress(out),
+                fee: current.fee,
+                amountIn: amount,
+                amountOutMin: minOut,
+                recipient: owner,
+                deadline: when,
+                nativeIn: isNativeToken(tokenIn),
+                nativeOut: isNativeToken(out)
+            });
+            await sendTx(label, () => requiredWallet().writeContract(request as never));
             amountText = '';
         }
         busy = false;
@@ -790,14 +523,7 @@ export default component Swap()
     <section class="mx-auto grid max-w-6xl gap-6 px-4 py-8 sm:py-12 lg:grid-cols-[1fr_minmax(24rem,26rem)]">
         <div class="order-2 flex min-w-0 flex-col gap-6 lg:order-1">
             <Show when={ chartPair } let={ pair }>
-                <div class="flex flex-col gap-2">
-                    <PriceChart pairAddress={ pair } />
-                    <Show when={ chartNote } let={ from }>
-                        <p class="text-xs leading-relaxed text-faint">
-                            { from === 'v2' ? t().v3.chartFromV2 : t().v3.chartFromV3 }
-                        </p>
-                    </Show>
-                </div>
+                <PriceChart pairAddress={ pair } />
             </Show>
             <TxList limit={ 8 } filterable />
         </div>
@@ -805,20 +531,15 @@ export default component Swap()
             <div class="card-pop p-4 sm:p-5">
                 <div class="mb-4 flex items-center justify-between gap-2">
                     <h1 class="font-display text-base font-medium">{ t().swap.title }</h1>
-                    <div class="flex items-center gap-1.5">
-                        <Show when={ v3Addresses() !== null }>
-                            <ProtocolSwitch value={ protocol } onChange={ chooseProtocol } />
-                        </Show>
-                        <button
-                            type="button"
-                            class="rounded-lg p-2 text-faint hover:text-ink"
-                            aria-label={ t().common.settings }
-                            aria-expanded={ String(settingsOpen) }
-                            onClick={ () => { settingsOpen = !settingsOpen; } }
-                        >
-                            <Icon name="settings-2" size={ 18 } />
-                        </button>
-                    </div>
+                    <button
+                        type="button"
+                        class="rounded-lg p-2 text-faint hover:text-ink"
+                        aria-label={ t().common.settings }
+                        aria-expanded={ String(settingsOpen) }
+                        onClick={ () => { settingsOpen = !settingsOpen; } }
+                    >
+                        <Icon name="settings-2" size={ 18 } />
+                    </button>
                 </div>
 
                 <Show when={ settingsOpen }>
@@ -934,7 +655,7 @@ export default component Swap()
                 />
                 </div>
 
-                <Show when={ protocol === 'v3' && !isWrapPair && tierQuotes.length > 0 }>
+                <Show when={ !isWrapPair && tierQuotes.length > 0 }>
                     <FeeTierSelect
                         tiers={ tierQuotes }
                         value={ feeTier }
@@ -993,7 +714,7 @@ export default component Swap()
 
                 <Show when={ noRoute }>
                     <div class="mt-4 rounded-xl border border-line bg-raised p-4 text-center text-sm">
-                        <p class="font-medium">{ protocol === 'v3' ? t().v3.noPool : t().swap.noRoute }</p>
+                        <p class="font-medium">{ t().v3.noPool }</p>
                         <p class="mt-1 text-xs text-faint">{ t().swap.beFirstLp }</p>
                     </div>
                 </Show>
@@ -1057,7 +778,7 @@ export default component Swap()
                                                 onClick={ () => void swap() }
                                             >
                                                 { isWrapPair
-                                                    ? (isNative(tokenIn) ? t().swap.wrap : t().swap.unwrap)
+                                                    ? (isNativeToken(tokenIn) ? t().swap.wrap : t().swap.unwrap)
                                                     : t().swap.swapAction }
                                             </Button>
                                         }
