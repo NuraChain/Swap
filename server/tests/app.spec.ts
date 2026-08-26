@@ -3,11 +3,12 @@
 
 import type { Deployment } from '@nuraswap/shared/deployments';
 import { WAD } from '@nuraswap/shared/math';
+import { priceWadFromSqrtX96, sqrtX96FromPriceWad } from '@nuraswap/shared/v3-math';
 import { describe, expect, it } from 'vitest';
 
 import { buildApp, createApi } from '../src/app.ts';
 import { applyEvent } from '../src/indexer/apply.ts';
-import { buildPriceMap, feeAprBps } from '../src/indexer/pricing.ts';
+import { feeAprBps } from '../src/indexer/pricing.ts';
 import { IndexerDb } from '../src/indexer/db.ts';
 import type { ApplyContext } from '../src/indexer/apply.ts';
 import type { Address } from '../src/indexer/db.ts';
@@ -15,10 +16,13 @@ import type { Address } from '../src/indexer/db.ts';
 const WNURA = '0x000000000000000000000000000000000000b0b0' as Address;
 const ALPHA = '0x0000000000000000000000000000000000000001' as Address;
 const USDT = '0x0000000000000000000000000000000000000002' as Address;
-const PAIR_AU = '0x00000000000000000000000000000000000000aa' as Address;
-const PAIR_WU = '0x00000000000000000000000000000000000000bb' as Address;
+const POOL_AU = '0x00000000000000000000000000000000000000aa' as Address;
+const POOL_WU = '0x00000000000000000000000000000000000000bb' as Address;
 const TRADER = '0x00000000000000000000000000000000000000cc' as Address;
-const POOL_AU_V3 = '0x00000000000000000000000000000000000000dd' as Address;
+
+// Q64.96 encodings of the pools' rates: ALPHA/USDT at 2.50, WNURA/USDT at 850.
+const SQRT_AU = sqrtX96FromPriceWad(25n * 10n ** 17n, 18, 6);
+const SQRT_WU = sqrtX96FromPriceWad(850n * WAD, 18, 6);
 
 const DEPLOYMENT: Deployment = {
     chainId: 1020,
@@ -29,8 +33,6 @@ const DEPLOYMENT: Deployment = {
     startBlock: 0,
     contracts:
     {
-        factory: '0x00000000000000000000000000000000000000f0',
-        router: '0x00000000000000000000000000000000000000f1',
         wnura: WNURA,
         multicall3: '0x00000000000000000000000000000000000000f2'
     },
@@ -38,7 +40,15 @@ const DEPLOYMENT: Deployment = {
         { address: ALPHA, symbol: 'ALPHA', name: 'Nura', decimals: 18 },
         { address: WNURA, symbol: 'WNURA', name: 'Wrapped NURA', decimals: 18 },
         { address: USDT, symbol: 'USDT', name: 'Tether USD', decimals: 6 }
-    ]
+    ],
+    v3:
+    {
+        factory: '0x0000000000000000000000000000000000000031',
+        swapRouter: '0x0000000000000000000000000000000000000032',
+        quoter: '0x0000000000000000000000000000000000000033',
+        positionManager: '0x0000000000000000000000000000000000000034',
+        tickLens: '0x0000000000000000000000000000000000000035'
+    }
 };
 
 function seededDb(): IndexerDb
@@ -52,15 +62,18 @@ function seededDb(): IndexerDb
         timestampOf: () => Math.floor(Date.now() / 1000),
         decimalsOf: (address) => DEPLOYMENT.tokens.find((token) => token.address === address.toLowerCase())?.decimals ?? 18
     };
-    // ALPHA/USDT at $2.50 and WNURA/USDT at $850.
-    applyEvent(db, { kind: 'pairCreated', pair: PAIR_AU, token0: ALPHA, token1: USDT, blockNumber: 5 }, context);
-    applyEvent(db, { kind: 'sync', pair: PAIR_AU, reserve0: 40_000n * 10n ** 18n, reserve1: 100_000n * 10n ** 6n }, context);
-    applyEvent(db, { kind: 'pairCreated', pair: PAIR_WU, token0: WNURA, token1: USDT, blockNumber: 6 }, context);
-    applyEvent(db, { kind: 'sync', pair: PAIR_WU, reserve0: 1000n * 10n ** 18n, reserve1: 850_000n * 10n ** 6n }, context);
+    // ALPHA/USDT at $2.50 and WNURA/USDT at $850. What each pool HOLDS stands in
+    // for its TVL - a concentrated pool has no reserves to derive one from - and
+    // its slot0 price is what the price graph and candles are built from.
+    applyEvent(db, { kind: 'poolCreated', pool: POOL_AU, token0: ALPHA, token1: USDT, fee: 500, blockNumber: 5 }, context);
+    db.updateV3Balances(POOL_AU, 40_000n * 10n ** 18n, 100_000n * 10n ** 6n);
+    db.updateV3Price(POOL_AU, SQRT_AU);
+    applyEvent(db, { kind: 'poolCreated', pool: POOL_WU, token0: WNURA, token1: USDT, fee: 500, blockNumber: 6 }, context);
+    db.updateV3Balances(POOL_WU, 1000n * 10n ** 18n, 850_000n * 10n ** 6n);
+    db.updateV3Price(POOL_WU, SQRT_WU);
     applyEvent(db, {
         kind: 'swap',
-        protocol: 'v2',
-        pair: PAIR_AU,
+        pair: POOL_AU,
         blockNumber: 7,
         logIndex: 1,
         txHash: '0xaaa',
@@ -68,34 +81,19 @@ function seededDb(): IndexerDb
         amount0In: 100n * 10n ** 18n,
         amount1In: 0n,
         amount0Out: 0n,
-        amount1Out: 248n * 10n ** 6n
+        amount1Out: 248n * 10n ** 6n,
+        sqrtPriceX96: SQRT_AU
     }, context);
     return db;
 }
 
-// A chain that also carries UniswapV3. The artifact above deliberately does
-// NOT: the two together are what prove the v3 block is optional on the wire.
-const V3_DEPLOYMENT: Deployment = {
-    ...DEPLOYMENT,
-    v3:
-    {
-        factory: '0x0000000000000000000000000000000000000031',
-        swapRouter: '0x0000000000000000000000000000000000000032',
-        quoter: '0x0000000000000000000000000000000000000033',
-        positionManager: '0x0000000000000000000000000000000000000034',
-        tickLens: '0x0000000000000000000000000000000000000035'
-    }
-};
-
 function testApp(
-    deployment: Deployment = DEPLOYMENT,
     status = { headBlock: 12, indexedBlock: 10 },
     externalPrices: ReadonlyMap<string, bigint> = new Map()
 )
 {
     const db = seededDb();
-    // The fee the factory would report; the api never invents one.
-    const api = createApi({ db, deployment, swapFeeBps: 25, externalPrices: () => externalPrices, status: () => status });
+    const api = createApi({ db, deployment: DEPLOYMENT, externalPrices: () => externalPrices, status: () => status });
     const app = buildApp({ dev: false, api });
     return {
         db,
@@ -109,25 +107,13 @@ function testApp(
 const ROUTES = [
     '/api/market/stats',
     '/api/market/pools',
-    `/api/market/pools/${ PAIR_AU }`,
+    `/api/market/pools/${ POOL_AU }`,
     '/api/market/tokens',
     '/api/market/txs',
     '/api/market/deployment',
     '/api/healthz',
     '/api/_manifest'
 ];
-
-describe('buildPriceMap', () =>
-{
-    it('prices the stable at $1, WNURA through its pool, ALPHA through its pool', () =>
-    {
-        const db = seededDb();
-        const prices = buildPriceMap(db.listPairs(), db.listTokens(), { stable: USDT, wrappedNative: WNURA });
-        expect(prices.get(USDT)).toBe(10n ** 18n);
-        expect(prices.get(WNURA)).toBe(850n * 10n ** 18n);
-        expect(prices.get(ALPHA)).toBe(25n * 10n ** 17n);
-    });
-});
 
 describe('market api', () =>
 {
@@ -137,76 +123,18 @@ describe('market api', () =>
         expect(response.status).toBe(200);
         const body = await response.json();
         expect(body.chainId).toBe(1020);
-        expect(body.pairCount).toBe(2);
+        expect(body.poolCount).toBe(2);
         // TVL counts the ANCHORED side only: the USDT in each pool, 100k + 850k.
         // The ALPHA and WNURA halves are priced BY these pools, and a pool that
         // vouches for its own contents doubles every figure it appears in.
         expect(body.tvlUsd).toBeCloseTo(950_000, 0);
         expect(body.volume24hUsd).toBeGreaterThan(0);
         expect(body.blocksBehind).toBe(2);
-        // The chain's fee travels on the wire, so no client has to assume one.
-        expect(body.swapFeeBps).toBe(25);
-    });
-
-    it('counts both exchanges in one set of headline numbers', async () =>
-    {
-        const app = testApp(V3_DEPLOYMENT);
-        const context: ApplyContext = {
-            timestampOf: () => Math.floor(Date.now() / 1000),
-            decimalsOf: () => 18
-        };
-        applyEvent(app.db, {
-            kind: 'poolCreated', pool: POOL_AU_V3, token0: ALPHA, token1: USDT, fee: 500, blockNumber: 8
-        }, context);
-        // A concentrated pool holding 2 ALPHA and 5 USDT. Only the USDT is anchored,
-        // so it adds five dollars to the V2 halves' 950k - not fifteen.
-        app.db.updateV3Balances(POOL_AU_V3, 2n * 10n ** 18n, 5n * 10n ** 6n);
-
-        const body = await (await app.get('/api/market/stats')).json();
-        expect(body.pairCount).toBe(2);
-        expect(body.poolCount).toBe(3);
-        expect(body.tvlUsd).toBeCloseTo(950_005, 0);
-    });
-
-    it('adds V3 swap volume to the headline, with no candle to read it from', async () =>
-    {
-        const app = testApp(V3_DEPLOYMENT);
-        const context: ApplyContext = {
-            timestampOf: () => Math.floor(Date.now() / 1000),
-            decimalsOf: () => 18
-        };
-        const v2Only = (await (await app.get('/api/market/stats')).json()).volume24hUsd;
-
-        applyEvent(app.db, {
-            kind: 'poolCreated', pool: POOL_AU_V3, token0: ALPHA, token1: USDT, fee: 500, blockNumber: 8
-        }, context);
-        // 4 ALPHA in ($10) for 10 USDT out ($10): one trade worth ten dollars,
-        // which is the halved two-sided sum, same measure as a V2 swap.
-        applyEvent(app.db, {
-            kind: 'swap',
-            protocol: 'v3',
-            pair: POOL_AU_V3,
-            blockNumber: 9,
-            logIndex: 0,
-            txHash: '0xv3vol',
-            account: TRADER,
-            amount0In: 4n * 10n ** 18n,
-            amount1In: 0n,
-            amount0Out: 0n,
-            amount1Out: 10n * 10n ** 6n
-        }, context);
-
-        const body = await (await app.get('/api/market/stats')).json();
-        expect(body.volume24hUsd).toBeCloseTo(v2Only + 10, 0);
-        // A V3 swap DOES carry the series - off the sqrtPriceX96 its log reports.
-        // This one is a hand-built event with no price on it, which is the one
-        // case that charts nothing: volume is still counted above.
-        expect(app.db.candles(POOL_AU_V3, 0)).toHaveLength(0);
     });
 
     it('lets the external feed price a bridged token, but never the stable', async () =>
     {
-        const app = testApp(DEPLOYMENT, { headBlock: 12, indexedBlock: 10 }, new Map([
+        const app = testApp({ headBlock: 12, indexedBlock: 10 }, new Map([
             // A bridged asset is worth what it bridges, so the feed OUTRANKS what a
             // local pool implies about it - that pool is the thin one, not the feed.
             ['ALPHA', 999n * WAD],
@@ -228,9 +156,10 @@ describe('market api', () =>
         const response = await testApp().get('/api/market/pools');
         const pools = await response.json();
         expect(pools).toHaveLength(2);
-        const alphaPool = pools.find((entry: { address: string }) => entry.address === PAIR_AU);
+        const alphaPool = pools.find((entry: { address: string }) => entry.address === POOL_AU);
         expect(alphaPool.token0.symbol).toBe('ALPHA');
-        expect(alphaPool.priceWad).toBe((25n * 10n ** 17n).toString());
+        // The wire price is the pool's own post-trade price, off its last candle.
+        expect(alphaPool.priceWad).toBe(priceWadFromSqrtX96(SQRT_AU, 18, 6).toString());
         // The 100k of USDT it holds. ALPHA is priced by this very pool, so counting
         // that side too would report the pool as twice the size of its real half.
         expect(alphaPool.tvlUsd).toBeCloseTo(100_000, 0);
@@ -246,7 +175,7 @@ describe('market api', () =>
     it('GET /api/market/pools/:address returns candles, 404s unknown pools', async () =>
     {
         const app = testApp();
-        const detail = await app.get(`/api/market/pools/${ PAIR_AU }`);
+        const detail = await app.get(`/api/market/pools/${ POOL_AU }`);
         expect(detail.status).toBe(200);
         const body = await detail.json();
         expect(body.candles.length).toBeGreaterThan(0);
@@ -255,49 +184,38 @@ describe('market api', () =>
         expect(missing.status).toBe(404);
     });
 
-    it('serves a V3 pool from the same route, charted off its own swap price', async () =>
+    it('GET /api/market/pools/:address/traded answers the boolean without the candle detail', async () =>
     {
-        // The chart asks for a POOL, not for a protocol. A concentrated pool has
-        // no reserves, so its balances stand in and its price comes off the
-        // sqrtPriceX96 the swap reported - here Q96 over 18 and 6 decimals.
-        const app = testApp(V3_DEPLOYMENT);
-        const context: ApplyContext = {
-            timestampOf: () => Math.floor(Date.now() / 1000),
-            decimalsOf: (address) =>
-                DEPLOYMENT.tokens.find((token) => token.address === address.toLowerCase())?.decimals ?? 18
-        };
-        applyEvent(app.db, {
-            kind: 'poolCreated', pool: POOL_AU_V3, token0: ALPHA, token1: USDT, fee: 500, blockNumber: 8
-        }, context);
-        app.db.updateV3Balances(POOL_AU_V3, 2n * 10n ** 18n, 5n * 10n ** 6n);
-        applyEvent(app.db, {
-            kind: 'swap',
-            protocol: 'v3',
-            pair: POOL_AU_V3,
-            blockNumber: 9,
-            logIndex: 0,
-            txHash: '0xv3chart',
-            account: TRADER,
-            amount0In: 4n * 10n ** 18n,
-            amount1In: 0n,
-            amount0Out: 0n,
-            amount1Out: 10n * 10n ** 6n,
-            sqrtPriceX96: 1n << 96n
-        }, context);
+        const app = testApp();
+        // The seeded pool has a swap in its history: it has traded.
+        const traded = await (await app.get(`/api/market/pools/${ POOL_AU }/traded`)).json();
+        expect(traded).toEqual({ traded: true });
 
-        const detail = await app.get(`/api/market/pools/${ POOL_AU_V3 }`);
+        // "Never traded" and "no such pool" are the same answer to the chart
+        // that asked - the detail route 404s here, this one says false.
+        const quiet = await app.get('/api/market/pools/0x00000000000000000000000000000000000000ee/traded');
+        expect(quiet.status).toBe(200);
+        expect(await quiet.json()).toEqual({ traded: false });
+    });
+
+    it('charts a pool off the sqrtPriceX96 its own swap reported', async () =>
+    {
+        // A concentrated pool has no reserves, so its balances stand in and its
+        // price comes off the sqrtPriceX96 the swap reported - here the encoding
+        // of ALPHA/USDT at 2.50 over 18 and 6 decimals.
+        const app = testApp();
+
+        const detail = await app.get(`/api/market/pools/${ POOL_AU }`);
         expect(detail.status).toBe(200);
         const body = await detail.json();
         expect(body.token0.symbol).toBe('ALPHA');
         expect(body.token1.symbol).toBe('USDT');
-        // Balances where a pair would put reserves.
-        expect(body.reserve0).toBe((2n * 10n ** 18n).toString());
-        expect(body.reserve1).toBe((5n * 10n ** 6n).toString());
-        // Q96 raw, over 18 and 6 decimals, is 1e30 wad.
-        expect(body.priceWad).toBe((10n ** 30n).toString());
+        // Balances where a pair would have put reserves.
+        expect(body.reserve0).toBe((40_000n * 10n ** 18n).toString());
+        expect(body.reserve1).toBe((100_000n * 10n ** 6n).toString());
         const traded = body.candles.filter((point: { volume0: string }) => point.volume0 !== '0');
         expect(traded).toHaveLength(1);
-        expect(traded[0].close).toBe((10n ** 30n).toString());
+        expect(traded[0].close).toBe(priceWadFromSqrtX96(SQRT_AU, 18, 6).toString());
     });
 
     it('GET /api/market/txs renders the swap with in/out direction', async () =>
@@ -312,49 +230,16 @@ describe('market api', () =>
         expect(txs[0].amountB).toBe((248n * 10n ** 6n).toString());
     });
 
-    it('GET /api/market/txs merges V3 rows into the same feed', async () =>
-    {
-        const app = testApp(V3_DEPLOYMENT);
-        const context: ApplyContext = {
-            timestampOf: () => Math.floor(Date.now() / 1000) + 60,
-            decimalsOf: () => 18
-        };
-        applyEvent(app.db, {
-            kind: 'poolCreated', pool: POOL_AU_V3, token0: ALPHA, token1: USDT, fee: 500, blockNumber: 8
-        }, context);
-        applyEvent(app.db, {
-            kind: 'swap',
-            protocol: 'v3',
-            pair: POOL_AU_V3,
-            blockNumber: 9,
-            logIndex: 0,
-            txHash: '0xv3',
-            account: TRADER,
-            amount0In: 5n * 10n ** 18n,
-            amount1In: 0n,
-            amount0Out: 0n,
-            amount1Out: 12n * 10n ** 6n
-        }, context);
-
-        const txs = await (await app.get('/api/market/txs')).json();
-        expect(txs).toHaveLength(2);
-        // Newest first, and every row says which exchange it came out of.
-        expect(txs.map((tx: { protocol: string }) => tx.protocol)).toEqual(['v3', 'v2']);
-        // A V3 pool lives in its own table. The row would read '???' if the wire
-        // looked its tokens up in `pairs` the way a V2 row is looked up.
-        expect(txs[0].tokenA.symbol).toBe('ALPHA');
-        expect(txs[0].tokenB.symbol).toBe('USDT');
-        expect(txs[0].amountB).toBe((12n * 10n ** 6n).toString());
-    });
-
     it('GET /api/market/tokens serves the registry with USD prices', async () =>
     {
         const tokens = await (await testApp().get('/api/market/tokens')).json();
         expect(tokens.map((token: { symbol: string }) => token.symbol).sort()).toEqual(['ALPHA', 'USDT', 'WNURA']);
         const bySymbol = Object.fromEntries(tokens.map((token: { symbol: string; priceUsd: number }) => [token.symbol, token.priceUsd]));
         expect(bySymbol.USDT).toBe(1);
-        expect(bySymbol.WNURA).toBe(850);
-        expect(bySymbol.ALPHA).toBe(2.5);
+        // Pool-derived prices round-trip an integer square root, so they land a
+        // fraction of a cent off the round rate - asserted to the cent, not the wei.
+        expect(bySymbol.WNURA).toBeCloseTo(850, 6);
+        expect(bySymbol.ALPHA).toBeCloseTo(2.5, 6);
     });
 
     it('GET /api/market/txs?account= filters to the caller', async () =>
@@ -370,24 +255,9 @@ describe('market api', () =>
     {
         const deployment = await (await testApp().get('/api/market/deployment')).json();
         expect(deployment.chainId).toBe(1020);
-        expect(deployment.contracts.router).toBe(DEPLOYMENT.contracts.router);
+        expect(deployment.contracts.wnura).toBe(DEPLOYMENT.contracts.wnura);
+        expect(deployment.v3).toEqual(DEPLOYMENT.v3);
         expect(deployment.explorerUrl).toBeNull();
-    });
-
-    // An artifact written before V3 existed has no `v3` key at all. The route has
-    // to answer null there rather than omitting the field: the app decides
-    // whether to render its V3 half from this one value, and an absent key would
-    // fail the wire schema instead of reading as "this chain has no V3".
-    it('serves v3 as null on a chain that has none', async () =>
-    {
-        const deployment = await (await testApp().get('/api/market/deployment')).json();
-        expect(deployment.v3).toBeNull();
-    });
-
-    it('serves the v3 addresses when the artifact carries them', async () =>
-    {
-        const deployment = await (await testApp(V3_DEPLOYMENT).get('/api/market/deployment')).json();
-        expect(deployment.v3).toEqual(V3_DEPLOYMENT.v3);
     });
 
     it('GET /api/healthz still answers', async () =>
@@ -453,10 +323,10 @@ describe('api surface', () =>
     {
         const app = testApp();
         const before = {
-            pairs: app.db.listPairs().length,
+            pools: app.db.listV3Pools().length,
             tokens: app.db.listTokens().length,
             events: app.db.recentEvents(100).length,
-            reserves: app.db.getPair(PAIR_AU)?.reserve0
+            balances: app.db.getV3Pool(POOL_AU)?.balance0
         };
         for (const route of ROUTES)
         {
@@ -467,10 +337,10 @@ describe('api surface', () =>
             await app.send('/api/market/pools', { method, body: '{"reserve0":"0"}' });
         }
         expect({
-            pairs: app.db.listPairs().length,
+            pools: app.db.listV3Pools().length,
             tokens: app.db.listTokens().length,
             events: app.db.recentEvents(100).length,
-            reserves: app.db.getPair(PAIR_AU)?.reserve0
+            balances: app.db.getV3Pool(POOL_AU)?.balance0
         }).toEqual(before);
     });
 
@@ -484,7 +354,7 @@ describe('api surface', () =>
         const app = testApp();
         for (const entry of Object.values(manifest.market) as Array<{ path: string }>)
         {
-            const path = entry.path.replace(':address', PAIR_AU);
+            const path = entry.path.replace(':address', POOL_AU);
             expect((await app.get(`/api${ path }`)).status, path).toBe(200);
         }
     });
@@ -504,7 +374,7 @@ describe('response shapes', () =>
         const [tx] = await (await app.get('/api/market/txs')).json();
         expect(typeof tx.amountA).toBe('string');
         expect(typeof tx.amountB).toBe('string');
-        const detail = await (await app.get(`/api/market/pools/${ PAIR_AU }`)).json();
+        const detail = await (await app.get(`/api/market/pools/${ POOL_AU }`)).json();
         for (const candle of detail.candles)
         {
             expect(typeof candle.close).toBe('string');
@@ -517,7 +387,7 @@ describe('response shapes', () =>
         const stats = await (await testApp().get('/api/market/stats')).json();
         expect(typeof stats.tvlUsd).toBe('number');
         expect(typeof stats.volume24hUsd).toBe('number');
-        expect(Number.isInteger(stats.pairCount)).toBe(true);
+        expect(Number.isInteger(stats.poolCount)).toBe(true);
         expect(Number.isInteger(stats.indexedBlock)).toBe(true);
     });
 
@@ -539,6 +409,7 @@ describe('response shapes', () =>
         expect(Object.keys(deployment).sort()).toEqual([
             'chainId', 'contracts', 'explorerUrl', 'faucet', 'networkName', 'rpcUrl', 'tokens', 'v3'
         ]);
+        expect(Object.keys(deployment.contracts).sort()).toEqual(['multicall3', 'wnura']);
         // Addresses cross lowercased, so the app can compare them literally.
         for (const token of deployment.tokens as Array<{ address: string }>)
         {
@@ -552,11 +423,11 @@ describe('pool detail', () =>
     it('finds a pool whichever case the address is asked for in', async () =>
     {
         const app = testApp();
-        const lower = await app.get(`/api/market/pools/${ PAIR_AU }`);
-        const upper = await app.get(`/api/market/pools/${ PAIR_AU.toUpperCase() }`);
+        const lower = await app.get(`/api/market/pools/${ POOL_AU }`);
+        const upper = await app.get(`/api/market/pools/${ POOL_AU.toUpperCase() }`);
         expect(lower.status).toBe(200);
         expect(upper.status).toBe(200);
-        expect((await upper.json()).address).toBe(PAIR_AU);
+        expect((await upper.json()).address).toBe(POOL_AU);
     });
 
     it('404s an unknown pool with the reason, not a blank body', async () =>
@@ -585,12 +456,12 @@ describe('pool detail', () =>
         const response = await app.get(`/api/market/pools/${ hostile }`);
         expect(response.status).toBe(404);
         // And the pool it might have matched is still there afterwards.
-        expect((await app.get(`/api/market/pools/${ PAIR_AU }`)).status).toBe(200);
+        expect((await app.get(`/api/market/pools/${ POOL_AU }`)).status).toBe(200);
     });
 
     it('returns candles in ascending, gapless hours', async () =>
     {
-        const detail = await (await testApp().get(`/api/market/pools/${ PAIR_AU }`)).json();
+        const detail = await (await testApp().get(`/api/market/pools/${ POOL_AU }`)).json();
         const hours = detail.candles.map((candle: { hourStart: number }) => candle.hourStart);
         expect(hours.length).toBeGreaterThan(0);
         for (let index = 1; index < hours.length; index++)
@@ -601,7 +472,7 @@ describe('pool detail', () =>
 
     it('carries the pool row alongside the candles', async () =>
     {
-        const detail = await (await testApp().get(`/api/market/pools/${ PAIR_AU }`)).json();
+        const detail = await (await testApp().get(`/api/market/pools/${ POOL_AU }`)).json();
         expect(detail.token0.symbol).toBe('ALPHA');
         expect(detail.reserve0).toBe((40_000n * 10n ** 18n).toString());
         expect(Array.isArray(detail.candles)).toBe(true);
@@ -662,7 +533,7 @@ describe('indexer lag reporting', () =>
 {
     it('reports how far behind the head the index is', async () =>
     {
-        const stats = await (await testApp(DEPLOYMENT, { headBlock: 100, indexedBlock: 60 }).get('/api/market/stats')).json();
+        const stats = await (await testApp({ headBlock: 100, indexedBlock: 60 }).get('/api/market/stats')).json();
         expect(stats.blocksBehind).toBe(40);
         expect(stats.indexedBlock).toBe(60);
     });
@@ -671,7 +542,7 @@ describe('indexer lag reporting', () =>
     // A negative lag would render as a banner claiming the future.
     it('never reports a negative lag', async () =>
     {
-        const stats = await (await testApp(DEPLOYMENT, { headBlock: 10, indexedBlock: 42 }).get('/api/market/stats')).json();
+        const stats = await (await testApp({ headBlock: 10, indexedBlock: 42 }).get('/api/market/stats')).json();
         expect(stats.blocksBehind).toBe(0);
     });
 });
@@ -682,16 +553,16 @@ describe('unpriceable and unknown data', () =>
     {
         const db = seededDb();
         const GHOST = '0x00000000000000000000000000000000000000e1' as Address;
-        db.upsertPair({
+        db.upsertV3Pool({
             address: '0x00000000000000000000000000000000000000e2' as Address,
             token0: GHOST,
             token1: USDT,
+            fee: 3000,
             createdBlock: 9
         });
         const api = createApi({
             db,
             deployment: DEPLOYMENT,
-            swapFeeBps: 25,
             externalPrices: () => new Map(),
             status: () => ({ headBlock: 1, indexedBlock: 1 })
         });
@@ -711,13 +582,12 @@ describe('unpriceable and unknown data', () =>
         const api = createApi({
             db,
             deployment: DEPLOYMENT,
-            swapFeeBps: 25,
             externalPrices: () => new Map(),
             status: () => ({ headBlock: 0, indexedBlock: 0 })
         });
         const app = buildApp({ dev: false, api });
         const stats = await (await app.handle(new Request('http://local/api/market/stats'))).json();
-        expect(stats.pairCount).toBe(0);
+        expect(stats.poolCount).toBe(0);
         expect(stats.tvlUsd).toBe(0);
         expect(stats.volume24hUsd).toBe(0);
         expect(await (await app.handle(new Request('http://local/api/market/pools'))).json()).toEqual([]);

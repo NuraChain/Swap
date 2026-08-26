@@ -8,15 +8,15 @@
 // one, a chain whose stable has no liquidity prices nothing at all - the anchor
 // exists but connects to no pool, and every figure downstream reads $0.
 //
-// DEPTH decides between pools, and it has to. This chain carries a V2 pair
-// holding one wei beside a V3 pool holding a whole BNB, and the two disagree by
-// 4x about what the native token is worth. Taking whichever was scanned first
-// let a wei outvote the pool with the money in it.
+// DEPTH decides between pools, and it has to. This chain can carry a pool
+// holding one wei beside one holding a whole BNB, and the two disagree by 4x
+// about what the native token is worth. Taking whichever was scanned first let a
+// wei outvote the pool with the money in it.
 
-import { WAD, priceFromReserves, scaleToWad, usdValue } from '@nuraswap/shared/math';
+import { WAD, usdValue } from '@nuraswap/shared/math';
 import { priceWadFromSqrtX96 } from '@nuraswap/shared/v3-math';
 
-import type { Address, PairRow, TokenRow, V3PoolRow } from './db.ts';
+import type { Address, TokenRow, V3PoolRow } from './db.ts';
 
 export type PriceMap = Map<string, bigint>;
 
@@ -37,33 +37,11 @@ interface Candidate
     counterAmount: bigint;
 }
 
-function candidatesOf(pairs: PairRow[], v3Pools: V3PoolRow[], decimalsOf: Map<string, number>): Candidate[]
+function candidatesOf(pools: V3PoolRow[], decimalsOf: Map<string, number>): Candidate[]
 {
     const candidates: Candidate[] = [];
 
-    for (const pair of pairs)
-    {
-        const decimals0 = decimalsOf.get(pair.token0);
-        const decimals1 = decimalsOf.get(pair.token1);
-        if (pair.reserve0 <= 0n || pair.reserve1 <= 0n || decimals0 === undefined || decimals1 === undefined)
-        {
-            continue;
-        }
-        candidates.push({
-            token: pair.token0,
-            counter: pair.token1,
-            priceInCounter: priceFromReserves(pair.reserve0, decimals0, pair.reserve1, decimals1),
-            counterAmount: pair.reserve1
-        });
-        candidates.push({
-            token: pair.token1,
-            counter: pair.token0,
-            priceInCounter: priceFromReserves(pair.reserve1, decimals1, pair.reserve0, decimals0),
-            counterAmount: pair.reserve0
-        });
-    }
-
-    for (const pool of v3Pools)
+    for (const pool of pools)
     {
         const decimals0 = decimalsOf.get(pool.token0);
         const decimals1 = decimalsOf.get(pool.token1);
@@ -97,12 +75,11 @@ function candidatesOf(pairs: PairRow[], v3Pools: V3PoolRow[], decimalsOf: Map<st
 }
 
 export function buildPriceMap(
-    pairs: PairRow[],
+    pools: V3PoolRow[],
     tokens: TokenRow[],
     refs: PricingRefs,
     /** Address -> USD price in 1e18, from outside the chain. Applied before propagation. */
-    seeds?: ReadonlyMap<string, bigint>,
-    v3Pools: V3PoolRow[] = []
+    seeds?: ReadonlyMap<string, bigint>
 ): PriceMap
 {
     const decimalsOf = new Map(tokens.map((token) => [token.address, token.decimals]));
@@ -118,7 +95,7 @@ export function buildPriceMap(
     // feed quoting it at 0.9997 would relabel every other price on the site.
     prices.set(refs.stable.toLowerCase(), WAD);
 
-    const candidates = candidatesOf(pairs, v3Pools, decimalsOf);
+    const candidates = candidatesOf(pools, decimalsOf);
 
     for (let pass = 0; pass < 2; pass++)
     {
@@ -183,9 +160,9 @@ export function anchorsOnly(
     return anchored;
 }
 
-// What a pool is worth: both sides at their derived prices. V2 passes reserves,
-// V3 passes the balances the pool contract actually holds - a concentrated pool
-// has no reserves, and what it holds is the only honest answer.
+// What a pool is worth: both sides at their derived prices. The balances are
+// what the pool contract actually holds - a concentrated pool has no reserves,
+// and what it holds is the only honest answer.
 export function poolTvlUsd(
     pool: { token0: Address; token1: Address },
     amount0: bigint,
@@ -196,11 +173,6 @@ export function poolTvlUsd(
 {
     return usdValue(amount0, decimalsOf(pool.token0), prices.get(pool.token0) ?? 0n)
         + usdValue(amount1, decimalsOf(pool.token1), prices.get(pool.token1) ?? 0n);
-}
-
-export function pairTvlUsd(pair: PairRow, prices: PriceMap, decimalsOf: (address: string) => number): bigint
-{
-    return poolTvlUsd(pair, pair.reserve0, pair.reserve1, prices, decimalsOf);
 }
 
 // Swap volume counts both sides of every trade, so halve the sum: input value and
@@ -224,16 +196,16 @@ export function volumeUsd(
 }
 
 // Fee APR in basis points: the pool's own fee on 24h volume, annualized over
-// TVL. The fee is the factory's live swapFee, not a constant - retuning it on
-// chain moves every pool's APR, and an APR computed from a fee nobody charges is
-// a number that lies in the direction that flatters us.
-export function feeAprBps(volume24hUsd: bigint, tvlUsd: bigint, swapFeeBps: number): number
+// TVL. Each pool carries its own tier fee, so the caller passes that pool's fee
+// in basis points - an APR computed from a fee nobody charges is a number that
+// lies in the direction that flatters us.
+export function feeAprBps(volume24hUsd: bigint, tvlUsd: bigint, poolFeeBps: number): number
 {
     if (tvlUsd <= 0n)
     {
         return 0;
     }
-    return Number((volume24hUsd * BigInt(swapFeeBps) * 365n) / tvlUsd);
+    return Number((volume24hUsd * BigInt(poolFeeBps) * 365n) / tvlUsd);
 }
 
 export function toUsdNumber(valueWad: bigint): number
@@ -250,5 +222,3 @@ export function toUsdPrice(valueWad: bigint): number
 {
     return Number((valueWad * 100_000_000n) / WAD) / 100_000_000;
 }
-
-export { scaleToWad };

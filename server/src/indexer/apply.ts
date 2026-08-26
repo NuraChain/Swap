@@ -1,14 +1,7 @@
-// Applies decoded domain events to storage. Within a transaction the pair emits
-// Sync before Swap/Mint/Burn, so processing logs in (block, logIndex) order means
-// reserves are already current when the trade lands - the candle price reads them.
-//
-// V3 events land in the same events table and carry `protocol: 'v3'`. They feed
-// the same hourly candles, priced differently: a concentrated pool has no
-// reserves to divide, but its Swap states the post-trade sqrtPriceX96 outright,
-// and priceWadFromSqrtX96 returns the same orientation and scale that
-// priceFromReserves does - so one series holds both kinds of pool.
+// Applies decoded domain events to storage. Every swap feeds the hourly candles,
+// priced from the sqrtPriceX96 its own event carries - a concentrated pool has
+// no reserves to divide, but it states its post-trade price outright.
 
-import { priceFromReserves } from '@nuraswap/shared/math';
 import { priceWadFromSqrtX96 } from '@nuraswap/shared/v3-math';
 
 import type { DomainEvent } from './decode.ts';
@@ -25,23 +18,12 @@ export interface ApplyContext
 {
     // Block timestamp lookup for the event's block, already fetched by the caller.
     timestampOf: (blockNumber: number) => number;
-    // Token decimals resolver; unknown tokens were registered at pairCreated time.
+    // Token decimals resolver; unknown tokens were registered at poolCreated time.
     decimalsOf: (address: string) => number;
 }
 
 export function applyEvent(db: IndexerDb, event: DomainEvent, context: ApplyContext): void
 {
-    if (event.kind === 'pairCreated')
-    {
-        db.upsertPair({
-            address: event.pair,
-            token0: event.token0,
-            token1: event.token1,
-            createdBlock: event.blockNumber
-        });
-        return;
-    }
-
     if (event.kind === 'poolCreated')
     {
         db.upsertV3Pool({
@@ -51,12 +33,6 @@ export function applyEvent(db: IndexerDb, event: DomainEvent, context: ApplyCont
             fee: event.fee,
             createdBlock: event.blockNumber
         });
-        return;
-    }
-
-    if (event.kind === 'sync')
-    {
-        db.updateReserves(event.pair, event.reserve0, event.reserve1);
         return;
     }
 
@@ -70,7 +46,6 @@ export function applyEvent(db: IndexerDb, event: DomainEvent, context: ApplyCont
             txHash: event.txHash,
             timestamp,
             pair: event.pair,
-            protocol: event.protocol,
             kind: 'swap',
             account: event.account,
             amount0In: event.amount0In,
@@ -82,43 +57,21 @@ export function applyEvent(db: IndexerDb, event: DomainEvent, context: ApplyCont
         {
             return; // replayed tail - candle already counted it
         }
-        if (event.protocol === 'v3')
-        {
-            const pool = db.getV3Pool(event.pair);
-            // A swap on a pool the indexer never saw created, or one from a
-            // node that omitted the price: nothing honest to chart.
-            if (pool === null || event.sqrtPriceX96 === undefined || event.sqrtPriceX96 <= 0n)
-            {
-                return;
-            }
-            db.recordCandlePoint(
-                event.pair,
-                hourStartOf(timestamp),
-                priceWadFromSqrtX96(
-                    event.sqrtPriceX96,
-                    context.decimalsOf(pool.token0),
-                    context.decimalsOf(pool.token1)
-                ),
-                event.amount0In + event.amount0Out,
-                event.amount1In + event.amount1Out
-            );
-            return;
-        }
-        const pair = db.getPair(event.pair);
-        if (pair === null || pair.reserve0 <= 0n || pair.reserve1 <= 0n)
+        const pool = db.getV3Pool(event.pair);
+        // A swap on a pool the indexer never saw created, or one from a
+        // node that omitted the price: nothing honest to chart.
+        if (pool === null || event.sqrtPriceX96 === undefined || event.sqrtPriceX96 <= 0n)
         {
             return;
         }
-        const price = priceFromReserves(
-            pair.reserve0,
-            context.decimalsOf(pair.token0),
-            pair.reserve1,
-            context.decimalsOf(pair.token1)
-        );
         db.recordCandlePoint(
             event.pair,
             hourStartOf(timestamp),
-            price,
+            priceWadFromSqrtX96(
+                event.sqrtPriceX96,
+                context.decimalsOf(pool.token0),
+                context.decimalsOf(pool.token1)
+            ),
             event.amount0In + event.amount0Out,
             event.amount1In + event.amount1Out
         );
@@ -139,7 +92,6 @@ export function applyEvent(db: IndexerDb, event: DomainEvent, context: ApplyCont
         txHash: event.txHash,
         timestamp,
         pair: event.pair,
-        protocol: event.protocol,
         kind: event.kind,
         account: event.account,
         amount0In: event.amount0,

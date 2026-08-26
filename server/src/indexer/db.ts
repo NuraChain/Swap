@@ -1,5 +1,5 @@
 // The indexer's storage. node:sqlite (no native build step), one file per chain.
-// All uint112/uint256 values are TEXT - SQLite integers are i64 and reserves are not.
+// All uint256 values are TEXT - SQLite integers are i64 and amounts are not.
 // Every event insert is idempotent via the (block_number, log_index) primary key:
 // node --watch restarts replay the tail and must not double-count.
 
@@ -9,11 +9,6 @@ export type Address = `0x${ string }`;
 
 export type EventKind = 'swap' | 'mint' | 'burn';
 
-// Which AMM the event came out of. The two protocols share ONE events table
-// because the portfolio reads them as one feed ordered by time - a union over
-// two tables would have to re-sort itself on every query to answer that.
-export type Protocol = 'v2' | 'v3';
-
 export interface TokenRow
 {
     address: Address;
@@ -22,19 +17,6 @@ export interface TokenRow
     decimals: number;
 }
 
-export interface PairRow
-{
-    address: Address;
-    token0: Address;
-    token1: Address;
-    createdBlock: number;
-    reserve0: bigint;
-    reserve1: bigint;
-}
-
-// A V3 pool. There are no reserves to hold - a concentrated pool's depth lives
-// in its ticks - so this is identity only: the two tokens and the fee tier,
-// which is what a transaction row needs in order to name what was traded.
 export interface V3PoolRow
 {
     address: Address;
@@ -61,7 +43,6 @@ export interface EventRow
     txHash: string;
     timestamp: number;
     pair: Address;
-    protocol: Protocol;
     kind: EventKind;
     account: Address;
     amount0In: bigint;
@@ -93,14 +74,6 @@ CREATE TABLE IF NOT EXISTS tokens (
     name TEXT NOT NULL,
     decimals INTEGER NOT NULL
 );
-CREATE TABLE IF NOT EXISTS pairs (
-    address TEXT PRIMARY KEY,
-    token0 TEXT NOT NULL,
-    token1 TEXT NOT NULL,
-    created_block INTEGER NOT NULL,
-    reserve0 TEXT NOT NULL DEFAULT '0',
-    reserve1 TEXT NOT NULL DEFAULT '0'
-);
 CREATE TABLE IF NOT EXISTS v3_pools (
     address TEXT PRIMARY KEY,
     token0 TEXT NOT NULL,
@@ -117,7 +90,6 @@ CREATE TABLE IF NOT EXISTS events (
     tx_hash TEXT NOT NULL,
     ts INTEGER NOT NULL,
     pair TEXT NOT NULL,
-    protocol TEXT NOT NULL DEFAULT 'v2',
     kind TEXT NOT NULL,
     account TEXT NOT NULL,
     amount0_in TEXT NOT NULL DEFAULT '0',
@@ -128,6 +100,7 @@ CREATE TABLE IF NOT EXISTS events (
 );
 CREATE INDEX IF NOT EXISTS events_by_time ON events (ts DESC);
 CREATE INDEX IF NOT EXISTS events_by_pair ON events (pair, ts DESC);
+CREATE INDEX IF NOT EXISTS events_by_account ON events (account, ts DESC);
 CREATE TABLE IF NOT EXISTS candles (
     pair TEXT NOT NULL,
     hour_start INTEGER NOT NULL,
@@ -180,15 +153,16 @@ export class IndexerDb
     }
 
     // CREATE TABLE IF NOT EXISTS does nothing to a table that already exists, so
-    // a column added after the fact is added in place. Wiping and reindexing
-    // instead would be a self-inflicted outage on every schema change. The
-    // DEFAULT is what makes it safe: every row written before this column
-    // existed was, by definition, a V2 row.
+    // schema changes land here instead. Two shapes of history are handled:
+    // - a database written before the balances/sqrt_price columns existed gets
+    //   them added in place;
+    // - one written by the dual-protocol indexer carries a `pairs` table and a
+    //   `protocol` column on events; both are V2 relics this build does not read,
+    //   so they are shed here too. The identity stamp changes alongside
+    //   (live.ts), which wipes the rows - these drops only clear the shells.
     #migrate(): void
     {
-        // Table names here are literals in this file, never input.
         const columns: Array<[string, string, string]> = [
-            ['events', 'protocol', "ALTER TABLE events ADD COLUMN protocol TEXT NOT NULL DEFAULT 'v2'"],
             ['v3_pools', 'balance0', "ALTER TABLE v3_pools ADD COLUMN balance0 TEXT NOT NULL DEFAULT '0'"],
             ['v3_pools', 'balance1', "ALTER TABLE v3_pools ADD COLUMN balance1 TEXT NOT NULL DEFAULT '0'"],
             ['v3_pools', 'sqrt_price_x96', "ALTER TABLE v3_pools ADD COLUMN sqrt_price_x96 TEXT NOT NULL DEFAULT '0'"]
@@ -198,8 +172,20 @@ export class IndexerDb
             const present = this.#db.prepare(`PRAGMA table_info(${ table })`).all() as unknown as Array<{ name: string }>;
             if (!present.some((entry) => entry.name === column))
             {
+                // Table and column names are literals from this file's own
+                // schema, never input.
                 this.#db.exec(ddl);
             }
+        }
+        const tables = this.#db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as unknown as Array<{ name: string }>;
+        if (tables.some((entry) => entry.name === 'pairs'))
+        {
+            this.#db.exec('DROP TABLE pairs');
+        }
+        const eventColumns = this.#db.prepare('PRAGMA table_info(events)').all() as unknown as Array<{ name: string }>;
+        if (eventColumns.some((entry) => entry.name === 'protocol'))
+        {
+            this.#db.exec('ALTER TABLE events DROP COLUMN protocol');
         }
     }
 
@@ -212,7 +198,7 @@ export class IndexerDb
     // stored row a lie about an address space that no longer exists.
     public wipe(): void
     {
-        this.#db.exec('DELETE FROM meta; DELETE FROM tokens; DELETE FROM pairs; DELETE FROM v3_pools; '
+        this.#db.exec('DELETE FROM meta; DELETE FROM tokens; DELETE FROM v3_pools; '
             + 'DELETE FROM events; DELETE FROM candles;');
     }
 
@@ -248,21 +234,6 @@ export class IndexerDb
     public listTokens(): TokenRow[]
     {
         return this.#db.prepare('SELECT * FROM tokens ORDER BY symbol').all() as unknown as TokenRow[];
-    }
-
-    public upsertPair(pair: { address: Address; token0: Address; token1: Address; createdBlock: number }): void
-    {
-        this.#db
-            .prepare('INSERT INTO pairs (address, token0, token1, created_block) VALUES (?, ?, ?, ?) '
-                + 'ON CONFLICT(address) DO NOTHING')
-            .run(pair.address.toLowerCase(), pair.token0.toLowerCase(), pair.token1.toLowerCase(), pair.createdBlock);
-    }
-
-    public updateReserves(pair: string, reserve0: bigint, reserve1: bigint): void
-    {
-        this.#db
-            .prepare('UPDATE pairs SET reserve0 = ?, reserve1 = ? WHERE address = ?')
-            .run(reserve0.toString(), reserve1.toString(), pair.toLowerCase());
     }
 
     public upsertV3Pool(pool: { address: Address; token0: Address; token1: Address; fee: number; createdBlock: number }): void
@@ -308,75 +279,20 @@ export class IndexerDb
         return rows.map(v3PoolOf);
     }
 
-    // A concentrated pool has no candle to read a figure out of - the hourly
-    // series is priced from a pair's reserves - so its 24h volume is summed
-    // straight off the events it emitted, the same both-sides sum the candle
-    // accumulates for V2.
-    public v3VolumeSince(pool: string, sinceTs: number): { volume0: bigint; volume1: bigint }
-    {
-        const rows = this.#db
-            .prepare('SELECT amount0_in, amount1_in, amount0_out, amount1_out FROM events '
-                + "WHERE pair = ? AND protocol = 'v3' AND kind = 'swap' AND ts >= ?")
-            .all(pool.toLowerCase(), sinceTs) as unknown as Array<Record<string, string>>;
-        let volume0 = 0n;
-        let volume1 = 0n;
-        for (const row of rows)
-        {
-            volume0 += BigInt(row.amount0_in) + BigInt(row.amount0_out);
-            volume1 += BigInt(row.amount1_in) + BigInt(row.amount1_out);
-        }
-        return { volume0, volume1 };
-    }
-
-    public getPair(address: string): PairRow | null
-    {
-        const row = this.#db.prepare('SELECT * FROM pairs WHERE address = ?').get(address.toLowerCase()) as
-            | { address: Address; token0: Address; token1: Address; created_block: number; reserve0: string; reserve1: string }
-            | undefined;
-        if (row === undefined)
-        {
-            return null;
-        }
-        return {
-            address: row.address,
-            token0: row.token0,
-            token1: row.token1,
-            createdBlock: row.created_block,
-            reserve0: BigInt(row.reserve0),
-            reserve1: BigInt(row.reserve1)
-        };
-    }
-
-    public listPairs(): PairRow[]
-    {
-        const rows = this.#db.prepare('SELECT * FROM pairs ORDER BY created_block').all() as unknown as Array<
-            { address: Address; token0: Address; token1: Address; created_block: number; reserve0: string; reserve1: string }
-        >;
-        return rows.map((row) => ({
-            address: row.address,
-            token0: row.token0,
-            token1: row.token1,
-            createdBlock: row.created_block,
-            reserve0: BigInt(row.reserve0),
-            reserve1: BigInt(row.reserve1)
-        }));
-    }
-
     /** @returns false when the event was already stored (idempotent replay). */
     public insertEvent(event: EventRow): boolean
     {
         const result = this.#db
             .prepare('INSERT OR IGNORE INTO events '
-                + '(block_number, log_index, tx_hash, ts, pair, protocol, kind, account, '
+                + '(block_number, log_index, tx_hash, ts, pair, kind, account, '
                 + 'amount0_in, amount1_in, amount0_out, amount1_out) '
-                + 'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+                + 'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
             .run(
                 event.blockNumber,
                 event.logIndex,
                 event.txHash,
                 event.timestamp,
                 event.pair.toLowerCase(),
-                event.protocol,
                 event.kind,
                 event.account.toLowerCase(),
                 event.amount0In.toString(),
@@ -411,7 +327,6 @@ export class IndexerDb
             txHash: row.tx_hash as string,
             timestamp: row.ts as number,
             pair: row.pair as Address,
-            protocol: row.protocol as Protocol,
             kind: row.kind as EventKind,
             account: row.account as Address,
             amount0In: BigInt(row.amount0_in as string),
@@ -480,11 +395,24 @@ export class IndexerDb
         }));
     }
 
-    public volumeSince(pair: string, sinceHour: number): { volume0: bigint; volume1: bigint }
+    // A pool's live price lives at the END of its candle series - the pools
+    // table's sqrt_price_x96 is refreshed on its own 15s beat, while every swap
+    // lands here immediately. Reading the whole series to take its last element
+    // made every pool row cost O(all candles ever); this asks the
+    // (pair, hour_start) primary key for exactly one.
+    public latestClose(pool: string): bigint | null
+    {
+        const row = this.#db
+            .prepare('SELECT close FROM candles WHERE pair = ? ORDER BY hour_start DESC LIMIT 1')
+            .get(pool.toLowerCase()) as { close: string } | undefined;
+        return row === undefined ? null : BigInt(row.close);
+    }
+
+    public volumeSince(pool: string, sinceHour: number): { volume0: bigint; volume1: bigint }
     {
         const rows = this.#db
             .prepare('SELECT volume0, volume1 FROM candles WHERE pair = ? AND hour_start >= ?')
-            .all(pair.toLowerCase(), sinceHour) as unknown as Array<{ volume0: string; volume1: string }>;
+            .all(pool.toLowerCase(), sinceHour) as unknown as Array<{ volume0: string; volume1: string }>;
         let volume0 = 0n;
         let volume1 = 0n;
         for (const row of rows)

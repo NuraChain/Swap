@@ -26,14 +26,7 @@ export type TokenWithPrice = Infer<typeof tokenWithPrice>;
 
 export const stats = object({
     chainId: number({ int: true }),
-    // V2 pairs alone. `poolCount` is what the site shows - the two exchanges are
-    // one market to anyone reading a headline number - and this stays for
-    // anything that needs the V2 half specifically.
-    pairCount: number({ int: true }),
     poolCount: number({ int: true }),
-    // The factory's swapFee, in bps. On the wire because the fee is the chain's
-    // to decide and the client would otherwise print a number of its own.
-    swapFeeBps: number({ int: true }),
     tvlUsd: number(),
     volume24hUsd: number(),
     indexedBlock: number({ int: true }),
@@ -45,6 +38,8 @@ const poolShape = {
     address: string(),
     token0: tokenRef,
     token1: tokenRef,
+    // The token balances the pool contract holds - a concentrated pool has no
+    // reserves, and what it holds is the honest TVL figure.
     reserve0: string(),
     reserve1: string(),
     priceWad: string(),
@@ -74,10 +69,6 @@ export type PoolDetail = Infer<typeof poolDetail>;
 
 export const txItem = object({
     txHash: string(),
-    // Which AMM the row came out of. One feed carries both, so a row that does
-    // not say cannot be read - the same two tokens and the same three verbs
-    // mean a different pool, a different fee, and a different position model.
-    protocol: enumOf(['v2', 'v3']),
     kind: enumOf(['swap', 'mint', 'burn']),
     timestamp: number({ int: true }),
     account: string(),
@@ -96,21 +87,16 @@ export const deploymentInfo = object({
     explorerUrl: string().nullable(),
     faucet: boolean(),
     contracts: object({
-        factory: string(),
-        router: string(),
         wnura: string(),
         multicall3: string()
     }),
-    // UniswapV3, or null on a chain that carries the V2 factory alone. The app
-    // reads this to decide whether the protocol switch exists at all - a missing
-    // block hides the V3 half rather than pointing it at a zero address.
     v3: object({
         factory: string(),
         swapRouter: string(),
         quoter: string(),
         positionManager: string(),
         tickLens: string()
-    }).nullable(),
+    }),
     tokens: array(tokenRef)
 });
 export type DeploymentInfo = Infer<typeof deploymentInfo>;
