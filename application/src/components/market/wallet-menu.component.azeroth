@@ -14,6 +14,41 @@ import Icon from '../ui/icon.component.azeroth';
 
 export default component WalletMenu(props: { address: string; onClose: () => void })
 {
+    state closing = false;
+
+    let panel: HTMLElement | null = null;
+
+    // Same exit choreography as Modal: Escape/outside routes through one close
+    // path, the pop-out plays, then the parent unmounts.
+    const requestClose = (): void =>
+    {
+        if (closing)
+        {
+            return;
+        }
+        closing = true;
+        setTimeout(() => props.onClose(), 160);
+    };
+
+    const onKey = (event: KeyboardEvent): void =>
+    {
+        if (event.key === 'Escape')
+        {
+            requestClose();
+        }
+    };
+
+    mount
+    {
+        document.addEventListener('keydown', onKey);
+        panel?.focus();
+    }
+
+    cleanup
+    {
+        document.removeEventListener('keydown', onKey);
+    }
+
     const copy = async (): Promise<void> =>
     {
         try
@@ -25,14 +60,16 @@ export default component WalletMenu(props: { address: string; onClose: () => voi
         {
             pushToast('error', t().errors.unknown);
         }
-        props.onClose();
+        requestClose();
     };
 
     const explorer = (): string | null => explorerAddressUrl(props.address);
 
     <Portal>
-        <div class="fixed inset-0 z-50" onClick={ () => props.onClose() }>
+        <div class="fixed inset-0 z-50" onClick={ requestClose }>
             <div
+                ref={ (element) => { panel = element; } }
+                tabindex="-1"
                 class="anim-pop absolute end-4 top-16 w-64 rounded-xl border border-line-strong bg-raised p-2 shadow-2xl"
                 role="dialog"
                 aria-label={ t().common.connect }
@@ -72,7 +109,7 @@ export default component WalletMenu(props: { address: string; onClose: () => voi
                         target="_blank"
                         rel="noreferrer"
                         class="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-sm hover:bg-ink/6"
-                        onClick={ () => props.onClose() }
+                        onClick={ () => requestClose() }
                     >
                         <Icon name="external-link" size={ 15 } class="text-faint" />
                         <span>{ t().common.viewExplorer }</span>
@@ -82,7 +119,7 @@ export default component WalletMenu(props: { address: string; onClose: () => voi
                     type="button"
                     class="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-start text-sm text-fall hover:bg-fall/10"
                     data-testid="wallet-disconnect"
-                    onClick={ () => { disconnect(); props.onClose(); } }
+                    onClick={ () => { disconnect(); requestClose(); } }
                 >
                     <Icon name="x" size={ 15 } />
                     <span>{ t().common.disconnect }</span>
