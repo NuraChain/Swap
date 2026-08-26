@@ -7,6 +7,83 @@ Notable changes to Nura Swap. The format follows
 The exchange contracts live in [their own repository](https://github.com/NuraChain/Swap);
 this changelog covers the application, the indexer, and the shared maths.
 
+## [Unreleased]
+
+### Removed
+
+**Uniswap V2.** The exchange is UniswapV3 only, end to end:
+
+- The indexer watches the V3 factory and pools alone (`PoolCreated`, pool
+  `Swap`/`Mint`/`Burn`). The `pairs` table, the `Sync` handler and the
+  reserve-based candle pricing are gone; existing databases are migrated in
+  place (the V2 relics are dropped) and the chain-identity stamp changes, so the
+  first start after upgrading re-indexes from the artifact's start block.
+- `/api/market/stats` loses `pairCount` and `swapFeeBps` - every pool carries
+  its own tier fee now; `/api/market/pools` serves the V3 pools; transaction
+  rows no longer carry a `protocol` field; the deployment wire shape drops the
+  V2 factory/router and makes the `v3` block required.
+- The swap card quotes through the Quoter across every fee tier and trades the
+  best one (or a pinned one); the V2/V3 switch, its persistence, and the
+  cross-exchange chart fallback are gone.
+- The liquidity page is concentrated liquidity only: pools per fee tier,
+  position NFTs with their range and uncollected fees, mint/increase/decrease/
+  collect. The V2 add/remove sheets and the LP-token grid are deleted, and the
+  portfolio shows V3 positions.
+- Shared maths sheds the constant-product helpers (`getAmountOut`, `getAmountIn`,
+  `quote`, reserve-based impact and pricing); what remains is protocol-neutral
+  plus the full V3 tick/liquidity library.
+
+### Fixed
+
+**Multi-hop swaps render every leg of the trade.** Activity rows were keyed by
+transaction hash plus timestamp alone, but one multi-hop swap emits one Swap
+event per pool inside a single transaction - colliding keys could drop or
+duplicate rows. Row identity includes the pool, direction and amounts.
+
+**A dropped RPC call can no longer strand a probe's answer.** A failed
+router-flavour probe pinned "v1" even against a real SwapRouter02, encoding
+calldata that router cannot decode (only a definitive answer is remembered
+now); a partially-failed fee-tier read cached the tiers that happened to
+answer, hiding real pools (only a complete pass is cached).
+
+**Disconnecting stops the wallet's 5-second poll**, and reconnecting the same
+wallet binds its event listeners exactly once instead of stacking a second set
+on every connect.
+
+**A declined connect keeps the connect sheet open** instead of closing it over
+a toast and stranding the visitor back on the page. The wallet menu gained the
+dialog basics the modals already had: Escape to close, focus on open, an exit
+animation on every close path. The mobile navigation button no longer announces
+itself as the product name - it says "Menu", in all ten languages.
+
+### Changed
+
+The indexer fetches a chunk's block timestamps and new-pool token metadata
+concurrently rather than one at a time. The portfolio page hits
+`/api/market/tokens` once per refresh tick instead of twice per load.
+
+The API reads a pool's last price with a single indexed row instead of loading
+its whole candle history per pool row, and account-filtered activity queries
+(the portfolio feed, polled every five seconds) got an index of their own. The
+two percent sliders now mirror together in RTL instead of one pinning LTR while
+the other followed the page direction.
+
+The four allowance reads scattered across the swap and liquidity flows share
+one helper in `lib/chain.ts`.
+
+Shared definitions moved to where they belong: the native pseudo-token and its
+`isNative` test, the chain-time deadline helper, the zero address, the liquidity
+slippage band, and `MAX_UINT256` each lived in three to five copies across the
+components and now live in `lib/chain.ts` and `shared/math`.
+
+### Added
+
+`.gitattributes` pins LF line endings tree-wide - the lint gate has always
+demanded them, and nothing stopped a Windows checkout from shipping CRLF.
+
+Regression tests for the above, including a multi-hop feed
+(`tests/tx-list.spec.ts`).
+
 ## [1.1.1] - 2026-08-21
 
 ### Changed

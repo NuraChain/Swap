@@ -13,7 +13,7 @@ npm run verify        # the full gate CI runs: rtl lint, types, lint, build, tes
 
 | Command | Suite | What it covers |
 | --- | --- | --- |
-| `npm run test:shared` | `shared/` | AMM maths, V3 tick and liquidity maths, digit normalization, the deployment artifacts, and the property/fuzz laws over all of it |
+| `npm run test:shared` | `shared/` | V3 tick and liquidity maths, digit normalization, the deployment artifacts, and the property/fuzz laws over all of it |
 | `npm run test:server` | `server/` | the indexer end to end, the SQLite data layer, USD pricing, token metadata, the market API, and the production HTTP edge |
 | `npm run test:web` | `application/` | chain access, i18n, formatting, the V3 client, components, and page-level journeys |
 
@@ -44,15 +44,15 @@ exactly, in `application/tests/v3.spec.ts`.
 
 ```
 shared/tests/
-  math.spec.ts          V2 quote, impact, slippage, decimal scaling
+  math.spec.ts          slippage bounds, integer sqrt, decimal scaling, USD value
   v3-math.spec.ts       tick <-> price, range amounts, liquidity round trips
   digits.spec.ts        Persian and Arabic numerals in, ASCII amounts out
   deployments.spec.ts   the committed artifacts, validated field by field
-  properties.spec.ts    seeded property and fuzz laws over all three libraries
+  properties.spec.ts    seeded property and fuzz laws over the libraries
 
 server/tests/
   db.spec.ts            inserts, constraints, bigint fidelity, injection-proof binding
-  indexer.spec.ts       log decoding (plus fuzz), event application, candles
+  v3-indexer.spec.ts    log decoding (plus fuzz), event application, candles
   live.spec.ts          the indexer's restart, reorg and failure paths, end to end
   pricing.spec.ts       USD derivation, TVL, volume, fee APR
   erc20.spec.ts         token metadata, including the shapes that answer nothing
@@ -71,9 +71,10 @@ application/tests/
   toast.spec.ts         the transaction queue, on a frozen clock
   components.spec.ts    controls: mount, click, type, assert
   pages.spec.ts         page journeys against a stubbed API, outage states included
-  pages-v3.spec.ts      the same pages on a chain that carries V3
+  pages-v3.spec.ts      the trading pages against a V3-capable deployment
   token-trust.spec.ts   a coin brand is earned by address, never by symbol
   tx-errors.spec.ts     revert strings a trader has to be told correctly
+  tx-list.spec.ts       the activity feed: kind filters, row identity
   app.spec.ts           routing and the not-found fallback
   ssr-safety.spec.ts    the whole page graph imports without a DOM
 ```

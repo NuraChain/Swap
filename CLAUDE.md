@@ -1,17 +1,19 @@
 # Nura Swap — working notes for Claude Code
 
-An open AMM front-end and indexer for Nura Chain (EVM, chain id 1020). Three
-workspaces, one npm lockfile:
+An open AMM front-end and indexer for Nura Chain (EVM, chain id 1020), built on
+UniswapV3 only. Three workspaces, one npm lockfile:
 
 ```
-shared/        bigint AMM maths (V2 reserves, V3 Q64.96 ticks), digit
-               normalization, the typed deployment artifacts
+shared/        bigint maths (V3 Q64.96 ticks), digit normalization, the typed
+               deployment artifacts
 server/        indexer + market API: chain watcher -> sqlite -> REST (@azerothjs/http)
 application/   the site: compiled .azeroth components on vite (AzerothJS)
 ```
 
 The exchange contracts live in a **separate repository**. This one consumes its
 deployment artifact (`shared/deployments/1020.json`) and never imports Solidity.
+The artifact's `v3` block is required; there is no V2 anywhere - no pairs table,
+no protocol switch, no constant-product maths.
 
 ---
 
@@ -81,11 +83,10 @@ Inventory:
 ```
 ui/       badge button empty-state flag icon input modal pagination
           shamseh skeleton toasts tooltip
-market/   add-chain-button add-liquidity add-v3-liquidity amount-field
+market/   add-chain-button add-v3-liquidity amount-field
           connect-button faucet-button fee-tier-select manage-v3-position
-          positions-grid price-chart protocol-switch remove-liquidity
-          token-icon token-select tx-list v3-positions-grid wallet-menu
-          wallet-modal
+          price-chart token-icon token-select tx-list v3-positions-grid
+          wallet-menu wallet-modal
 layout/   footer header indexer-banner language-modal
 ```
 
