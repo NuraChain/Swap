@@ -16,16 +16,18 @@ import { startIndexer } from '../src/indexer/live.ts';
 import type { Deployment } from '@nuraswap/shared/deployments';
 import type { Address } from '../src/indexer/db.ts';
 
-const FACTORY = '0x00000000000000000000000000000000000000f0' as Address;
-const PAIR = '0x00000000000000000000000000000000000000aa' as Address;
-const PAIR_TWO = '0x00000000000000000000000000000000000000ab' as Address;
+const FACTORY = '0x00000000000000000000000000000000000000f3' as Address;
+const POOL = '0x00000000000000000000000000000000000000b3' as Address;
+const POOL_TWO = '0x00000000000000000000000000000000000000b4' as Address;
 const NURA = '0x0000000000000000000000000000000000000001' as Address;
 const USDT = '0x0000000000000000000000000000000000000002' as Address;
 const ROUTER = '0x00000000000000000000000000000000000000f1' as Address;
-const V3_FACTORY = '0x00000000000000000000000000000000000000f3' as Address;
-const V3_POOL = '0x00000000000000000000000000000000000000b3' as Address;
+const MANAGER = '0x00000000000000000000000000000000000000ee' as Address;
 const ALICE = '0x00000000000000000000000000000000000000c1' as Address;
 const BOB = '0x00000000000000000000000000000000000000c2' as Address;
+
+// The Q64.96 encoding of a 1:1 raw rate.
+const SQRT_ONE = 1n << 96n;
 
 const POLL_MS = 50;
 
@@ -50,7 +52,7 @@ const DEPLOYMENT_TOKENS = [
     { address: USDT, symbol: 'mUSDT', name: 'Mock Tether USD', decimals: 6 }
 ];
 
-function deploymentShape(startBlock: number, v3Factory: Address | null = null): Deployment
+function deploymentShape(startBlock: number): Deployment
 {
     return {
         chainId: 1020,
@@ -61,21 +63,17 @@ function deploymentShape(startBlock: number, v3Factory: Address | null = null): 
         startBlock,
         contracts:
         {
-            factory: FACTORY,
-            router: ROUTER,
             wnura: NURA,
             multicall3: '0x00000000000000000000000000000000000000f2'
         },
         tokens: DEPLOYMENT_TOKENS,
-        v3: v3Factory === null
-            ? null
-            : {
-                factory: v3Factory,
-                swapRouter: '0x0000000000000000000000000000000000000032' as Address,
-                quoter: '0x0000000000000000000000000000000000000033' as Address,
-                positionManager: '0x0000000000000000000000000000000000000034' as Address,
-                tickLens: '0x0000000000000000000000000000000000000035' as Address
-            }
+        v3: {
+            factory: FACTORY,
+            swapRouter: '0x0000000000000000000000000000000000000032' as Address,
+            quoter: '0x0000000000000000000000000000000000000033' as Address,
+            positionManager: MANAGER,
+            tickLens: '0x0000000000000000000000000000000000000035' as Address
+        }
     };
 }
 
@@ -110,7 +108,7 @@ const running: Array<{ stop: () => void }> = [];
 function run(
     db: IndexerDb,
     log: never,
-    overrides: { startBlock?: number; confirmations?: number; v3Factory?: Address } = {}
+    overrides: { startBlock?: number; confirmations?: number } = {}
 ): {
     status: () => { headBlock: number; indexedBlock: number };
     stop: () => void;
@@ -118,7 +116,7 @@ function run(
 {
     const indexer = startIndexer({
         db,
-        deployment: deploymentShape(overrides.startBlock ?? 0, overrides.v3Factory ?? null),
+        deployment: deploymentShape(overrides.startBlock ?? 0),
         log,
         pollingIntervalMs: POLL_MS,
         confirmations: overrides.confirmations ?? 0
@@ -174,57 +172,45 @@ afterEach(() =>
     }
 });
 
-/** A pool created at block 2 that syncs and trades at block 3. */
+/** A pool created at block 2 that trades at block 3. */
 function scriptOnePool(): void
 {
-    chain.pairCreated({ factory: FACTORY, pair: PAIR, token0: NURA, token1: USDT, blockNumber: 2, logIndex: 0 });
-    chain.sync({ pair: PAIR, reserve0: 40_000n * 10n ** 18n, reserve1: 100_000n * 10n ** 6n, blockNumber: 3, logIndex: 0 });
+    chain.poolCreated({ factory: FACTORY, pool: POOL, token0: NURA, token1: USDT, fee: 500, blockNumber: 2, logIndex: 0 });
+    // What the pool holds - read on the indexer's own beat, no event says it.
+    chain.setBalance(NURA, POOL, 40_000n * 10n ** 18n);
+    chain.setBalance(USDT, POOL, 100_000n * 10n ** 6n);
+    chain.setPoolPrice(POOL, SQRT_ONE);
+    // The pool takes 100 NURA in and pays 248 mUSDT out.
     chain.swap({
-        pair: PAIR,
+        pool: POOL,
         sender: ROUTER,
-        to: ALICE,
-        amount0In: 100n * 10n ** 18n,
-        amount1In: 0n,
-        amount0Out: 0n,
-        amount1Out: 248n * 10n ** 6n,
+        recipient: ALICE,
+        amount0: 100n * 10n ** 18n,
+        amount1: -248n * 10n ** 6n,
+        sqrtPriceX96: SQRT_ONE,
         blockNumber: 3,
         logIndex: 1
     });
 }
 
-describe('V3 pools', () =>
+describe('pool indexing', () =>
 {
-    it('indexes a pool the V3 factory created and reads what it holds', async () =>
+    it('indexes a pool the factory created and reads what it holds', async () =>
     {
         const db = freshDb();
         const { log } = fakeLogger();
         scriptOnePool();
-        chain.poolCreated({
-            factory: V3_FACTORY,
-            pool: V3_POOL,
-            token0: NURA,
-            token1: USDT,
-            fee: 500,
-            blockNumber: 3,
-            logIndex: 2
-        });
-        // A concentrated pool's worth is what it HOLDS - no event says so, and a
-        // plain transfer in moves it with no log at all, so it is read.
-        chain.setBalance(NURA, V3_POOL, 7n * 10n ** 18n);
-        chain.setBalance(USDT, V3_POOL, 11n * 10n ** 6n);
-        chain.setPoolPrice(V3_POOL, 79228162514264337593543950336n);
 
-        const indexer = run(db, log, { v3Factory: V3_FACTORY });
-        await settle(() => db.getV3Pool(V3_POOL)?.balance0 === 7n * 10n ** 18n);
+        const indexer = run(db, log);
+        await settle(() => db.getV3Pool(POOL)?.balance0 === 40_000n * 10n ** 18n);
 
-        const pool = db.getV3Pool(V3_POOL);
+        const pool = db.getV3Pool(POOL);
         expect(pool?.token0).toBe(NURA);
+        expect(pool?.token1).toBe(USDT);
         expect(pool?.fee).toBe(500);
-        expect(pool?.balance1).toBe(11n * 10n ** 6n);
+        expect(pool?.balance1).toBe(100_000n * 10n ** 6n);
         // slot0, not a ratio of the balances - 2^96 is the Q64.96 encoding of 1:1.
-        expect(pool?.sqrtPriceX96).toBe(79228162514264337593543950336n);
-        // The V2 side is untouched by any of it.
-        expect(db.getPair(PAIR)).not.toBeNull();
+        expect(pool?.sqrtPriceX96).toBe(SQRT_ONE);
         indexer.stop();
     });
 
@@ -233,21 +219,9 @@ describe('V3 pools', () =>
         const db = freshDb();
         const { log, lines } = fakeLogger();
         scriptOnePool();
-        chain.poolCreated({
-            factory: V3_FACTORY,
-            pool: V3_POOL,
-            token0: NURA,
-            token1: USDT,
-            fee: 500,
-            blockNumber: 3,
-            logIndex: 2
-        });
-        chain.setBalance(NURA, V3_POOL, 7n * 10n ** 18n);
-        chain.setBalance(USDT, V3_POOL, 11n * 10n ** 6n);
-        chain.setPoolPrice(V3_POOL, 79228162514264337593543950336n);
 
-        const indexer = run(db, log, { v3Factory: V3_FACTORY });
-        await settle(() => db.getV3Pool(V3_POOL)?.balance0 === 7n * 10n ** 18n);
+        const indexer = run(db, log);
+        await settle(() => db.getV3Pool(POOL)?.balance0 === 40_000n * 10n ** 18n);
 
         // Blanking a pool's TVL because one read timed out would be a worse
         // answer than the one from fifteen seconds ago.
@@ -255,46 +229,8 @@ describe('V3 pools', () =>
         // Long enough to outlast the balance beat: balances are read on their own
         // slower timer, not once per log scan, and this waits for the NEXT one.
         await settle(() => lines.some((line) => line.message.includes('state unreadable')), 400);
-        expect(db.getV3Pool(V3_POOL)?.balance0).toBe(7n * 10n ** 18n);
+        expect(db.getV3Pool(POOL)?.balance0).toBe(40_000n * 10n ** 18n);
         indexer.stop();
-    });
-});
-
-describe('first run', () =>
-{
-    it('reindexes a database that predates the chain gaining V3', async () =>
-    {
-        const db = freshDb();
-        const { log } = fakeLogger();
-        scriptOnePool();
-
-        const first = run(db, log);
-        await settle(() => first.status().indexedBlock >= chain.height);
-        expect(db.getMeta('identity')).toBe(`1020:${ FACTORY }:${ chain.blocks[0].hash }`);
-        first.stop();
-
-        // Same chain, same V2 factory - the deployment now also carries V3. What
-        // is stored is a complete V2 history beside an empty V3 one, and the
-        // cursor only moves forward, so resuming would leave that gap forever.
-        const second = run(db, log, { v3Factory: V3_FACTORY });
-        await settle(() => second.status().indexedBlock >= chain.height);
-        expect(db.getMeta('identity')).toBe(`1020:${ FACTORY }:${ V3_FACTORY }:${ chain.blocks[0].hash }`);
-    });
-
-    it('leaves a V2-only chain alone - no reindex for a feature it does not have', async () =>
-    {
-        const db = freshDb();
-        const { log } = fakeLogger();
-        scriptOnePool();
-
-        const first = run(db, log);
-        await settle(() => first.status().indexedBlock >= chain.height);
-        const stamp = db.getMeta('identity');
-        first.stop();
-
-        const second = run(db, log);
-        await settle(() => second.status().indexedBlock >= chain.height);
-        expect(db.getMeta('identity')).toBe(stamp);
     });
 
     it('stamps identity, seeds the artifact tokens, and indexes to head', async () =>
@@ -316,7 +252,7 @@ describe('first run', () =>
         expect(db.getToken(USDT)).not.toBeNull();
     });
 
-    it('applies the pool, its reserves and its trade in chain order', async () =>
+    it('applies the pool and its trade in chain order', async () =>
     {
         const db = freshDb();
         const { log } = fakeLogger();
@@ -325,20 +261,17 @@ describe('first run', () =>
 
         await settle(() => db.recentEvents(10).length > 0);
 
-        const pair = db.getPair(PAIR);
-        expect(pair?.token0).toBe(NURA);
-        expect(pair?.reserve0).toBe(40_000n * 10n ** 18n);
-        expect(pair?.reserve1).toBe(100_000n * 10n ** 6n);
-
         const [trade] = db.recentEvents(10);
         expect(trade.kind).toBe('swap');
         expect(trade.account).toBe(ALICE);
         expect(trade.amount0In).toBe(100n * 10n ** 18n);
 
-        // Sync lands before Swap inside the block, so the candle prices against
-        // the reserves the trade actually left behind: 100k USDT / 40k NURA.
-        const [candle] = db.candles(PAIR, 0);
-        expect(candle.close).toBe(25n * 10n ** 17n);
+        // The swap states its own post-trade price: Q96 over 18dp/6dp decimals
+        // is a raw 1:1, i.e. 10^30 in 1e18 fixed point.
+        const [candle] = db.candles(POOL, 0);
+        expect(candle.close).toBe(10n ** 30n);
+        expect(candle.volume0).toBe(100n * 10n ** 18n);
+        expect(candle.volume1).toBe(248n * 10n ** 6n);
     });
 
     it('reads metadata for tokens the artifact never listed', async () =>
@@ -347,7 +280,7 @@ describe('first run', () =>
         const { log } = fakeLogger();
         const NEW_TOKEN = '0x0000000000000000000000000000000000000009' as Address;
         chain.addToken(NEW_TOKEN, { symbol: 'mDAI', name: 'Mock Dai', decimals: 8 });
-        chain.pairCreated({ factory: FACTORY, pair: PAIR, token0: NURA, token1: NEW_TOKEN, blockNumber: 2, logIndex: 0 });
+        chain.poolCreated({ factory: FACTORY, pool: POOL, token0: NURA, token1: NEW_TOKEN, fee: 500, blockNumber: 2, logIndex: 0 });
         run(db, log);
 
         await settle(() => db.getToken(NEW_TOKEN) !== null);
@@ -366,7 +299,7 @@ describe('first run', () =>
         const { log } = fakeLogger();
         const SILENT = '0x000000000000000000000000000000000000000a' as Address;
         chain.unreadableTokens.add(SILENT);
-        chain.pairCreated({ factory: FACTORY, pair: PAIR, token0: NURA, token1: SILENT, blockNumber: 2, logIndex: 0 });
+        chain.poolCreated({ factory: FACTORY, pool: POOL, token0: NURA, token1: SILENT, fee: 500, blockNumber: 2, logIndex: 0 });
         run(db, log);
 
         await settle(() => db.getToken(SILENT) !== null);
@@ -382,7 +315,7 @@ describe('first run', () =>
         const db = freshDb();
         const { log } = fakeLogger();
         scriptOnePool();
-        chain.foreignLog(PAIR, 4, 0);
+        chain.foreignLog(POOL, 4, 0);
         const indexer = run(db, log);
 
         await settle(() => indexer.status().indexedBlock >= chain.height);
@@ -392,81 +325,80 @@ describe('first run', () =>
 
     it('sorts the node output before applying it', async () =>
     {
-        // FakeChain hands logs back reversed on purpose. Applied in that order the
-        // Swap would price against reserves the Sync had not written yet.
+        // FakeChain hands logs back reversed on purpose. The pool must exist and
+        // its trade applied after it regardless of the order the node returned.
         const db = freshDb();
         const { log } = fakeLogger();
         scriptOnePool();
         run(db, log);
 
-        await settle(() => db.candles(PAIR, 0).length > 0);
+        await settle(() => db.candles(POOL, 0).length > 0);
 
-        expect(db.candles(PAIR, 0)[0].close).toBe(25n * 10n ** 17n);
+        expect(db.candles(POOL, 0)[0].close).toBe(10n ** 30n);
     });
 });
 
-describe('pairs born mid-chunk', () =>
+describe('pools born mid-chunk', () =>
 {
-    // The first scan of a chunk watches the factory and the pairs already known.
-    // A pool created inside that same chunk emitted its Sync and Swap from an
-    // address nobody was watching yet - without the second fetch its opening
-    // trades are lost forever, because the cursor moves past them.
-    it('backfills the logs of a pair created inside the same chunk', async () =>
+    // The first scan of a chunk watches the factory and the pools already known.
+    // A pool created inside that same chunk emitted its first events from an
+    // address nobody was watching yet - without the second fetch they are lost
+    // forever, because the cursor moves past them.
+    it('backfills the logs of a pool created inside the same chunk', async () =>
     {
         const db = freshDb();
         const { log } = fakeLogger();
-        chain.pairCreated({ factory: FACTORY, pair: PAIR, token0: NURA, token1: USDT, blockNumber: 2, logIndex: 0 });
-        chain.sync({ pair: PAIR, reserve0: 1000n * 10n ** 18n, reserve1: 2000n * 10n ** 6n, blockNumber: 2, logIndex: 1 });
+        chain.setPoolPrice(POOL, SQRT_ONE);
+        chain.poolCreated({ factory: FACTORY, pool: POOL, token0: NURA, token1: USDT, fee: 500, blockNumber: 2, logIndex: 0 });
         chain.swap({
-            pair: PAIR,
+            pool: POOL,
             sender: ROUTER,
-            to: ALICE,
-            amount0In: 10n ** 18n,
-            amount1In: 0n,
-            amount0Out: 0n,
-            amount1Out: 2n * 10n ** 6n,
+            recipient: ALICE,
+            amount0: 10n ** 18n,
+            amount1: -2n * 10n ** 6n,
+            sqrtPriceX96: SQRT_ONE,
             blockNumber: 2,
-            logIndex: 2
+            logIndex: 1
         });
         const indexer = run(db, log);
 
         await settle(() => indexer.status().indexedBlock >= chain.height);
 
-        expect(db.getPair(PAIR)?.reserve0).toBe(1000n * 10n ** 18n);
+        expect(db.getV3Pool(POOL)?.token0).toBe(NURA);
         expect(db.recentEvents(10)).toHaveLength(1);
-        expect(db.candles(PAIR, 0)).toHaveLength(1);
+        expect(db.candles(POOL, 0)).toHaveLength(1);
     });
 
-    it('handles several pairs created in one chunk', async () =>
+    it('handles several pools created in one chunk', async () =>
     {
         const db = freshDb();
         const { log } = fakeLogger();
-        chain.pairCreated({ factory: FACTORY, pair: PAIR, token0: NURA, token1: USDT, blockNumber: 2, logIndex: 0 });
-        chain.pairCreated({ factory: FACTORY, pair: PAIR_TWO, token0: USDT, token1: NURA, blockNumber: 2, logIndex: 1 });
-        chain.sync({ pair: PAIR_TWO, reserve0: 5n, reserve1: 6n, blockNumber: 3, logIndex: 0 });
+        chain.poolCreated({ factory: FACTORY, pool: POOL, token0: NURA, token1: USDT, fee: 500, blockNumber: 2, logIndex: 0 });
+        chain.poolCreated({ factory: FACTORY, pool: POOL_TWO, token0: USDT, token1: NURA, fee: 3000, blockNumber: 2, logIndex: 1 });
         const indexer = run(db, log);
 
         await settle(() => indexer.status().indexedBlock >= chain.height);
 
-        expect(db.listPairs()).toHaveLength(2);
-        expect(db.getPair(PAIR_TWO)?.reserve1).toBe(6n);
+        expect(db.listV3Pools()).toHaveLength(2);
+        expect(db.getV3Pool(POOL_TWO)?.fee).toBe(3000);
     });
 });
 
-describe('mint accounting', () =>
+describe('liquidity accounting', () =>
 {
-    // UniswapV2's Mint event names only `sender`, which is the ROUTER. Storing
-    // that would file every deposit on the chain under one address, and the
-    // portfolio's "your activity" would show a stranger's liquidity as yours.
-    it('files a mint under the transaction sender, not the router', async () =>
+    // A V3 Mint names `owner`, which for anything custodied by the position
+    // manager is the MANAGER. Storing that would file every deposit on the chain
+    // under one address, and the portfolio's "your activity" would show a
+    // stranger's liquidity as yours.
+    it('files a mint under the transaction sender, not the position manager', async () =>
     {
         const db = freshDb();
         const { log } = fakeLogger();
-        chain.pairCreated({ factory: FACTORY, pair: PAIR, token0: NURA, token1: USDT, blockNumber: 2, logIndex: 0 });
+        chain.poolCreated({ factory: FACTORY, pool: POOL, token0: NURA, token1: USDT, fee: 500, blockNumber: 2, logIndex: 0 });
         chain.txFrom.set('0xdep', BOB);
         chain.mint({
-            pair: PAIR,
-            sender: ROUTER,
+            pool: POOL,
+            owner: MANAGER,
             amount0: 10n,
             amount1: 20n,
             blockNumber: 3,
@@ -480,22 +412,22 @@ describe('mint accounting', () =>
         const [deposit] = db.recentEvents(10);
         expect(deposit.kind).toBe('mint');
         expect(deposit.account).toBe(BOB);
-        expect(deposit.account).not.toBe(ROUTER);
+        expect(deposit.account).not.toBe(MANAGER);
         expect(deposit.amount0In).toBe(10n);
         expect(deposit.amount1In).toBe(20n);
     });
 
-    it('keeps a burn filed under its withdrawal recipient', async () =>
+    it('files a burn under the transaction sender too', async () =>
     {
-        // Burn carries `to`, so the decoder already has the truth and the live
-        // indexer must not override it with the transaction sender.
+        // Same override as the mint: the event's owner is the manager, while the
+        // truthful account is whoever signed the withdrawal.
         const db = freshDb();
         const { log } = fakeLogger();
-        chain.pairCreated({ factory: FACTORY, pair: PAIR, token0: NURA, token1: USDT, blockNumber: 2, logIndex: 0 });
+        chain.poolCreated({ factory: FACTORY, pool: POOL, token0: NURA, token1: USDT, fee: 500, blockNumber: 2, logIndex: 0 });
+        chain.txFrom.set('0xwit', ALICE);
         chain.burn({
-            pair: PAIR,
-            sender: ROUTER,
-            to: ALICE,
+            pool: POOL,
+            owner: MANAGER,
             amount0: 1n,
             amount1: 2n,
             blockNumber: 3,
@@ -507,6 +439,7 @@ describe('mint accounting', () =>
         await settle(() => db.recentEvents(10).length > 0);
 
         expect(db.recentEvents(10)[0].account).toBe(ALICE);
+        expect(db.recentEvents(10)[0].kind).toBe('burn');
     });
 });
 
@@ -524,14 +457,14 @@ describe('restart safety', () =>
 
         // New trade appears, then the process restarts against the same database.
         chain.extendTo(chain.height + 2);
+        chain.setPoolPrice(POOL, SQRT_ONE * 2n);
         chain.swap({
-            pair: PAIR,
+            pool: POOL,
             sender: ROUTER,
-            to: BOB,
-            amount0In: 0n,
-            amount1In: 10n ** 6n,
-            amount0Out: 10n ** 17n,
-            amount1Out: 0n,
+            recipient: BOB,
+            amount0: -(10n ** 17n),
+            amount1: 10n ** 6n,
+            sqrtPriceX96: SQRT_ONE * 2n,
             blockNumber: chain.height,
             logIndex: 0
         });
@@ -574,15 +507,15 @@ describe('restart safety', () =>
         // Identity matches, but the cursor claims a block the chain does not have.
         db.setMeta('identity', `1020:${ FACTORY }:${ chain.blocks[0].hash }`);
         db.setMeta('cursor', '9999');
-        db.upsertPair({ address: PAIR_TWO, token0: NURA, token1: USDT, createdBlock: 4242 });
+        db.upsertV3Pool({ address: POOL_TWO, token0: NURA, token1: USDT, fee: 500, createdBlock: 4242 });
 
         const indexer = run(db, log);
         await settle(() => lines.some((line) => line.message.includes('cursor beyond head')));
         await settle(() => indexer.status().indexedBlock >= chain.height);
 
-        // The phantom pair from the old chain is gone; the real one is indexed.
-        expect(db.getPair(PAIR_TWO)).toBeNull();
-        expect(db.getPair(PAIR)).not.toBeNull();
+        // The phantom pool from the old chain is gone; the real one is indexed.
+        expect(db.getV3Pool(POOL_TWO)).toBeNull();
+        expect(db.getV3Pool(POOL)).not.toBeNull();
     });
 
     it('rewinds and rescans when the cursor block hash no longer matches', async () =>
@@ -605,7 +538,7 @@ describe('restart safety', () =>
         // trade and one candle rather than double-counting the volume.
         await settle(() => second.status().indexedBlock >= chain.height);
         expect(db.recentEvents(10)).toHaveLength(1);
-        expect(db.candles(PAIR, 0)[0].volume0).toBe(100n * 10n ** 18n);
+        expect(db.candles(POOL, 0)[0].volume0).toBe(100n * 10n ** 18n);
         second.stop();
     });
 
@@ -702,13 +635,12 @@ describe('resilience', () =>
         const callsAtStop = chain.getLogsCalls.length;
         chain.extendTo(chain.height + 5);
         chain.swap({
-            pair: PAIR,
+            pool: POOL,
             sender: ROUTER,
-            to: BOB,
-            amount0In: 1n,
-            amount1In: 0n,
-            amount0Out: 0n,
-            amount1Out: 1n,
+            recipient: BOB,
+            amount0: 1n,
+            amount1: -1n,
+            sqrtPriceX96: SQRT_ONE,
             blockNumber: chain.height,
             logIndex: 0
         });

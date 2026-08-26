@@ -3,9 +3,8 @@
 // public RPCs drop them; polling is the path that works everywhere.
 //
 // Restart safety, in order of severity:
-// - identity mismatch (different chainId, V2 factory or V3 factory, or the
-//   startBlock's hash changed - a re-genesised chain): wipe and re-index from
-//   startBlock.
+// - identity mismatch (different chainId or V3 factory, or the startBlock's hash
+//   changed - a re-genesised chain): wipe and re-index from startBlock.
 // - cursor beyond head (chain shorter than our cursor): same wipe.
 // - cursor block hash mismatch (reorg): rewind REWIND_BLOCKS and rescan; event
 //   inserts are idempotent so replay cannot double-count candles.
@@ -54,11 +53,7 @@ export function startIndexer(options: IndexerOptions): RunningIndexer
 {
     const { db, deployment, log } = options;
     const client = createPublicClient({ transport: http(deployment.rpcUrl) });
-    const factory = deployment.contracts.factory.toLowerCase() as Address;
-    // V3 is optional all the way down: a deployment artifact without a `v3` block
-    // means this chain carries the V2 factory alone, and every V3 branch below
-    // simply never runs. No zero address, no empty scan.
-    const v3Factory = (deployment.v3?.factory.toLowerCase() ?? null) as Address | null;
+    const factory = deployment.v3.factory.toLowerCase() as Address;
 
     let headBlock = 0;
     let indexedBlock = 0;
@@ -74,9 +69,7 @@ export function startIndexer(options: IndexerOptions): RunningIndexer
             return;
         }
         db.upsertToken({ address, ...await readTokenMetadata(client, address) });
-    }
-
-    async function fetchLogs(fromBlock: bigint, toBlock: bigint, addresses: Address[]): Promise<RawLog[]>
+    }    async function fetchLogs(fromBlock: bigint, toBlock: bigint, addresses: Address[]): Promise<RawLog[]>
     {
         const logs = await client.getLogs({ fromBlock, toBlock, address: addresses });
         return (logs as unknown as RawLog[])
@@ -86,49 +79,47 @@ export function startIndexer(options: IndexerOptions): RunningIndexer
 
     async function applyChunk(fromBlock: bigint, toBlock: bigint): Promise<void>
     {
-        const known = [
-            ...db.listPairs().map((pair) => pair.address),
-            ...db.listV3Pools().map((pool) => pool.address)
-        ];
-        const factories = v3Factory === null ? [factory] : [factory, v3Factory];
-        let logs = await fetchLogs(fromBlock, toBlock, [...factories, ...known]);
+        const known = db.listV3Pools().map((pool) => pool.address);
+        let logs = await fetchLogs(fromBlock, toBlock, [factory, ...known]);
 
         // Pools born inside this chunk emitted their first events before we knew
         // their address - fetch those too, then apply everything in chain order.
         const born: Address[] = [];
+        const newTokens: Address[] = [];
         for (const rawLog of logs)
         {
-            const event = decodeLog(rawLog, factory, v3Factory);
-            if (event?.kind === 'pairCreated' || event?.kind === 'poolCreated')
+            const event = decodeLog(rawLog, factory);
+            if (event?.kind === 'poolCreated')
             {
-                born.push(event.kind === 'pairCreated' ? event.pair : event.pool);
-                await registerToken(event.token0);
-                await registerToken(event.token1);
+                born.push(event.pool);
+                newTokens.push(event.token0, event.token1);
             }
         }
+        // Both new tokens of every birth register concurrently: a chunk full of
+        // new pairs used to pay one metadata round trip per token, in series.
+        await Promise.all([...new Set(newTokens)].map(registerToken));
         if (born.length > 0)
         {
             const extra = await fetchLogs(fromBlock, toBlock, born);
             logs = [...logs, ...extra].sort((a, b) => Number(a.blockNumber - b.blockNumber) || a.logIndex - b.logIndex);
         }
 
+        // Every distinct block the chunk touched, fetched concurrently - a
+        // historical scan of thousands of blocks used to walk them one at a time.
         const timestamps = new Map<number, number>();
-        for (const rawLog of logs)
+        const blockNumbers = [...new Set(logs.map((rawLog) => Number(rawLog.blockNumber)))];
+        const blocks = await Promise.all(
+            blockNumbers.map((blockNumber) => client.getBlock({ blockNumber: BigInt(blockNumber) }))
+        );
+        blocks.forEach((block, index) =>
         {
-            const blockNumber = Number(rawLog.blockNumber);
-            if (!timestamps.has(blockNumber))
-            {
-                const block = await client.getBlock({ blockNumber: rawLog.blockNumber });
-                timestamps.set(blockNumber, Number(block.timestamp));
-            }
-        }
+            timestamps.set(blockNumbers[index], Number(block.timestamp));
+        });
 
-        // Neither protocol names the depositor in its liquidity events. V2's Mint
-        // carries only `sender`, the ROUTER; V3's Mint and Burn both carry `owner`,
-        // which is the POSITION MANAGER for every position it custodies. The
-        // truthful account is the transaction sender; resolve it here, where the
-        // client lives, cached per tx hash. A V2 Burn is left alone - it names its
-        // withdrawal recipient in `to`.
+        // Liquidity events do not name the depositor. Mint and Burn both carry
+        // `owner`, which is the POSITION MANAGER for every position it custodies.
+        // The truthful account is the transaction sender; resolve it here, where
+        // the client lives, cached per tx hash.
         const txSenders = new Map<string, Address>();
         const senderOf = async (txHash: `0x${ string }`): Promise<Address> =>
         {
@@ -144,12 +135,12 @@ export function startIndexer(options: IndexerOptions): RunningIndexer
 
         for (const rawLog of logs)
         {
-            const event: DomainEvent | null = decodeLog(rawLog, factory, v3Factory);
+            const event: DomainEvent | null = decodeLog(rawLog, factory);
             if (event === null)
             {
                 continue;
             }
-            if (event.kind === 'mint' || (event.kind === 'burn' && event.protocol === 'v3'))
+            if (event.kind === 'mint' || event.kind === 'burn')
             {
                 event.account = await senderOf(event.txHash);
             }
@@ -210,17 +201,11 @@ export function startIndexer(options: IndexerOptions): RunningIndexer
 
     async function ensureIdentity(): Promise<bigint>
     {
-        // The V3 factory belongs in the identity, not beside it. A database
-        // filled before this chain carried V3 holds a COMPLETE V2 history and an
-        // empty V3 one, and a resumed cursor only ever moves forward - nothing
-        // would fill that gap, and the portfolio would show half a story with no
-        // sign that the other half is missing. One reindex buys a whole feed.
-        //
-        // A V2-only chain keeps its old stamp, so it does not reindex for a
-        // feature it does not have.
-        const identity = v3Factory === null
-            ? `${ deployment.chainId }:${ factory }`
-            : `${ deployment.chainId }:${ factory }:${ v3Factory }`;
+        // The factory and the startBlock's hash ARE the chain's identity: any
+        // change means every stored row describes an address space or a history
+        // that no longer exists, and a resumed cursor only ever moves forward.
+        // One reindex buys a whole feed.
+        const identity = `${ deployment.chainId }:${ factory }`;
         const startBlock = await client.getBlock({ blockNumber: BigInt(deployment.startBlock) });
         const stamp = `${ identity }:${ startBlock.hash }`;
         if (db.getMeta('identity') !== stamp)

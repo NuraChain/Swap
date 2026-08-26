@@ -6,7 +6,7 @@
 
 import { encodeAbiParameters, encodeEventTopics, pad, toHex } from 'viem';
 
-import { FACTORY_ABI, PAIR_ABI, V3_FACTORY_ABI } from '../src/indexer/decode.ts';
+import { V3_FACTORY_ABI, V3_POOL_ABI } from '../src/indexer/decode.ts';
 import type { Address } from '../src/indexer/db.ts';
 import type { RawLog } from '../src/indexer/decode.ts';
 
@@ -95,30 +95,6 @@ export class FakeChain
         this.logs.push({ ...log, topics: log.topics as unknown as RawLog['topics'] });
     }
 
-    public pairCreated(options: {
-        factory: Address;
-        pair: Address;
-        token0: Address;
-        token1: Address;
-        blockNumber: number;
-        logIndex: number;
-        txHash?: `0x${ string }`;
-    }): void
-    {
-        this.#push({
-            address: options.factory,
-            topics: encodeEventTopics({
-                abi: FACTORY_ABI,
-                eventName: 'PairCreated',
-                args: { token0: options.token0, token1: options.token1 }
-            }),
-            data: encodeAbiParameters([{ type: 'address' }, { type: 'uint256' }], [options.pair, 1n]),
-            blockNumber: BigInt(options.blockNumber),
-            logIndex: options.logIndex,
-            transactionHash: options.txHash ?? '0xf0'
-        });
-    }
-
     public poolCreated(options: {
         factory: Address;
         pool: Address;
@@ -154,61 +130,39 @@ export class FakeChain
         this.poolPrices.set(pool.toLowerCase(), sqrtPriceX96);
     }
 
-    public sync(options: {
-        pair: Address;
-        reserve0: bigint;
-        reserve1: bigint;
-        blockNumber: number;
-        logIndex: number;
-        txHash?: `0x${ string }`;
-    }): void
-    {
-        this.#push({
-            address: options.pair,
-            topics: encodeEventTopics({ abi: PAIR_ABI, eventName: 'Sync' }),
-            data: encodeAbiParameters(
-                [{ type: 'uint112' }, { type: 'uint112' }],
-                [options.reserve0, options.reserve1]
-            ),
-            blockNumber: BigInt(options.blockNumber),
-            logIndex: options.logIndex,
-            transactionHash: options.txHash ?? '0xf1'
-        });
-    }
-
+    // amount0/amount1 are the POOL's signed deltas: positive is what it took in.
     public swap(options: {
-        pair: Address;
+        pool: Address;
         sender: Address;
-        to: Address;
-        amount0In: bigint;
-        amount1In: bigint;
-        amount0Out: bigint;
-        amount1Out: bigint;
+        recipient: Address;
+        amount0: bigint;
+        amount1: bigint;
+        sqrtPriceX96: bigint;
         blockNumber: number;
         logIndex: number;
         txHash?: `0x${ string }`;
     }): void
     {
         this.#push({
-            address: options.pair,
+            address: options.pool,
             topics: encodeEventTopics({
-                abi: PAIR_ABI,
+                abi: V3_POOL_ABI,
                 eventName: 'Swap',
-                args: { sender: options.sender, to: options.to }
+                args: { sender: options.sender, recipient: options.recipient }
             }),
             data: encodeAbiParameters(
-                [{ type: 'uint256' }, { type: 'uint256' }, { type: 'uint256' }, { type: 'uint256' }],
-                [options.amount0In, options.amount1In, options.amount0Out, options.amount1Out]
+                [{ type: 'int256' }, { type: 'int256' }, { type: 'uint160' }, { type: 'uint128' }, { type: 'int24' }],
+                [options.amount0, options.amount1, options.sqrtPriceX96, 10_000n, 100]
             ),
             blockNumber: BigInt(options.blockNumber),
             logIndex: options.logIndex,
-            transactionHash: options.txHash ?? '0xf2'
+            transactionHash: options.txHash ?? '0xf4'
         });
     }
 
     public mint(options: {
-        pair: Address;
-        sender: Address;
+        pool: Address;
+        owner: Address;
         amount0: bigint;
         amount1: bigint;
         blockNumber: number;
@@ -217,11 +171,15 @@ export class FakeChain
     }): void
     {
         this.#push({
-            address: options.pair,
-            topics: encodeEventTopics({ abi: PAIR_ABI, eventName: 'Mint', args: { sender: options.sender } }),
+            address: options.pool,
+            topics: encodeEventTopics({
+                abi: V3_POOL_ABI,
+                eventName: 'Mint',
+                args: { owner: options.owner, tickLower: -887_270, tickUpper: 887_270 }
+            }),
             data: encodeAbiParameters(
-                [{ type: 'uint256' }, { type: 'uint256' }],
-                [options.amount0, options.amount1]
+                [{ type: 'address' }, { type: 'uint128' }, { type: 'uint256' }, { type: 'uint256' }],
+                [options.owner, 5000n, options.amount0, options.amount1]
             ),
             blockNumber: BigInt(options.blockNumber),
             logIndex: options.logIndex,
@@ -230,9 +188,8 @@ export class FakeChain
     }
 
     public burn(options: {
-        pair: Address;
-        sender: Address;
-        to: Address;
+        pool: Address;
+        owner: Address;
         amount0: bigint;
         amount1: bigint;
         blockNumber: number;
@@ -241,19 +198,19 @@ export class FakeChain
     }): void
     {
         this.#push({
-            address: options.pair,
+            address: options.pool,
             topics: encodeEventTopics({
-                abi: PAIR_ABI,
+                abi: V3_POOL_ABI,
                 eventName: 'Burn',
-                args: { sender: options.sender, to: options.to }
+                args: { owner: options.owner, tickLower: -887_270, tickUpper: 887_270 }
             }),
             data: encodeAbiParameters(
-                [{ type: 'uint256' }, { type: 'uint256' }],
-                [options.amount0, options.amount1]
+                [{ type: 'uint128' }, { type: 'uint256' }, { type: 'uint256' }],
+                [5000n, options.amount0, options.amount1]
             ),
             blockNumber: BigInt(options.blockNumber),
             logIndex: options.logIndex,
-            transactionHash: options.txHash ?? '0xf3'
+            transactionHash: options.txHash ?? '0xf5'
         });
     }
 

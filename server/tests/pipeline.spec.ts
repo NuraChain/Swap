@@ -21,12 +21,17 @@ const DEPLOYMENT: Deployment = {
     startBlock: 0,
     contracts:
     {
-        factory: '0x00000000000000000000000000000000000000f0' as Address,
-        router: '0x00000000000000000000000000000000000000f1' as Address,
         wnura: '0x00000000000000000000000000000000000000b0' as Address,
         multicall3: '0x00000000000000000000000000000000000000f2' as Address
     },
-    tokens: []
+    tokens: [],
+    v3: {
+        factory: '0x0000000000000000000000000000000000000031',
+        swapRouter: '0x0000000000000000000000000000000000000032',
+        quoter: '0x0000000000000000000000000000000000000033',
+        positionManager: '0x0000000000000000000000000000000000000034',
+        tickLens: '0x0000000000000000000000000000000000000035'
+    }
 };
 
 const open: IndexerDb[] = [];
@@ -56,7 +61,6 @@ function edge(options: EdgeOptions = {}): { handler: WebHandler; csp: string }
     const api = createApi({
         db,
         deployment: DEPLOYMENT,
-        swapFeeBps: 25,
         externalPrices: () => new Map(),
         status: () => ({ headBlock: 1, indexedBlock: 1 })
     });
