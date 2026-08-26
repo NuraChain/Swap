@@ -85,6 +85,10 @@ let activeProvider: Eip1193Provider | null = null;
 let discoveryStarted = false;
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 let watchedTokens: Address[] = [];
+// Providers already bound to accountsChanged/chainChanged/disconnect. A second
+// connect of the same wallet must not stack a second set of listeners - each
+// would fire its own refresh and, worse, its own disconnect() on one event.
+const boundProviders = new WeakSet<Eip1193Provider>();
 
 export const walletOptions = optionsSignal;
 export const account = accountSignal;
@@ -176,6 +180,15 @@ function startPolling(): void
     }, 5000);
 }
 
+function stopPolling(): void
+{
+    if (pollTimer !== null)
+    {
+        clearInterval(pollTimer);
+        pollTimer = null;
+    }
+}
+
 export function watchTokens(tokens: Address[]): void
 {
     watchedTokens = tokens;
@@ -234,6 +247,11 @@ function adoptAccount(provider: Eip1193Provider, address: Address, info: Deploym
 
 function bindProviderEvents(provider: Eip1193Provider): void
 {
+    if (boundProviders.has(provider))
+    {
+        return;
+    }
+    boundProviders.add(provider);
     provider.on?.('accountsChanged', (accounts: never) =>
     {
         const list = accounts as unknown as string[];
@@ -262,11 +280,16 @@ function bindProviderEvents(provider: Eip1193Provider): void
     provider.on?.('disconnect', () => disconnect());
 }
 
-export async function connectInjected(option: WalletOption): Promise<void>
+/**
+ * Connects an announced wallet. Resolves FALSE when nothing connected - a
+ * declined prompt, a locked wallet, an unreachable api - so a caller can keep
+ * its sheet open instead of stranding the user back at the page.
+ */
+export async function connectInjected(option: WalletOption): Promise<boolean>
 {
     if (option.provider === null)
     {
-        return;
+        return false;
     }
     // The wallet prompt goes FIRST, while the click's user activation is still
     // live. Awaiting anything before it - the deployment fetch used to sit here -
@@ -293,13 +316,13 @@ export async function connectInjected(option: WalletOption): Promise<void>
         {
             pushToast('error', t().wallet.connectFailed);
         }
-        return;
+        return false;
     }
     if (accounts.length === 0)
     {
         // A locked wallet answers an empty list rather than rejecting.
         pushToast('error', t().wallet.connectFailed);
-        return;
+        return false;
     }
     // The deployment still has to load - it names the chain the client is built
     // for - it just no longer stands between the click and the wallet.
@@ -311,7 +334,7 @@ export async function connectInjected(option: WalletOption): Promise<void>
     catch
     {
         pushToast('error', t().errors.apiUnreachable);
-        return;
+        return false;
     }
     const chainIdHex = await option.provider.request({ method: 'eth_chainId' }) as string;
     adoptAccount(option.provider, accounts[0] as Address, info);
@@ -321,6 +344,7 @@ export async function connectInjected(option: WalletOption): Promise<void>
     bindProviderEvents(option.provider);
     startPolling();
     void refreshBalances();
+    return true;
 }
 
 // Used by the dev wallet module (dev builds only) to install a ready client.
@@ -345,6 +369,9 @@ export function disconnect(): void
     setBalances({});
     setNativeBalance(0n);
     writeSession(null);
+    // The 5s poll has nothing to refresh without an account; leaving it running
+    // would tick forever on a page whose owner already signed out.
+    stopPolling();
 }
 
 export function onRightChain(): boolean

@@ -27,8 +27,13 @@ export default component WalletModal(props: { onClose: () => void })
 {
     const connect = async (option: WalletOption): Promise<void> =>
     {
-        await connectInjected(option);
-        props.onClose();
+        // A failed attempt (declined prompt, locked wallet, api down) keeps the
+        // sheet open: closing it would strand the user back on the page with a
+        // toast and no way forward but finding this modal again.
+        if (await connectInjected(option))
+        {
+            props.onClose();
+        }
     };
 
     derived detected = walletOptions().map((option): Row =>
