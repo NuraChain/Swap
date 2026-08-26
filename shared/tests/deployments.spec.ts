@@ -146,24 +146,20 @@ describe.each(committedChainIds())('the committed artifact for chain %i', (chain
         expect(listed).toBe(true);
     });
 
-    it('either omits V3 or gives it a complete, well-formed address set', () =>
+    it('gives the V3 contracts a complete, well-formed address set', () =>
     {
         const v3 = deployment.v3;
-        if (v3 === undefined || v3 === null)
-        {
-            return;
-        }
+        expect(v3, 'a deployment without V3 cannot serve this app').toBeDefined();
         expect(Object.keys(v3).sort()).toEqual(['factory', 'positionManager', 'quoter', 'swapRouter', 'tickLens']);
         for (const [name, address] of Object.entries(v3))
         {
             expect(address, name).toMatch(ADDRESS);
             expect(BigInt(address), `v3.${ name } must not be the zero address`).not.toBe(0n);
         }
-        // The V3 factory is a different contract from the V2 one; sharing an
-        // address would mean the app quotes V3 against a V2 factory.
-        expect(v3.factory.toLowerCase()).not.toBe(deployment.contracts.factory.toLowerCase());
-        expect(v3.swapRouter.toLowerCase()).not.toBe(deployment.contracts.router.toLowerCase());
         expect(new Set(Object.values(v3).map((address) => address.toLowerCase())).size).toBe(5);
+        // The wrapper is a token, not an exchange contract; sharing its address
+        // would mean approvals and swaps land on an ERC-20.
+        expect(v3.swapRouter.toLowerCase()).not.toBe(deployment.contracts.wnura.toLowerCase());
     });
 
     it('holds no unexpected top-level keys', () =>
