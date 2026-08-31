@@ -16,7 +16,11 @@ const config: ReturnType<typeof defineConfig> = defineConfig([
         '**/node_modules/**',
         '**/build/**',
         // Generated .azeroth type mirror (the Vite plugin's emitDeclarations output).
-        '**/.azeroth/**'
+        '**/.azeroth/**',
+        // The Nura Wallet deep-link connector: a VERBATIM copy of the wallet
+        // repository's sdk/nura-connector.js, served as-is. Linting it would only
+        // invite restyling a file whose next update overwrites it wholesale.
+        '**/public/nura-connector.js'
     ]),
     js.configs.recommended,
     tseslint.configs.recommended,
