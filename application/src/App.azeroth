@@ -5,6 +5,7 @@ import { routes } from './routes.ts';
 import { ensureDeployment } from './lib/chain.ts';
 import { currentLang, t } from './lib/i18n.ts';
 import { currentTheme } from './lib/theme.ts';
+import { startNuraConnector } from './lib/wallet/nura.ts';
 
 import Footer from './components/layout/footer.component.azeroth';
 import Header from './components/layout/header.component.azeroth';
@@ -29,7 +30,14 @@ export default component App(props: { url?: string; handoff?: LoaderHandoff })
         // pages that need the deployment await it themselves and show their own
         // empty state, and Connect says it in words - swallowing the rejection
         // keeps a down api half out of the console as an unhandled one.
-        void ensureDeployment().catch(() => undefined);
+        //
+        // The Nura Wallet connector hangs off the SAME fetch rather than its own:
+        // it announces the chain id it will answer `eth_chainId` with, and that
+        // id belongs to the deployment. No artifact means no connector - and
+        // nothing to connect to either.
+        void ensureDeployment()
+            .then((info) => { startNuraConnector(info.chainId); })
+            .catch(() => undefined);
     }
 
     <RouterProvider router={ router }>
