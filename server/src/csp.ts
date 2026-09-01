@@ -60,7 +60,8 @@ export function buildCsp(input: CspInput): string
         // geometry. Style injection cannot move funds the way script injection can,
         // so this is the one relaxation.
         'style-src': "'self' 'unsafe-inline'",
-        // Wallet icons arrive as data: URIs over EIP-6963, and the favicon is inline SVG.
+        // Wallet icons arrive as data: URIs over EIP-6963. Everything else the page
+        // draws - the app icons, the sprite, the flags - is served from this origin.
         'img-src': "'self' data:",
         'font-src': "'self'",
         'connect-src': [...connect].join(' '),
