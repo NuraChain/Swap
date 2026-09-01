@@ -1,0 +1,55 @@
+{
+    "id": "/",
+    "name": "Nura Swap",
+    "short_name": "Nura Swap",
+    "description": "Swap tokens and provide liquidity on an open automated market maker. Self-custody, on-chain, in ten languages.",
+    "start_url": "/",
+    "scope": "/",
+    "display": "standalone",
+    "orientation": "any",
+    "lang": "en",
+    "dir": "ltr",
+    "categories": ["finance"],
+    "background_color": "#090d12",
+    "theme_color": "#090d12",
+    "icons": [
+        {
+            "src": "/icon.svg",
+            "sizes": "any",
+            "type": "image/svg+xml",
+            "purpose": "any"
+        },
+        {
+            "src": "/icon-192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "any"
+        },
+        {
+            "src": "/icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any"
+        },
+        {
+            "src": "/icon-maskable-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "maskable"
+        }
+    ],
+    "shortcuts": [
+        {
+            "name": "Swap",
+            "url": "/swap"
+        },
+        {
+            "name": "Liquidity",
+            "url": "/liquidity"
+        },
+        {
+            "name": "Portfolio",
+            "url": "/portfolio"
+        }
+    ]
+}
