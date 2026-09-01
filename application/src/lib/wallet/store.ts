@@ -13,6 +13,7 @@ import type { DeploymentInfo } from '../../api.ts';
 import { ERC20_ABI, chainOf, deployment, ensureDeployment, explorerTxUrl, publicClient, type Address } from '../chain.ts';
 import { t } from '../i18n.ts';
 import { classifyTxError } from '../tx-errors.ts';
+import { isHiddenWallet } from './brands.ts';
 import { pushToast, resolveToast } from '../toast.ts';
 
 export interface Eip1193Provider
@@ -121,6 +122,13 @@ export function startDiscovery(): void
     {
         const detail = (event as CustomEvent<Eip6963Detail>).detail;
         const rdns = detail.info.rdns || detail.info.uuid;
+        // Dropped here rather than in the sheet: a hidden wallet must not be
+        // listed, and must not silently restore a saved session either behind a
+        // sheet that can no longer show it.
+        if (isHiddenWallet(rdns))
+        {
+            return;
+        }
         if (optionsSignal().some((option) => option.id === rdns))
         {
             return;
