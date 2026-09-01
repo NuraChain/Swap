@@ -11,7 +11,7 @@ themes.
 [![Built with AzerothJS](https://img.shields.io/badge/built%20with-AzerothJS-5fb3e8)](https://github.com/AzerothJS/AzerothJS)
 [![Node >= 24](https://img.shields.io/badge/node-%3E%3D24-brightgreen)](https://nodejs.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](#license)
-[![Version 1.2.0](https://img.shields.io/badge/version-1.2.0-5fb3e8)](CHANGELOG.md)
+[![Version 1.2.1](https://img.shields.io/badge/version-1.2.1-5fb3e8)](CHANGELOG.md)
 
 </div>
 
@@ -259,7 +259,7 @@ money without an independent audit.
 ## Changelog
 
 Every notable change is in [CHANGELOG.md](CHANGELOG.md); the current release
-is 1.2.0.
+is 1.2.1.
 
 ## License
 
