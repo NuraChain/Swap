@@ -294,6 +294,33 @@ describe('discovery and session restore', () =>
         expect(store.walletOptions().map((option) => option.id)).toEqual(['io.one', 'io.two']);
     });
 
+    // The hidden list is the one gate on discovery, so it is worth stating what
+    // it costs: an announced wallet that never reaches the store cannot be
+    // listed, connected, or restored. A leak here puts the wallet back in the
+    // sheet, where it is connectable again.
+    it('never admits a hidden wallet, however it announces itself', async () =>
+    {
+        const { store } = await loadStore();
+        store.startDiscovery();
+        announce(fakeProvider(), 'com.coinbase.wallet');
+        announce(fakeProvider(), 'com.okex.wallet');
+        announce(fakeProvider(), 'com.okx.wallet');
+        announce(fakeProvider(), 'io.one');
+        expect(store.walletOptions().map((option) => option.id)).toEqual(['io.one']);
+    });
+
+    it('does not restore a session saved for a wallet that is now hidden', async () =>
+    {
+        window.localStorage.setItem('nuraswap.wallet', 'com.coinbase.wallet');
+        const { store } = await loadStore();
+        const provider = fakeProvider({ accounts: [ALICE] });
+        store.startDiscovery();
+        announce(provider, 'com.coinbase.wallet');
+        await settled();
+        expect(store.account()).toBeNull();
+        expect(provider.calls).not.toContain('eth_accounts');
+    });
+
     it('does not list the same wallet twice when it announces twice', async () =>
     {
         const { store } = await loadStore();

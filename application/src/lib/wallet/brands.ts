@@ -25,6 +25,31 @@ export interface WalletBrand
     install: string;
 }
 
+/**
+ * The one exception to "any announced wallet connects": wallets this site does
+ * not offer, by rdns. A wallet named here is not listed, not restored from a
+ * saved session, and not reachable through the sheet at all - dropping it from
+ * discovery rather than from the markup is what keeps those three answers the
+ * same one.
+ *
+ * Keep the list short. Every entry costs a visitor who has that wallet and now
+ * has nowhere to click, so it is a deliberate product choice each time, not
+ * housekeeping.
+ */
+export const HIDDEN_WALLETS: ReadonlySet<string> = new Set([
+    'com.coinbase.wallet',
+    // OKX ships under both spellings depending on the build. Naming one and not
+    // the other hides the wallet on some machines and leaves it on others, and
+    // the failure is invisible from here - so name both.
+    'com.okex.wallet',
+    'com.okx.wallet'
+]);
+
+export function isHiddenWallet(rdns: string): boolean
+{
+    return HIDDEN_WALLETS.has(rdns);
+}
+
 export const WALLET_BRANDS: WalletBrand[] = [
     {
         rdns: 'io.metamask',
