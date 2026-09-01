@@ -7,6 +7,23 @@ Notable changes to Nura Swap. The format follows
 The exchange contracts live in [their own repository](https://github.com/NuraChain/Swap);
 this changelog covers the application, the indexer, and the shared maths.
 
+## [1.2.1] - 2026-09-01
+
+### Fixed
+
+- **The connect sheet shows Nura Wallet's own mark.** The connector announces
+  the neutral placeholder it ships when the host passes no icon, so the one
+  wallet this chain ships was the only row wearing a glyph that is not its
+  logo. The wallet's logo is served from `public/wallets` and handed to the
+  connector at startup.
+
+### Removed
+
+- **Coinbase Wallet and OKX Wallet.** Neither was in the roster: both arrived
+  by EIP-6963 announcement, which discovery admitted like any other wallet.
+  They are dropped at discovery rather than in the markup, so a hidden wallet
+  is not listed, not connectable, and not restored from a saved session either.
+
 ## [1.2.0] - 2026-08-26
 
 ### Removed
