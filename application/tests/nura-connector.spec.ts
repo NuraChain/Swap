@@ -62,7 +62,7 @@ describe('nura wallet connector', () =>
         const init = vi.fn();
         host.NuraConnector = { init };
         scripts[0].dispatchEvent(new Event('load'));
-        expect(init).toHaveBeenCalledWith({ chainId: 1020 });
+        expect(init).toHaveBeenCalledWith({ chainId: 1020, icon: '/wallets/nura.png' });
     });
 
     it('loads the connector once however often it is asked', async () =>
@@ -81,7 +81,7 @@ describe('nura wallet connector', () =>
         host.NuraConnector = { init };
         const { startNuraConnector } = await loadLoader();
         startNuraConnector(1020);
-        expect(init).toHaveBeenCalledWith({ chainId: 1020 });
+        expect(init).toHaveBeenCalledWith({ chainId: 1020, icon: '/wallets/nura.png' });
         expect(scripts).toHaveLength(0);
     });
 

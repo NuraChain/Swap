@@ -19,6 +19,16 @@
 
 const CONNECTOR_SRC = '/nura-connector.js';
 
+// Nura Wallet's own mark, a verbatim copy of `src/assets/image/logo.png` from
+// the wallet repository - the same rule as the connector: re-copy to update, do
+// not redraw it here. The connector ships a neutral placeholder for a host that
+// passes no icon, so without this the one wallet this chain ships is the only
+// row in the connect sheet wearing a glyph that is not its logo.
+//
+// A raster, not a vector, because the wallet has no vector to copy; 128px for a
+// 24px slot covers every device pixel ratio the sheet is read at.
+const CONNECTOR_ICON = '/wallets/nura.png';
+
 /**
  * What the connector puts on `window`, plus what the wallet's OWN browser puts
  * there. Read through a cast rather than a global `Window` augmentation: these
@@ -58,7 +68,7 @@ export function startNuraConnector(chainId: number): void
     }
     if (host.NuraConnector !== undefined)
     {
-        host.NuraConnector.init({ chainId });
+        host.NuraConnector.init({ chainId, icon: CONNECTOR_ICON });
         return;
     }
     const script = document.createElement('script');
@@ -69,7 +79,7 @@ export function startNuraConnector(chainId: number): void
     // list this one, and the browser has already said so in the console.
     script.addEventListener('load', () =>
     {
-        host.NuraConnector?.init({ chainId });
+        host.NuraConnector?.init({ chainId, icon: CONNECTOR_ICON });
     });
     document.head.appendChild(script);
 }

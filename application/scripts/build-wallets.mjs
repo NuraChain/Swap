@@ -4,6 +4,11 @@
 // assets; the theme never tints them.
 //
 // Rerun after changing WALLETS; the output is committed.
+//
+// public/wallets/nura.png is NOT from here: the package carries no Nura Wallet
+// entry, so that one is copied from the wallet repository by hand - see
+// CONNECTOR_ICON in src/lib/wallet/nura.ts. This script only writes WALLETS and
+// leaves the rest of the directory alone.
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
