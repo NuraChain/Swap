@@ -7,7 +7,7 @@ Notable changes to Nura Swap. The format follows
 The exchange contracts live in [their own repository](https://github.com/NuraChain/Swap);
 this changelog covers the application, the indexer, and the shared maths.
 
-## [Unreleased]
+## [1.3.0] - 2026-09-03
 
 ### Added
 
