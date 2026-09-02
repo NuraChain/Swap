@@ -42,7 +42,8 @@ never reaches an effect.
 
 Routes are declared once in `src/routes.ts` and shared by the client router, the
 SSR entry and the server. The landing page prerenders (`render: 'static'`); the
-trading pages are `render: 'client'` and lazy.
+trading pages are `render: 'client'` and lazy. The whitepaper page is lazy AND
+static: prose in two languages that no other page should carry.
 
 **SSR safety matters**: the prerender evaluates every page module, so nothing may
 touch `window`/`localStorage` at module scope. `tests/ssr-safety.spec.ts` is the
@@ -88,7 +89,15 @@ market/   add-chain-button add-v3-liquidity amount-field
           price-chart token-icon token-select tx-list v3-positions-grid
           wallet-menu wallet-modal
 layout/   footer header indexer-banner language-modal
+whitepaper/ whitepaper-block
 ```
+
+The whitepaper is data, not markup: `src/lib/whitepaper/{model,en,fa,index}.ts`.
+The page renders it, and `scripts/build-whitepaper-pdf.mjs` renders the same
+data to `public/whitepaper/nura-swap-whitepaper-<lang>.pdf` through a headless
+Chrome (rerun it after editing the text; the PDFs are committed). Persian mirrors
+the English outline exactly - `tests/whitepaper.spec.ts` holds them to it - and
+the other eight languages read the English text and say so.
 
 Read the nearest neighbours before adding anything. No new UI framework, no
 component library, no CSS-in-JS. No hex colours in components.

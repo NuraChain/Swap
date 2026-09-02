@@ -1,0 +1,142 @@
+import type { Block, Steps, Table } from '../../lib/whitepaper/model.ts';
+
+// One block of the whitepaper, by kind. The page hands this every block of
+// every section; the print script (scripts/build-whitepaper-pdf.mjs) renders the
+// same data its own way. A kind this component does not know renders nothing,
+// on purpose - a new kind is added to model.ts first and to both renderers after.
+
+interface Cell
+{
+    key: number;
+    text: string;
+    /** Code, an address or a figure: mono face, kept left-to-right in both directions. */
+    mono: boolean;
+}
+
+// Cells carry their own column flag so the row can be a plain <For>.
+function cellsOf(block: Table, row: string[]): Cell[]
+{
+    return row.map((text, index) => ({ key: index, text, mono: block.mono.includes(index) }));
+}
+
+interface Step
+{
+    key: number;
+    number: string;
+    title: string;
+    text: string;
+}
+
+function numbered(block: Steps): Step[]
+{
+    return block.items.map((item, index) => ({ key: index, number: String(index + 1).padStart(2, '0'), ...item }));
+}
+
+const CELL = 'px-3.5 py-2.5 leading-relaxed';
+const CELL_MONO = 'px-3.5 py-2.5 font-mono text-[13px] leading-relaxed';
+
+export default component WhitepaperBlock(props: { block: Block })
+{
+    derived paragraph = props.block.kind === 'p' ? props.block : null;
+    derived heading = props.block.kind === 'h3' ? props.block : null;
+    derived bullets = props.block.kind === 'list' && !props.block.ordered ? props.block : null;
+    derived numbers = props.block.kind === 'list' && props.block.ordered ? props.block : null;
+    derived grid = props.block.kind === 'table' ? props.block : null;
+    derived note = props.block.kind === 'callout' ? props.block : null;
+    derived stepList = props.block.kind === 'steps' ? props.block : null;
+    derived factList = props.block.kind === 'facts' ? props.block : null;
+    derived math = props.block.kind === 'formula' ? props.block : null;
+
+    <div>
+        <Show when={ paragraph } let={ block }>
+            <p class="mt-4 text-base leading-7 text-ink/85">{ block.text }</p>
+        </Show>
+
+        <Show when={ heading } let={ block }>
+            <h4 class="font-display mt-8 text-base font-medium">{ block.text }</h4>
+        </Show>
+
+        <Show when={ bullets } let={ block }>
+            <ul class="mt-4 list-disc space-y-2 ps-5 text-base leading-7 text-ink/85 marker:text-ice">
+                <For each={ block.items } key={ (item, index) => `${ index }-${ item.length }` } let={ item }>
+                    <li class="ps-1">{ item }</li>
+                </For>
+            </ul>
+        </Show>
+
+        <Show when={ numbers } let={ block }>
+            <ol class="mt-4 list-decimal space-y-2 ps-5 text-base leading-7 text-ink/85 marker:font-mono marker:text-ice">
+                <For each={ block.items } key={ (item, index) => `${ index }-${ item.length }` } let={ item }>
+                    <li class="ps-1">{ item }</li>
+                </For>
+            </ol>
+        </Show>
+
+        <Show when={ grid } let={ block }>
+            <div class="mt-5 overflow-x-auto rounded-xl border border-line">
+                <table class="w-full text-sm">
+                    <thead class="bg-panel">
+                        <tr>
+                            <For each={ block.head } key={ (cell, index) => `${ index }-${ cell }` } let={ cell }>
+                                <th scope="col" class="px-3.5 py-2.5 text-start text-xs font-medium text-faint">{ cell }</th>
+                            </For>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-line">
+                        <For each={ block.rows } key={ (row, index) => `${ index }-${ row[0] }` } let={ row }>
+                            <tr class="align-top">
+                                <For each={ cellsOf(block, row) } key={ (cell) => cell.key } let={ cell }>
+                                    <td class={ cell.mono ? CELL_MONO : CELL } data-ltr={ cell.mono ? 'true' : undefined }>{ cell.text }</td>
+                                </For>
+                            </tr>
+                        </For>
+                    </tbody>
+                </table>
+            </div>
+        </Show>
+
+        <Show when={ note } let={ block }>
+            <aside class="mt-5 rounded-xl border border-line border-s-2 border-s-ice bg-panel p-5">
+                <p class="font-medium">{ block.title }</p>
+                <p class="mt-2 text-sm leading-relaxed text-faint">{ block.text }</p>
+            </aside>
+        </Show>
+
+        <Show when={ stepList } let={ block }>
+            <ol class="mt-5 grid gap-4 sm:grid-cols-2">
+                <For each={ numbered(block) } key={ (step) => step.key } let={ step }>
+                    <li class="card p-5">
+                        <span class="font-mono text-xs text-ice" data-ltr>{ step.number }</span>
+                        {/* h4: a step list sits directly under its section's h3, so the
+                            outline steps down one level rather than two. */}
+                        <h4 class="mt-2 text-base font-medium">{ step.title }</h4>
+                        <p class="mt-2 text-sm leading-relaxed text-faint">{ step.text }</p>
+                    </li>
+                </For>
+            </ol>
+        </Show>
+
+        <Show when={ factList } let={ block }>
+            <dl class="mt-5 grid gap-3 sm:grid-cols-2">
+                <For each={ block.items } key={ (fact) => fact.label } let={ fact }>
+                    <div class="rounded-xl border border-line bg-panel p-3.5">
+                        <dt class="eyebrow">{ fact.label }</dt>
+                        <dd
+                            class={ fact.mono ? 'mt-1.5 break-all font-mono text-sm text-val' : 'mt-1.5 text-sm leading-relaxed' }
+                            data-ltr={ fact.mono ? 'true' : undefined }
+                        >
+                            { fact.value }
+                        </dd>
+                    </div>
+                </For>
+            </dl>
+        </Show>
+
+        <Show when={ math } let={ block }>
+            <figure class="mt-5">
+                <pre class="overflow-x-auto rounded-xl border border-line bg-panel p-4 font-mono text-sm" data-ltr>{ block.text }</pre>
+                <figcaption class="mt-2 text-sm leading-relaxed text-faint">{ block.caption }</figcaption>
+            </figure>
+        </Show>
+    </div>
+}

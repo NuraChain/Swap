@@ -1,0 +1,226 @@
+import { currentLang, langInfo, t } from '../lib/i18n.ts';
+import { WHITEPAPER_PDFS, whitepaper } from '../lib/whitepaper/index.ts';
+import { sectionsOf } from '../lib/whitepaper/model.ts';
+import type { Block, Part } from '../lib/whitepaper/model.ts';
+
+import Icon from '../components/ui/icon.component.azeroth';
+import Shamseh from '../components/ui/shamseh.component.azeroth';
+import WhitepaperBlock from '../components/whitepaper/whitepaper-block.component.azeroth';
+
+// Prerendered static, like the landing page: the text is data, so the build
+// needs nothing live. The language signal picks the document; a language with
+// no translation of its own reads the English one and says so above the
+// abstract. The PDF at the bottom is the same data laid out for print.
+
+interface Entry
+{
+    id: string;
+    number: string;
+    title: string;
+}
+
+interface NumberedSection
+{
+    id: string;
+    number: string;
+    title: string;
+    blocks: Block[];
+}
+
+interface NumberedPart
+{
+    id: string;
+    label: string;
+    title: string;
+    lede: string;
+    sections: NumberedSection[];
+}
+
+// Sections count across parts - '12' is the twelfth section of the paper, not
+// the second of Part II - so the contents and the headings share one numbering.
+function numberParts(parts: Part[]): NumberedPart[]
+{
+    let count = 0;
+    return parts.map((part) => ({
+        ...part,
+        sections: part.sections.map((section) =>
+        {
+            count += 1;
+            return { ...section, number: String(count).padStart(2, '0') };
+        })
+    }));
+}
+
+const TOC_LINK = 'flex gap-2.5 rounded-lg px-2 py-1 text-sm text-faint hover:text-ink';
+const TOC_LINK_ACTIVE = 'flex gap-2.5 rounded-lg px-2 py-1 text-sm text-ice';
+
+export default component WhitepaperPage()
+{
+    derived resolved = whitepaper(currentLang());
+    derived doc = resolved.doc;
+    derived translated = resolved.lang === currentLang();
+    derived parts = numberParts(doc.parts);
+    derived contents: Entry[] = sectionsOf(doc).map(({ number, section }) =>
+        ({ id: section.id, number: String(number).padStart(2, '0'), title: section.title }));
+    derived pdf = WHITEPAPER_PDFS.find((entry) => entry.lang === resolved.lang) ?? WHITEPAPER_PDFS[0];
+    derived otherPdfs = WHITEPAPER_PDFS.filter((entry) => entry.lang !== pdf.lang);
+
+    // The contents list follows the reader: the section under the top of the
+    // viewport is the highlighted one. Browser-only, and optional - the list is
+    // plain anchors without it.
+    state active = '';
+    let observer: IntersectionObserver | null = null;
+
+    mount
+    {
+        if (typeof IntersectionObserver !== 'undefined')
+        {
+            observer = new IntersectionObserver((entries) =>
+            {
+                for (const entry of entries)
+                {
+                    if (entry.isIntersecting)
+                    {
+                        active = entry.target.id;
+                    }
+                }
+            }, { rootMargin: '-15% 0px -75% 0px' });
+            for (const section of document.querySelectorAll('[data-whitepaper-section]'))
+            {
+                observer.observe(section);
+            }
+        }
+    }
+
+    cleanup
+    {
+        observer?.disconnect();
+    }
+
+    <div>
+        <section class="relative overflow-hidden border-b border-line">
+            <div class="pointer-events-none absolute -top-40 -end-40 h-[560px] w-[560px] rounded-full bg-glow blur-3xl" />
+            <Shamseh
+                size={ 480 }
+                strokeWidth={ 0.55 }
+                class="animate-shamseh pointer-events-none absolute -top-24 -end-40 text-ice opacity-30 [mask-image:radial-gradient(closest-side,black_35%,transparent_78%)]"
+            />
+            <div class="relative mx-auto max-w-6xl px-4 pb-14 pt-16 sm:pb-20 sm:pt-24">
+                <p class="eyebrow">{ doc.meta.version } · { doc.meta.date }</p>
+                <h1 class="font-display mt-4 text-3xl font-bold leading-snug sm:text-5xl sm:leading-tight">
+                    { doc.meta.title }
+                </h1>
+                <p class="font-display mt-2 text-xl text-ice sm:text-2xl">{ doc.meta.subtitle }</p>
+                <p class="mt-6 max-w-xl text-base leading-relaxed text-faint">{ doc.meta.covers }</p>
+                <div class="mt-8 flex flex-wrap gap-3">
+                    <a href={ pdf.href } download={ pdf.fileName } class="btn-ice px-6 py-3 text-sm">
+                        <Icon name="download" size={ 16 } />
+                        { t().whitepaper.download }
+                    </a>
+                    <a href="#abstract" class="btn-ghost px-6 py-3 text-sm">{ t().whitepaper.read }</a>
+                </div>
+            </div>
+        </section>
+
+        <div class="mx-auto max-w-6xl px-4 py-10 sm:py-14 lg:grid lg:grid-cols-[15rem_minmax(0,1fr)] lg:gap-14">
+            <nav aria-label={ t().whitepaper.contents } class="mb-8 lg:mb-0">
+                <details class="card p-4 lg:hidden">
+                    <summary class="eyebrow">{ t().whitepaper.contents }</summary>
+                    <ol class="mt-3 space-y-1">
+                        <For each={ contents } key={ (entry) => entry.id } let={ entry }>
+                            <li>
+                                <a href={ `#${ entry.id }` } class={ TOC_LINK }>
+                                    <span class="font-mono text-xs leading-5 text-ice" data-ltr>{ entry.number }</span>
+                                    <span>{ entry.title }</span>
+                                </a>
+                            </li>
+                        </For>
+                    </ol>
+                </details>
+                {/* Taller than a short viewport: the list scrolls inside its sticky box
+                    rather than pinning its tail out of reach. */}
+                <div class="hidden lg:sticky lg:top-24 lg:block lg:max-h-[calc(100vh-7rem)] lg:overflow-y-auto">
+                    <p class="eyebrow">{ t().whitepaper.contents }</p>
+                    <ol class="mt-3 space-y-0.5">
+                        <For each={ contents } key={ (entry) => entry.id } let={ entry }>
+                            <li>
+                                <a
+                                    href={ `#${ entry.id }` }
+                                    class={ entry.id === active ? TOC_LINK_ACTIVE : TOC_LINK }
+                                    aria-current={ entry.id === active ? 'true' : undefined }
+                                >
+                                    <span class="font-mono text-xs leading-5 text-ice" data-ltr>{ entry.number }</span>
+                                    <span>{ entry.title }</span>
+                                </a>
+                            </li>
+                        </For>
+                    </ol>
+                </div>
+            </nav>
+
+            <article class="min-w-0 max-w-3xl">
+                <Show when={ !translated }>
+                    <p class="mb-6 rounded-xl border border-line bg-panel px-4 py-3 text-sm leading-relaxed text-faint">
+                        { t().whitepaper.fallback }
+                    </p>
+                </Show>
+
+                <section id="abstract" class="card-pop scroll-mt-24 p-6 sm:p-8">
+                    <h2 class="font-display text-xl font-medium">{ doc.meta.abstractTitle }</h2>
+                    <For each={ doc.abstract } key={ (text, index) => `${ index }-${ text.length }` } let={ text }>
+                        <p class="mt-4 text-base leading-7 text-ink/85">{ text }</p>
+                    </For>
+                </section>
+
+                <For each={ parts } key={ (part) => part.id } let={ part }>
+                    <div class="mt-16">
+                        <p class="eyebrow">{ part.label }</p>
+                        <h2 class="font-display mt-3 text-2xl font-medium sm:text-3xl">{ part.title }</h2>
+                        <p class="mt-3 text-base leading-relaxed text-faint">{ part.lede }</p>
+                        <For each={ part.sections } key={ (section) => section.id } let={ section }>
+                            <section id={ section.id } data-whitepaper-section="true" class="mt-12 scroll-mt-24 border-t border-line pt-8">
+                                <span class="font-mono text-xs text-ice" data-ltr>{ section.number }</span>
+                                <h3 class="font-display mt-2 text-xl font-medium">{ section.title }</h3>
+                                <For each={ section.blocks } key={ (block, index) => `${ index }-${ block.kind }` } let={ block }>
+                                    {/* A <For> row has to be one host element; the block's own
+                                        control flow lives inside the component. */}
+                                    <div>
+                                        <WhitepaperBlock block={ block } />
+                                    </div>
+                                </For>
+                            </section>
+                        </For>
+                    </div>
+                </For>
+
+                <section class="mt-16 rounded-xl border border-line bg-panel p-5">
+                    <h2 class="eyebrow">{ doc.meta.disclaimerTitle }</h2>
+                    <p class="mt-2 text-sm leading-relaxed text-faint">{ doc.meta.disclaimer }</p>
+                </section>
+
+                <section id="download" class="card-pop mt-10 scroll-mt-24 p-6 sm:p-8">
+                    <Shamseh size={ 28 } class="text-ice" />
+                    <h2 class="font-display mt-4 text-xl font-medium">{ t().whitepaper.downloadTitle }</h2>
+                    <p class="mt-2 max-w-xl text-sm leading-relaxed text-faint">{ t().whitepaper.downloadBody }</p>
+                    <div class="mt-6 flex flex-wrap items-center gap-3">
+                        <a
+                            href={ pdf.href }
+                            download={ pdf.fileName }
+                            class="btn-ice px-6 py-3 text-sm"
+                            data-testid="whitepaper-download"
+                        >
+                            <Icon name="download" size={ 16 } />
+                            { t().whitepaper.download }
+                            <span class="opacity-70">· { langInfo(pdf.lang).native }</span>
+                        </a>
+                        <For each={ otherPdfs } key={ (entry) => entry.lang } let={ entry }>
+                            <a href={ entry.href } download={ entry.fileName } class="btn-ghost px-5 py-3 text-sm">
+                                { t().whitepaper.alsoIn } { langInfo(entry.lang).native }
+                            </a>
+                        </For>
+                    </div>
+                </section>
+            </article>
+        </div>
+    </div>
+}

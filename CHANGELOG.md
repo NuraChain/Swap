@@ -7,6 +7,21 @@ Notable changes to Nura Swap. The format follows
 The exchange contracts live in [their own repository](https://github.com/NuraChain/Swap);
 this changelog covers the application, the indexer, and the shared maths.
 
+## [Unreleased]
+
+### Added
+
+- **A whitepaper page, with a PDF to download.** `/whitepaper` explains the
+  exchange - Nura Chain, concentrated liquidity, the life of a swap, providing
+  liquidity, fee tiers, architecture, security - and sets out the business
+  plan: market, value capture through the protocol fee, go-to-market, roadmap,
+  governance, metrics and risks, with the contract addresses and a glossary as
+  appendices. Written in English and Persian; the other eight languages read
+  the English text and say so. The page is prerendered like the landing page
+  and linked from the header, the drawer and the footer. The same data is laid
+  out for print by `application/scripts/build-whitepaper-pdf.mjs` - A4, cover,
+  contents, page numbers - and the two PDFs ship under `public/whitepaper`.
+
 ## [1.2.1] - 2026-09-01
 
 ### Fixed

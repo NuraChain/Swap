@@ -38,6 +38,7 @@ export default component Footer()
                     <li><Link to="/swap" class="text-faint hover:text-ice">{ t().nav.swap }</Link></li>
                     <li><Link to="/liquidity" class="text-faint hover:text-ice">{ t().nav.liquidity }</Link></li>
                     <li><Link to="/portfolio" class="text-faint hover:text-ice">{ t().nav.portfolio }</Link></li>
+                    <li><Link to="/whitepaper" class="text-faint hover:text-ice">{ t().nav.whitepaper }</Link></li>
                 </ul>
             </nav>
             {/* Named in text, not by logo alone: a mark nobody recognises is a

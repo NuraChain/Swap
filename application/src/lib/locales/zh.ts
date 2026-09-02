@@ -6,6 +6,7 @@ export const zh: Dict = {
         swap: '兑换',
         liquidity: '流动性',
         portfolio: '资产',
+        whitepaper: '白皮书',
         menu: '菜单',
         home: 'Nura Swap'
     },
@@ -74,6 +75,16 @@ export const zh: Dict = {
         product: '产品',
         community: '社区',
         rights: 'Nura Swap。合约不可更改；本站只是通往它们的一扇窗口。'
+    },
+    whitepaper:
+    {
+        contents: '目录',
+        read: '在线阅读',
+        download: '下载 PDF',
+        downloadTitle: '随身携带白皮书',
+        downloadBody: '同一份文档的打印版：A4 纸张，含封面、目录和页码。',
+        alsoIn: '其他语言：',
+        fallback: '本文档以英文和波斯文撰写；当前显示英文版本。'
     },
     wallet:
     {

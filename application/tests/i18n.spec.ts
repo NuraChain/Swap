@@ -242,7 +242,7 @@ describe('the English source dictionary', () =>
     {
         // If this ever stops being true the parity tests above are meaningless.
         expect(Object.keys(en).sort()).toEqual([
-            'common', 'errors', 'footer', 'landing', 'liquidity', 'nav', 'portfolio', 'swap', 'v3', 'wallet'
+            'common', 'errors', 'footer', 'landing', 'liquidity', 'nav', 'portfolio', 'swap', 'v3', 'wallet', 'whitepaper'
         ]);
     });
 

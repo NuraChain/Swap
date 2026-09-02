@@ -6,6 +6,7 @@ export const ar: Dict = {
         swap: 'مبادلة',
         liquidity: 'السيولة',
         portfolio: 'المحفظة',
+        whitepaper: 'الورقة البيضاء',
         menu: 'القائمة',
         home: 'نورا سواب'
     },
@@ -74,6 +75,16 @@ export const ar: Dict = {
         product: 'المنتج',
         community: 'المجتمع',
         rights: 'نورا سواب. العقود غير قابلة للتغيير؛ وهذا الموقع نافذة واحدة عليها.'
+    },
+    whitepaper:
+    {
+        contents: 'المحتويات',
+        read: 'القراءة عبر الإنترنت',
+        download: 'تنزيل PDF',
+        downloadTitle: 'خذ الورقة البيضاء معك',
+        downloadBody: 'المستند نفسه مُعدّ للطباعة: بحجم A4، مع غلاف وفهرس وترقيم للصفحات.',
+        alsoIn: 'أيضًا بـ',
+        fallback: 'هذا المستند مكتوب بالإنجليزية والفارسية؛ يُعرض النص الإنجليزي.'
     },
     wallet:
     {

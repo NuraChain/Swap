@@ -6,6 +6,7 @@ export const ru: Dict = {
         swap: 'Обмен',
         liquidity: 'Ликвидность',
         portfolio: 'Портфель',
+        whitepaper: 'Whitepaper',
         menu: 'Меню',
         home: 'Nura Swap'
     },
@@ -74,6 +75,16 @@ export const ru: Dict = {
         product: 'Продукт',
         community: 'Сообщество',
         rights: 'Nura Swap. Контракты неизменяемы; этот сайт - лишь окно к ним.'
+    },
+    whitepaper:
+    {
+        contents: 'Содержание',
+        read: 'Читать онлайн',
+        download: 'Скачать PDF',
+        downloadTitle: 'Возьмите whitepaper с собой',
+        downloadBody: 'Тот же документ, свёрстанный для печати: A4, с обложкой, содержанием и номерами страниц.',
+        alsoIn: 'Также на',
+        fallback: 'Документ написан на английском и персидском; показан английский текст.'
     },
     wallet:
     {
