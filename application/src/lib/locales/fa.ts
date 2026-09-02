@@ -6,6 +6,7 @@ export const fa: Dict = {
         swap: 'مبادله',
         liquidity: 'نقدینگی',
         portfolio: 'دارایی‌ها',
+        whitepaper: 'وایت‌پیپر',
         menu: 'منو',
         home: 'نورا سواپ'
     },
@@ -74,6 +75,16 @@ export const fa: Dict = {
         product: 'محصول',
         community: 'شبکه‌های اجتماعی',
         rights: 'نورا سواپ. قراردادها تغییرناپذیرند؛ این سایت تنها پنجره‌ای به آن‌هاست.'
+    },
+    whitepaper:
+    {
+        contents: 'فهرست',
+        read: 'خواندن آنلاین',
+        download: 'دانلود PDF',
+        downloadTitle: 'وایت‌پیپر را با خود ببرید',
+        downloadBody: 'همین سند، چیده‌شده برای چاپ: A4، با جلد، فهرست و شماره صفحه.',
+        alsoIn: 'همچنین به',
+        fallback: 'این سند به انگلیسی و فارسی نوشته شده است؛ متن انگلیسی نمایش داده می‌شود.'
     },
     wallet:
     {

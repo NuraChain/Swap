@@ -18,6 +18,7 @@ const ICONS = [
     'chevrons-left',
     'chevrons-right',
     'copy',
+    'download',
     'droplets',
     'external-link',
     'languages',

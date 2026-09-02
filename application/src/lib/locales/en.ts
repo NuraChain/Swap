@@ -8,6 +8,7 @@ export const en = {
         swap: 'Swap',
         liquidity: 'Liquidity',
         portfolio: 'Portfolio',
+        whitepaper: 'Whitepaper',
         menu: 'Menu',
         home: 'Nura Swap'
     },
@@ -76,6 +77,16 @@ export const en = {
         product: 'Product',
         community: 'Community',
         rights: 'Nura Swap. The contracts are immutable; this site is one window onto them.'
+    },
+    whitepaper:
+    {
+        contents: 'Contents',
+        read: 'Read online',
+        download: 'Download PDF',
+        downloadTitle: 'Take the whitepaper with you',
+        downloadBody: 'The same document, laid out for print: A4, with a cover, contents and page numbers.',
+        alsoIn: 'Also in',
+        fallback: 'This document is written in English and Persian; the English text is shown.'
     },
     wallet:
     {

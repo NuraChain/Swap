@@ -64,20 +64,24 @@ export default component Header()
         document.removeEventListener('keydown', onKey);
     }
 
-    const navLink = 'rounded-lg px-3 py-2 text-sm text-faint hover:text-ink [&.active]:bg-panel [&.active]:text-ice';
+    const navLink = 'rounded-lg px-2.5 py-2 text-sm text-faint hover:text-ink [&.active]:bg-panel [&.active]:text-ice';
 
     <header class="sticky top-0 z-40 border-b border-line bg-bg/95 backdrop-blur-sm">
-        <div class="mx-auto flex max-w-6xl items-center gap-2 px-4 py-3 sm:gap-6">
+        {/* gap-3, no nav gap and px-2.5 rather than 6, 1 and 3: with four nav links the bar
+            was a few pixels over at exactly 1024 with the ticker showing, the wordmark
+            truncated and the connect button wrapped. */}
+        <div class="mx-auto flex max-w-6xl items-center gap-2 px-4 py-3 sm:gap-3">
             <Link to="/" class="flex min-w-0 items-center gap-2.5 text-ink" aria-label={ t().nav.home }>
                 <Shamseh size={ 26 } class="shrink-0 text-ice" />
                 <span class="font-display truncate text-base font-bold tracking-wide max-[380px]:hidden">
                     { t().nav.home }
                 </span>
             </Link>
-            <nav class="hidden flex-1 gap-1 sm:flex">
+            <nav class="hidden flex-1 sm:flex">
                 <Link to="/swap" activeClass="active" class={ navLink }>{ t().nav.swap }</Link>
                 <Link to="/liquidity" activeClass="active" class={ navLink }>{ t().nav.liquidity }</Link>
                 <Link to="/portfolio" activeClass="active" class={ navLink }>{ t().nav.portfolio }</Link>
+                <Link to="/whitepaper" activeClass="active" class={ navLink }>{ t().nav.whitepaper }</Link>
             </nav>
             <div class="ms-auto flex items-center gap-1.5">
                 <span class="hidden lg:block">
@@ -170,6 +174,14 @@ export default component Header()
                             onClick={ closeDrawer }
                         >
                             { t().nav.portfolio }
+                        </Link>
+                        <Link
+                            to="/whitepaper"
+                            activeClass="active"
+                            class={ `${ navLink } flex min-h-11 items-center` }
+                            onClick={ closeDrawer }
+                        >
+                            { t().nav.whitepaper }
                         </Link>
                         <div class="mt-4 flex flex-col gap-2 border-t border-line pt-4">
                             <div class="flex gap-2">

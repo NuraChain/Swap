@@ -18,6 +18,7 @@ describe('ssr safety', () =>
         await expect(import('../src/pages/swap.azeroth')).resolves.toBeDefined();
         await expect(import('../src/pages/liquidity.azeroth')).resolves.toBeDefined();
         await expect(import('../src/pages/portfolio.azeroth')).resolves.toBeDefined();
+        await expect(import('../src/pages/whitepaper.azeroth')).resolves.toBeDefined();
         await expect(import('../src/lib/wallet/store.ts')).resolves.toBeDefined();
         await expect(import('../src/lib/v3.ts')).resolves.toBeDefined();
         await expect(import('../src/lib/theme.ts')).resolves.toBeDefined();

@@ -6,6 +6,7 @@ export const tr: Dict = {
         swap: 'Takas',
         liquidity: 'Likidite',
         portfolio: 'Portföy',
+        whitepaper: 'Teknik doküman',
         menu: 'Menü',
         home: 'Nura Swap'
     },
@@ -74,6 +75,16 @@ export const tr: Dict = {
         product: 'Ürün',
         community: 'Topluluk',
         rights: 'Nura Swap. Sözleşmeler değiştirilemez; bu site onlara açılan bir penceredir.'
+    },
+    whitepaper:
+    {
+        contents: 'İçindekiler',
+        read: 'Çevrimiçi oku',
+        download: 'PDF indir',
+        downloadTitle: 'Teknik dokümanı yanınıza alın',
+        downloadBody: 'Aynı belge, baskı için düzenlenmiş: A4, kapak, içindekiler ve sayfa numaralarıyla.',
+        alsoIn: 'Şu dilde de:',
+        fallback: 'Bu belge İngilizce ve Farsça yazılmıştır; İngilizce metin gösteriliyor.'
     },
     wallet:
     {

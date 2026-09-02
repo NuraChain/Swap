@@ -6,6 +6,7 @@ export const es: Dict = {
         swap: 'Intercambiar',
         liquidity: 'Liquidez',
         portfolio: 'Cartera',
+        whitepaper: 'Whitepaper',
         menu: 'Menú',
         home: 'Nura Swap'
     },
@@ -74,6 +75,16 @@ export const es: Dict = {
         product: 'Producto',
         community: 'Comunidad',
         rights: 'Nura Swap. Los contratos son inmutables; este sitio es una ventana a ellos.'
+    },
+    whitepaper:
+    {
+        contents: 'Contenido',
+        read: 'Leer en línea',
+        download: 'Descargar PDF',
+        downloadTitle: 'Llévate el whitepaper',
+        downloadBody: 'El mismo documento, maquetado para imprimir: A4, con portada, índice y números de página.',
+        alsoIn: 'También en',
+        fallback: 'Este documento está escrito en inglés y persa; se muestra el texto en inglés.'
     },
     wallet:
     {

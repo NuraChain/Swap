@@ -155,7 +155,7 @@ describe('the app shell', () =>
         expect(container.querySelector('header')).not.toBeNull();
         expect(container.querySelector('footer')).not.toBeNull();
         expect(container.querySelector('main')).not.toBeNull();
-        for (const label of ['Swap', 'Liquidity', 'Portfolio'])
+        for (const label of ['Swap', 'Liquidity', 'Portfolio', 'Whitepaper'])
         {
             expect(container.textContent, label).toContain(label);
         }
@@ -165,7 +165,7 @@ describe('the app shell', () =>
     {
         const { container } = renderTest(() => App({ url: '/' }));
         const hrefs = [...container.querySelectorAll('header a')].map((link) => link.getAttribute('href'));
-        expect(hrefs).toEqual(expect.arrayContaining(['/', '/swap', '/liquidity', '/portfolio']));
+        expect(hrefs).toEqual(expect.arrayContaining(['/', '/swap', '/liquidity', '/portfolio', '/whitepaper']));
     });
 
     it('answers an unknown path with the not-found copy, still inside the shell', () =>
@@ -432,5 +432,45 @@ describe('the portfolio page', () =>
         const { container } = renderTest(() => App({ url: '/portfolio' }));
         await until(() => container.textContent?.includes('Portfolio') === true);
         expect(container.querySelector('header')).not.toBeNull();
+    });
+});
+
+describe('the whitepaper page', () =>
+{
+    it('renders the paper with its contents and a PDF to download', async () =>
+    {
+        const { container } = renderTest(() => App({ url: '/whitepaper' }));
+        await until(() => container.querySelector('[data-testid="whitepaper-download"]') !== null);
+        expect(container.querySelector('h1')?.textContent).toContain('Nura Swap');
+        expect(container.textContent).toContain('Abstract');
+        expect(container.textContent).toContain('The business plan');
+        // Anchors are the contents list's targets and the PDF's section ids alike.
+        expect(container.querySelector('#roadmap')).not.toBeNull();
+        expect(container.querySelector('nav a[href="#roadmap"]')).not.toBeNull();
+        const link = container.querySelector('[data-testid="whitepaper-download"]');
+        expect(link?.getAttribute('href')).toBe('/whitepaper/nura-swap-whitepaper-en.pdf');
+        expect(link?.hasAttribute('download')).toBe(true);
+    });
+
+    it('reads in Persian, with the Persian PDF first and the English one a click away', async () =>
+    {
+        setLang('fa');
+        const { container } = renderTest(() => App({ url: '/whitepaper' }));
+        await until(() => container.querySelector('[data-testid="whitepaper-download"]') !== null);
+        expect(container.textContent).toContain('چکیده');
+        expect(container.querySelector('[data-testid="whitepaper-download"]')?.getAttribute('href'))
+            .toBe('/whitepaper/nura-swap-whitepaper-fa.pdf');
+        expect(container.querySelector('a[href="/whitepaper/nura-swap-whitepaper-en.pdf"]')).not.toBeNull();
+    });
+
+    it('falls back to the English text for a language without its own, and says so', async () =>
+    {
+        setLang('fr');
+        const { container } = renderTest(() => App({ url: '/whitepaper' }));
+        await until(() => container.querySelector('[data-testid="whitepaper-download"]') !== null);
+        expect(container.textContent).toContain('Abstract');
+        expect(container.textContent).toContain('le texte anglais est affiché');
+        expect(container.querySelector('[data-testid="whitepaper-download"]')?.getAttribute('href'))
+            .toBe('/whitepaper/nura-swap-whitepaper-en.pdf');
     });
 });

@@ -33,6 +33,10 @@ their own repository:
   summary before the wallet prompt.
 - **Portfolio** - holdings with USD values, your concentrated-liquidity
   positions, and your own on-chain activity.
+- **Whitepaper** - how the exchange works and the business plan, in English and
+  Persian, with a downloadable PDF of each. The text is one data module
+  (`application/src/lib/whitepaper`); `node scripts/build-whitepaper-pdf.mjs`
+  in `application/` regenerates the PDFs through a local Chrome.
 - **Wallets** - every EIP-6963 injected wallet (MetaMask, Rabby, Trust, ...),
   silent session restore, address identicons.
 - **The exchange itself** - UniswapV3 core, periphery and position manager, with

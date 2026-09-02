@@ -6,6 +6,7 @@ export const fr: Dict = {
         swap: 'Échanger',
         liquidity: 'Liquidité',
         portfolio: 'Portefeuille',
+        whitepaper: 'Livre blanc',
         menu: 'Menu',
         home: 'Nura Swap'
     },
@@ -74,6 +75,16 @@ export const fr: Dict = {
         product: 'Produit',
         community: 'Communauté',
         rights: 'Nura Swap. Les contrats sont immuables ; ce site n’est qu’une fenêtre ouverte sur eux.'
+    },
+    whitepaper:
+    {
+        contents: 'Sommaire',
+        read: 'Lire en ligne',
+        download: 'Télécharger le PDF',
+        downloadTitle: 'Emportez le livre blanc',
+        downloadBody: "Le même document, mis en page pour l'impression : A4, avec couverture, sommaire et numéros de page.",
+        alsoIn: 'Aussi en',
+        fallback: 'Ce document est rédigé en anglais et en persan ; le texte anglais est affiché.'
     },
     wallet:
     {

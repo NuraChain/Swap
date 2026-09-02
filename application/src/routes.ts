@@ -10,5 +10,8 @@ export const routes: PageRoute[] = [
     { path: '/', component: Landing, render: 'static' },
     { path: '/swap', lazy: () => import('./pages/swap.azeroth'), render: 'client' },
     { path: '/liquidity', lazy: () => import('./pages/liquidity.azeroth'), render: 'client' },
-    { path: '/portfolio', lazy: () => import('./pages/portfolio.azeroth'), render: 'client' }
+    { path: '/portfolio', lazy: () => import('./pages/portfolio.azeroth'), render: 'client' },
+    // Text, not chain state: prerendered like the landing page, but lazy so the
+    // paper's two languages of prose stay out of every other page's bundle.
+    { path: '/whitepaper', lazy: () => import('./pages/whitepaper.azeroth'), render: 'static' }
 ];
