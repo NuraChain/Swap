@@ -9,6 +9,14 @@ updates:
       npm-dependencies:
         patterns:
           - "*"
+    ignore:
+      # AzerothJS 2 peers on `typescript >=5 <7`, and TypeScript 7 moved the
+      # classic API behind `typescript/unstable/*` - the compiler's
+      # `import * as ts from 'typescript'` gets a module with only `version`
+      # in it, so the build dies loading vite.config.ts. Hold at 6 until the
+      # toolchain peers on 7.
+      - dependency-name: "typescript"
+        update-types: [ "version-update:semver-major" ]
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
