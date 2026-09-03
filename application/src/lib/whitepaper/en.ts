@@ -4,9 +4,13 @@
 // feeAmountTickSpacing answers, and the protocol-fee state from the pools'
 // slot0. Re-check all three when the exchange is redeployed.
 //
-// House style: short sentences, everyday words, and a picture before a term.
-// Anything a newcomer cannot follow on the first read belongs in the glossary,
-// not in the middle of a paragraph.
+// House style: plain, spoken English. Short sentences. Everyday words. A
+// picture before a term. If a newcomer cannot follow a sentence on the first
+// read, it is the sentence that is wrong. Anything that still needs explaining
+// belongs in the glossary, not in the middle of a paragraph.
+//
+// Every translation copies this outline block for block - tests/whitepaper.spec
+// holds all ten to it - so a block added here is added in nine other files too.
 
 import { callout, facts, formula, h3, ol, p, steps, table, ul } from './model.ts';
 import type { Whitepaper } from './model.ts';
@@ -16,17 +20,17 @@ export const en: Whitepaper = {
     {
         title: 'Nura Swap',
         subtitle: 'Whitepaper',
-        version: 'Whitepaper v1.1',
+        version: 'Whitepaper v1.2',
         date: 'September 2026',
         covers: 'Describes application release 1.3.0 on Nura Chain (chain id 1020).',
         abstractTitle: 'In short',
         disclaimerTitle: 'Please read this',
-        disclaimer: 'This paper explains how Nura Swap works and what the project hopes to build next. It is not financial advice, it is not an offer to sell anything, and it promises no profit. Trading and putting money into a pool both carry real risk, and you can lose everything you put in. The plans described here are intentions, not promises, and they can change.'
+        disclaimer: 'This paper explains how Nura Swap works and what we hope to build next. It is not financial advice. It is not an offer to sell anything. It promises no profit. Trading and putting money into a pool both carry real risk, and you can lose everything you put in. The plans here are intentions, not promises, and they can change.'
     },
     abstract: [
-        'Nura Swap is a trading machine that lives on Nura Chain. It swaps one token for another, and nobody stands in the middle: no company holds your money, no clerk approves you, and no account is opened. Your own wallet keeps your coins the whole time.',
-        'The trick is a pool. A pool is a shared pot holding two kinds of token, and it sets its own price from what is in it. People who put tokens into the pot earn a small fee from every trade that uses it. That is the whole idea; the rest of this paper is the detail.',
-        'Nura Swap is built from three pieces: contracts on the chain that do the actual swapping, a small server that collects prices and history, and this website, which you can read in ten languages. Part I explains how the machine works. Part II explains how the project plans to pay for itself and grow.'
+        'Nura Swap is a trading machine that lives on Nura Chain. It swaps one token for another, and nobody stands in the middle. No company holds your money. Nobody approves you. There is no account to open. Your coins stay in your own wallet the whole time.',
+        'The trick is a pool. A pool is a shared pot holding two kinds of token, and it works out its own price from what is inside it. People who put tokens in the pot earn a small fee from every trade that uses it. That is the whole idea. The rest of this paper is the detail.',
+        'Nura Swap is built from three pieces: contracts on the chain that do the swapping, a small server that keeps prices and history, and this website, which you can read in ten languages. Part I is how the machine works. Part II is how we plan to pay for it and grow it.'
     ],
     parts: [
         {
@@ -39,17 +43,17 @@ export const en: Whitepaper = {
                     id: 'introduction',
                     title: 'Why a chain needs a swap machine',
                     blocks: [
-                        p('A new chain is a bit like a new town. Coins exist, but there is nowhere to trade them, so nobody can tell what they are worth. Somebody has to open a shop.'),
-                        p('The old way to open that shop is an order book: a big list of people asking to buy and people asking to sell. It only works if someone is standing on the other side of your trade right when you want it, and it usually needs a company to hold everyone’s money while the list is matched up. On a young chain there is rarely anyone on the other side, and trusting a company with your coins is exactly what a blockchain is meant to avoid.'),
-                        p('Nura Swap does it the other way round. Instead of matching two people, it keeps a pot with two kinds of token in it. You trade with the pot. Put one token in, take the other one out, and the pot works out the price by itself. It is always open, it never says no, and it never holds anything that belongs to you for longer than the second your trade takes.'),
-                        p('The maths inside the pot is not ours. Nura Swap runs UniswapV3, the most used and most checked code of its kind, exactly as written. What this project built is everything around it for this chain: the setup, the price data, the website in ten languages, and the plan in Part II.')
+                        p('A new chain is like a new town. The coins exist, but there is nowhere to trade them, so nobody can tell what they are worth. Somebody has to open a shop.'),
+                        p('The old kind of shop is an order book: a long list of people wanting to buy and people wanting to sell. It only works if somebody is standing on the other side of your trade at the moment you want it. And it usually needs a company to hold everyone’s money while the list is matched up. On a young chain there is rarely anyone on the other side. And handing your coins to a company is the very thing a blockchain is meant to avoid.'),
+                        p('Nura Swap does it the other way round. Instead of matching two people, it keeps a pot with two kinds of token in it. You trade with the pot. Put one token in, take the other out, and the pot works out the price by itself. It is always open, it never says no, and it holds nothing of yours for longer than your trade takes.'),
+                        p('The maths inside the pot is not ours. Nura Swap runs UniswapV3 exactly as written - the most used and most checked code of its kind. What we built is everything around it for this chain: the setup, the price data, the website in ten languages, and the plan in Part II.')
                     ]
                 },
                 {
                     id: 'nura-chain',
                     title: 'Nura Chain in one page',
                     blocks: [
-                        p('Nura Chain is the network everything here runs on. It writes a new block roughly every three seconds, and once a block is written it is done - there is no waiting to see whether it sticks. So a swap is finished the moment its block appears. It understands the same language as Ethereum, so wallets and tools made for Ethereum work here without changes.'),
+                        p('Nura Chain is the network all of this runs on. A new block is written about every three seconds, and once it is written it is done - there is no waiting to see whether it sticks. So your swap is finished the moment its block appears. The chain speaks the same language as Ethereum, so wallets and tools built for Ethereum work here without any changes.'),
                         facts(
                             { label: 'Chain id', value: '1020', mono: true },
                             { label: 'Its coin', value: 'NURA (18 decimals)', mono: true },
@@ -60,8 +64,8 @@ export const en: Whitepaper = {
                             { label: 'Block explorer', value: 'https://explorer.nurachain.net', mono: true },
                             { label: 'Tokens at launch', value: 'WNURA, Bridge BNB, Bridge USDT' }
                         ),
-                        p('NURA is the coin of the chain, and it pays the small fee every transaction costs. But a pool can only hold tokens of the ERC-20 kind, and NURA itself is not one - much as a cloakroom takes coats, not people. So NURA gets a ticket called WNURA: hand over one NURA, get one WNURA, and swap it back whenever you like. The website does this inside the trade, so you only ever see NURA. Pools hold the WNURA version.'),
-                        p('Two tokens arrive from other chains through a bridge: Bridge BNB and Bridge USDT. Each one is a claim on the real thing, locked away on its home chain - think of a cloakroom ticket again, but for a coin that lives somewhere else. They matter for two reasons. They bring in value from outside, and because a dollar token is worth about a dollar anywhere, they give the chain its first honest yardstick for what everything else is worth.')
+                        p('NURA is the chain’s own coin, and it pays the small fee that every transaction costs. But a pool can only hold ERC-20 tokens, and NURA is not one. So NURA gets a ticket called WNURA: hand in one NURA, get one WNURA, and swap it back whenever you like. The site does this inside your trade, so you only ever see NURA. The pools hold the WNURA version.'),
+                        p('Two tokens arrive from other chains over a bridge: Bridge BNB and Bridge USDT. Each one is a claim on the real coin, locked away on its home chain. They matter for two reasons. They bring value in from outside. And because a dollar token is worth about a dollar anywhere, they give the chain its first honest yardstick for what everything else is worth.')
                     ]
                 },
                 {
@@ -69,13 +73,13 @@ export const en: Whitepaper = {
                     title: 'The rules we hold ourselves to',
                     blocks: [
                         ul(
-                            'Your coins stay yours. Nothing moves until your wallet signs for it. The website holds no deposits, no keys and no login.',
+                            'Your coins stay yours. Nothing moves until your wallet signs for it. The site holds no deposits, no keys and no login.',
                             'The rules cannot be changed. The contracts have no update button and no off switch - not for us, not for anyone. What they do today they will do in ten years.',
-                            'Borrowed maths, checked by thousands. The pricing is UniswapV3’s, copied number for number into our website and our server, so the figure you read matches the figure the pool will use.',
-                            'Prices come from the pool itself, never from guessing. Counting what a pool holds tells you very little about what it is charging, so every price here is asked of the pool directly.',
-                            'Your limits are enforced by the contract, not by us. You say the worst price you accept and the time you give it. If either is broken the trade simply does not happen.',
-                            'Everything is public. The website, the server and the maths are open source, and the file listing every contract address sits in the repository for anyone to read.',
-                            'Written for the people who use it. Ten languages, two of them right-to-left, with local numerals. A page is not finished until it has been checked in Persian as carefully as in English.'
+                            'Borrowed maths, checked by thousands. The pricing is UniswapV3’s, copied number for number into our site and our server, so the figure you read is the figure the pool will use.',
+                            'Prices come from the pool itself, never from a guess. Counting what a pool holds tells you very little, so we ask the pool directly, every time.',
+                            'Your limits are enforced by the contract, not by us. You say the worst price you accept and how long you give it. If either is broken, the trade simply does not happen.',
+                            'Everything is public. The site, the server and the maths are open source, and the file listing every contract address sits in the repository for anyone to read.',
+                            'Written for the people who use it. Ten languages, two of them right to left, with local numerals. A page is not finished until it has been checked in Persian as carefully as in English.'
                         )
                     ]
                 },
@@ -83,17 +87,17 @@ export const en: Whitepaper = {
                     id: 'concentrated-liquidity',
                     title: 'How a pool decides the price',
                     blocks: [
-                        p('Picture a pot with two kinds of token in it, say NURA and dollars. When you take NURA out, you must put dollars in. NURA becomes scarcer inside the pot, so the pot starts asking more for the next one. Buy a lot and the price climbs as you go. That is the whole pricing rule: whichever token is running low gets more expensive.'),
-                        p('The old design spread a pot’s money across every price that could ever happen, from almost zero to almost infinity. Most of it sat in prices nobody will ever trade at - like stocking a shop with sizes nobody wears. Nura Swap lets you choose a price range instead and put your money only there. Inside your range your money works far harder. Outside it, your money sits still and waits.'),
+                        p('Picture a pot with two kinds of token in it, say NURA and dollars. To take NURA out, you have to put dollars in. NURA gets scarcer inside the pot, so the pot starts asking more for the next one. Buy a lot and the price climbs as you go. That is the whole pricing rule: whichever token is running low gets more expensive.'),
+                        p('The old design spread a pot’s money over every price that could ever happen, from almost zero to almost infinity. Most of it sat at prices nobody will ever trade at - like stocking a shop with sizes nobody wears. Nura Swap lets you pick a price range and put your money only there. Inside your range your money works far harder. Outside it, your money sits still and waits.'),
                         h3('Prices sit on a ladder'),
-                        p('Prices here are not a smooth line, they are rungs on a ladder. Each rung is one hundredth of a percent above the one below it, so tiny that you would never notice, and the ranges people choose always start and end on a rung. Rungs are called ticks. The pool keeps its price as a square root, stored as a whole number, because computers add whole numbers perfectly and never lose a fraction along the way.'),
-                        formula('price(i) = 1.0001^i          sqrtPriceX96 = √price × 2^96', 'Rung number i means a price of 1.0001 multiplied by itself i times. Every rung is a 0.01% step, whether the price is small or large.'),
+                        p('Prices here are not a smooth line. They are rungs on a ladder. Each rung is one hundredth of a percent above the one below it - far too small to notice - and every range starts and ends on a rung. The rungs are called ticks. The pool keeps its price as a square root, stored as a whole number, because computers add whole numbers perfectly and never lose a fraction along the way.'),
+                        formula('price(i) = 1.0001^i          sqrtPriceX96 = √price × 2^96', 'Rung number i means 1.0001 multiplied by itself i times. Every rung is a 0.01% step, whether the price is tiny or huge.'),
                         h3('Depth is what really matters'),
-                        p('Add up everyone whose range covers the price right now, and you get the pool’s depth at that price - the number the pool calls L. Depth decides how much a trade shifts the price:'),
-                        formula('x · y = L²          Δ√P = Δy / L          Δ(1/√P) = Δx / L', 'Bigger L, smaller move. The pool works out your exact output from your input and the depth, then keeps going onto the next rung when it runs past the edge of somebody’s range.'),
-                        p('So the size of a pool is not what counts - where the money is put matters more. A small pot with everything packed tightly around the price can take a big trade without flinching. A larger pot with money scattered everywhere cannot.'),
+                        p('Add up everyone whose range covers the price right now, and you get the pool’s depth at that price. The pool calls it L. Depth decides how far a trade shifts the price.'),
+                        formula('x · y = L²          Δ√P = Δy / L          Δ(1/√P) = Δx / L', 'Bigger L, smaller move. The pool works out your exact output from your input and the depth, then steps onto the next rung when it runs past the edge of somebody’s range.'),
+                        p('So the size of a pool is not what counts - where the money sits matters more. A small pot with everything packed tightly around the price can take a big trade without flinching. A bigger pot with money scattered everywhere cannot.'),
                         h3('Where the fee goes'),
-                        p('Every trade pays a small fee, and the fee is shared out among the people whose range covered the price at that moment, in proportion to how much each of them put there. If your range did not cover the price, you earn nothing from that trade. The pool keeps a running total instead of paying everyone one by one, which is why a swap costs the same whether ten people or ten thousand are supplying the pot. Your fees wait in the pool until you come and collect them.'),
+                        p('Every trade pays a small fee. The fee is shared out among the people whose range covered the price at that moment, in proportion to how much each of them put there. If your range did not cover the price, you earn nothing from that trade. The pool keeps a running total instead of paying everyone one by one, which is why a swap costs the same whether ten people or ten thousand are supplying the pot. Your fees wait in the pool until you come and collect them.'),
                         table(
                             ['If your range is', 'Your money works about', 'What that means'],
                             [
@@ -104,25 +108,25 @@ export const en: Whitepaper = {
                             ],
                             [0, 1]
                         ),
-                        p('The comparison is against putting the same money across the whole ladder, and it only holds while the price stays inside your range. That is the trade-off in one line: the narrower you go, the more you earn, and the sooner you stop.')
+                        p('The comparison is against spreading the same money over the whole ladder, and it only holds while the price stays inside your range. That is the trade-off in one line: the narrower you go, the more you earn, and the sooner you stop.')
                     ]
                 },
                 {
                     id: 'swap',
                     title: 'What happens when you swap',
                     blocks: [
-                        p('A swap is one transaction, prepared by the website and signed by you. You do not have to trust the website for it to be safe: every number that matters is either read from the chain or checked by the contract before your tokens move.'),
+                        p('A swap is one transaction. The site prepares it, and you sign it. You do not have to trust the site for it to be safe: every number that matters is either read from the chain or checked by the contract before your tokens move.'),
                         steps(
-                            { title: 'Connect your wallet', text: 'Almost any browser wallet works - MetaMask, Rabby, Trust and others - and Nura Wallet connects through its own link. Connecting only lets the site read what you already hold. Nothing can move without your signature.' },
-                            { title: 'Get a price', text: 'A pair can have up to four pools, each charging a different fee. The site asks every one of them what you would get, and offers the best answer. The question is put to the chain, not to us, so the number you see is the number the pool will really give you.' },
-                            { title: 'Set your limits', text: 'You choose the worst price you will accept and how long the offer stays good. The site also shows how much your own trade pushes the price. If that push is bigger than 15%, it stops and asks you to confirm on purpose.' },
-                            { title: 'Give permission', text: 'The first time you spend a particular token, you grant permission for that amount. We ask for the exact amount by default. You can grant unlimited permission if you prefer, and we explain plainly what that means before you do.' },
-                            { title: 'Send it', text: 'One transaction takes your token, swaps it and hands back the other one. If the result would be worse than your limit, or you ran out of time, the whole thing is cancelled: your tokens never leave your wallet, and you lose only the tiny network fee.' }
+                            { title: 'Connect your wallet', text: 'Almost any browser wallet works - MetaMask, Rabby, Trust and others - and Nura Wallet connects through its own link. Connecting only lets the site read what you already hold. Nothing moves without your signature.' },
+                            { title: 'Get a price', text: 'A pair can have up to four pools, each charging a different fee. The site asks every one of them what you would get, and offers you the best answer. The question goes to the chain, not to us, so the number you see is the number the pool will really give you.' },
+                            { title: 'Set your limits', text: 'You choose the worst price you will accept and how long the offer stays good. The site also shows how far your own trade pushes the price. If that push is bigger than 15%, it stops and asks you to confirm on purpose.' },
+                            { title: 'Give permission', text: 'The first time you spend a token, you grant permission for that amount. We ask for the exact amount by default. You can grant unlimited permission if you prefer, and we say plainly what that means before you do.' },
+                            { title: 'Send it', text: 'One transaction takes your token, swaps it and hands back the other one. If the result would be worse than your limit, or you ran out of time, the whole thing is cancelled. Your tokens never leave your wallet, and you lose only the tiny network fee.' }
                         ),
                         h3('Swapping NURA itself'),
-                        p('When one side of your trade is NURA, the website turns it into WNURA on the way in, or back into NURA on the way out, inside the same transaction, and returns any leftover dust. Going between NURA and WNURA is not a trade at all - it is one for one, with no fee and no pool involved.'),
+                        p('When one side of your trade is NURA, the site turns it into WNURA on the way in, or back into NURA on the way out, inside the same transaction, and returns any leftover dust. Going between NURA and WNURA is not a trade at all. It is one for one, with no fee and no pool involved.'),
                         h3('If something goes wrong'),
-                        p('Every refusal the contract can give is turned into a sentence you can act on. Cancel the signature, and nothing was sent. If the price moved past your limit, we say so and suggest trading less or widening the limit. If time ran out, nothing was spent. And a token we cannot vouch for is labelled before you can trade it, because anyone at all can create a token and give it any name they like.')
+                        p('Every refusal the contract can give is turned into a sentence you can act on. Cancel the signature and nothing was sent. If the price moved past your limit, we say so and suggest trading less or widening the limit. If time ran out, nothing was spent. And a token we cannot vouch for is labelled before you can trade it, because anyone at all can create a token and give it any name they like.')
                     ]
                 },
                 {
@@ -133,7 +137,7 @@ export const en: Whitepaper = {
                         steps(
                             { title: 'Pick a pool', text: 'A pair can have up to four pools, one per fee level. Two tokens that stay close together suit the cheap levels. Wild or thinly traded pairs suit 0.30% and 1.00%, where the bigger fee pays you back for the bigger risk.' },
                             { title: 'Pick your price range', text: 'Choose the lowest and highest price you want to cover, or take the whole ladder. The site snaps both ends to real rungs, shows where the price is now, and warns you if your range sits entirely to one side of it - because then you are really placing an order, not supplying a market.' },
-                            { title: 'Put the money in', text: 'If your range covers the current price, the pool needs both tokens, in a ratio your range decides. Type one amount and the site works out the other. You approve both, see a summary, and then one transaction does it.' },
+                            { title: 'Put the money in', text: 'If your range covers the current price, the pool needs both tokens, in a ratio your range decides. Type one amount and the site works out the other. You approve both, see a summary, and one transaction does it.' },
                             { title: 'Earn and manage', text: 'While the price is inside your range you collect a share of every trade. You can add more, take some or all of it back, or collect what you have earned, whenever you want. Taking your money out collects the earnings too.' }
                         ),
                         callout('Whoever goes first sets the price', 'If a pool does not exist yet, the first deposit creates it - and the price that deposit implies becomes the pool’s price. Get it wrong and traders will happily take the difference off you within minutes. The site says this plainly and asks you to type the opening price yourself.'),
@@ -145,7 +149,7 @@ export const en: Whitepaper = {
                     id: 'fees',
                     title: 'The fee, and who gets it',
                     blocks: [
-                        p('There are four fee levels, and the level belongs to the pool rather than to the pair. The same two tokens can have a pool at each level, and the site quotes all of them before choosing.'),
+                        p('There are four fee levels, and the level belongs to the pool rather than to the pair. The same two tokens can have a pool at each level, and the site quotes all of them before it picks one.'),
                         table(
                             ['Fee', 'On a $1,000 trade', 'Rungs between range ends', 'Suits'],
                             [
@@ -156,7 +160,7 @@ export const en: Whitepaper = {
                             ],
                             [0, 1, 2]
                         ),
-                        p('Today every penny of that fee goes to the people supplying the pool. The Uniswap design also allows a protocol fee - a slice of that fee, between a tenth and a quarter of it, redirected to whoever owns the factory contract. It is switched off on every pool, and what we intend to do with it is set out in Part II. Neither the website nor the server charges anything of its own on top.')
+                        p('Today every penny of that fee goes to the people supplying the pool. The Uniswap design also allows a protocol fee - a slice of that fee, between a tenth and a quarter of it, sent to whoever owns the factory contract. It is switched off on every pool, and what we intend to do with it is set out in Part II. Neither the website nor the server charges anything of its own on top.')
                     ]
                 },
                 {
@@ -173,13 +177,13 @@ export const en: Whitepaper = {
                             ]
                         ),
                         h3('The file that ties it together'),
-                        p('The contracts are developed in a separate repository. The only thing this project takes from it is one small file listing the chain, the addresses and the tokens. The server reads that file and passes it to your browser, so no address is baked into the website. If the exchange is ever redeployed, one file changes and everything follows.'),
+                        p('The contracts are developed in a separate repository. The only thing this project takes from it is one small file listing the chain, the addresses and the tokens. The server reads that file and passes it to your browser, so no address is baked into the website. If the exchange is ever redeployed, one file changes and everything else follows.'),
                         h3('What we ask the chain directly'),
-                        p('Anything your trade depends on is read live from the chain, never from our server: the pool’s price, the quote, your balances, your permissions, your positions. They are asked in one bundle so a page loads quickly. The site also checks which version of each contract is actually deployed instead of assuming, because a wrong assumption would quietly produce a broken transaction.'),
+                        p('Anything your trade depends on is read live from the chain, never from our server: the pool’s price, the quote, your balances, your permissions, your positions. They go out in one bundle so the page loads quickly. The site also checks which version of each contract is actually deployed instead of assuming, because a wrong assumption would quietly build a broken transaction.'),
                         h3('The server, and why it exists'),
-                        p('Some things are nice to have but no trade depends on them: the list of pools, the price chart, how much was traded yesterday, your own history. Those come from our server. It follows the contracts as they emit their events, saves them, and prices each hour of the chart from what the trades themselves reported. Because a block on this chain is final immediately, it never waits. If the chain is ever reset or the exchange redeployed it notices and starts again from the beginning. It also reports how far behind it has fallen, and the site shows a banner when that gets noticeable.'),
+                        p('Some things are nice to have, but no trade depends on them: the list of pools, the price chart, how much was traded yesterday, your own history. Those come from our server. It follows the contracts as they emit their events, saves them, and prices each hour of the chart from what the trades themselves reported. Because a block on this chain is final immediately, it never has to wait. If the chain is ever reset or the exchange redeployed, it notices and starts again from the beginning. It also reports how far behind it has fallen, and the site shows a banner when that gets noticeable.'),
                         h3('Prices in dollars'),
-                        p('Dollar figures are there to help you read the page, and are never used to execute a trade. The dollar token counts as a dollar. A bridged token is worth whatever it is worth on its home chain, which no pool here can know, so that price comes from outside. Everything else is priced through the deepest pool that connects it to one of those two, in two passes, so a token that only trades against NURA still gets a price. Totals like value locked only count tokens that trace back to a real anchor - otherwise a pool could declare itself rich on a price it made up.'),
+                        p('Dollar figures are there to help you read the page, and are never used to execute a trade. The dollar token counts as a dollar. A bridged token is worth whatever it is worth on its home chain, which no pool here can know, so that price comes from outside. Everything else is priced through the deepest pool that connects it to one of those two, in two passes, so a token that only trades against NURA still gets a price. Totals like value locked count only tokens that trace back to a real anchor - otherwise a pool could declare itself rich on a price it made up.'),
                         h3('What the server answers'),
                         table(
                             ['Ask it for', 'And you get'],
@@ -253,7 +257,7 @@ export const en: Whitepaper = {
                     title: 'What we are trying to do',
                     blocks: [
                         p('Where we want to end up: Nura Chain has a market of its own - somewhere every token on the chain can be priced and traded by anyone, from anywhere, with nobody in the middle.'),
-                        p('How we get there: build and run the exchange the chain relies on. The most trusted contracts, the best price data, and a site people can read in their own language - paid for by a fee that is small, visible and enforced by the contract rather than by us.'),
+                        p('How we get there: build and run the exchange the chain relies on. The most trusted contracts, the best price data, and a site people can read in their own language - paid for by a fee that is small, visible, and enforced by the contract rather than by us.'),
                         p('Nura Swap is plumbing. It succeeds when other things are built on top of it: wallets that quote through it, new tokens that launch on it, apps that read their prices from it.')
                     ]
                 },

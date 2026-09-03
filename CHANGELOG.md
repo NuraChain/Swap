@@ -7,7 +7,17 @@ Notable changes to Nura Swap. The format follows
 The exchange contracts live in [their own repository](https://github.com/NuraChain/Swap);
 this changelog covers the application, the indexer, and the shared maths.
 
-## [Unreleased]
+## [1.4.0] - 2026-09-03
+
+### Added
+
+- **The whitepaper is translated into all ten languages.** Arabic, Spanish,
+  Portuguese, Hindi, Chinese, Russian, French and Turkish join English and
+  Persian, each a full translation of the paper rather than a page apologising
+  for showing the English one - the fallback and its notice are gone, and the
+  language list under the download simply offers the other nine. Every
+  translation ships its own PDF, and `tests/whitepaper.spec.ts` holds all ten
+  to the English outline block for block.
 
 ### Changed
 

@@ -1,25 +1,32 @@
-// Which document a language reads, and which PDF it downloads. Two languages
-// carry their own text; the other eight read the English one, and the page
-// says so above the abstract rather than showing a half-translated paper.
+// Which document a language reads, and which PDF it downloads. Every language
+// the application ships carries its own translation of the paper, so there is
+// no English fallback to explain and no half-translated page to apologise for.
 
+import { ar } from './ar.ts';
 import { en } from './en.ts';
+import { es } from './es.ts';
 import { fa } from './fa.ts';
+import { fr } from './fr.ts';
+import { hi } from './hi.ts';
+import { pt } from './pt.ts';
+import { ru } from './ru.ts';
+import { tr } from './tr.ts';
+import { zh } from './zh.ts';
 import type { Lang } from '../i18n.ts';
 import type { Whitepaper } from './model.ts';
 
-const DOCS: Partial<Record<Lang, Whitepaper>> = { en, fa };
+const DOCS: Record<Lang, Whitepaper> = { en, fa, ar, es, pt, hi, zh, ru, fr, tr };
 
 export interface ResolvedWhitepaper
 {
     doc: Whitepaper;
-    /** The language the document is actually in - 'en' when `lang` has no translation. */
+    /** The language the document is in - always the one asked for. */
     lang: Lang;
 }
 
 export function whitepaper(lang: Lang): ResolvedWhitepaper
 {
-    const doc = DOCS[lang];
-    return doc === undefined ? { doc: en, lang: 'en' } : { doc, lang };
+    return { doc: DOCS[lang], lang };
 }
 
 export interface WhitepaperPdf
@@ -30,9 +37,12 @@ export interface WhitepaperPdf
 }
 
 // Written to public/whitepaper/ by scripts/build-whitepaper-pdf.mjs from the
-// same data - one file per translated document. Not ReadonlyArray: `<For each>`
-// takes a mutable array.
-export const WHITEPAPER_PDFS: WhitepaperPdf[] = [
-    { lang: 'en', href: '/whitepaper/nura-swap-whitepaper-en.pdf', fileName: 'nura-swap-whitepaper-en.pdf' },
-    { lang: 'fa', href: '/whitepaper/nura-swap-whitepaper-fa.pdf', fileName: 'nura-swap-whitepaper-fa.pdf' }
-];
+// same data - one file per language, in the picker's order. Not ReadonlyArray:
+// `<For each>` takes a mutable array.
+export const WHITEPAPER_PDFS: WhitepaperPdf[] = (
+    ['en', 'fa', 'ar', 'es', 'pt', 'hi', 'zh', 'ru', 'fr', 'tr'] as Lang[]
+).map((lang) => ({
+    lang,
+    href: `/whitepaper/nura-swap-whitepaper-${ lang }.pdf`,
+    fileName: `nura-swap-whitepaper-${ lang }.pdf`
+}));

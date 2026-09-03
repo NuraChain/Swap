@@ -83,8 +83,7 @@ export const tr: Dict = {
         download: 'PDF indir',
         downloadTitle: 'Teknik dokümanı yanınıza alın',
         downloadBody: 'Aynı belge, baskı için düzenlenmiş: A4, kapak, içindekiler ve sayfa numaralarıyla.',
-        alsoIn: 'Şu dilde de:',
-        fallback: 'Bu belge İngilizce ve Farsça yazılmıştır; İngilizce metin gösteriliyor.'
+        alsoIn: 'Diğer diller'
     },
     wallet:
     {

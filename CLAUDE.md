@@ -92,12 +92,16 @@ layout/   footer header indexer-banner language-modal
 whitepaper/ whitepaper-block
 ```
 
-The whitepaper is data, not markup: `src/lib/whitepaper/{model,en,fa,index}.ts`.
-The page renders it, and `scripts/build-whitepaper-pdf.mjs` renders the same
-data to `public/whitepaper/nura-swap-whitepaper-<lang>.pdf` through a headless
-Chrome (rerun it after editing the text; the PDFs are committed). Persian mirrors
-the English outline exactly - `tests/whitepaper.spec.ts` holds them to it - and
-the other eight languages read the English text and say so.
+The whitepaper is data, not markup: `src/lib/whitepaper/{model,index}.ts` plus
+one document per language. **All ten languages are translated** - there is no
+English fallback - and `tests/whitepaper.spec.ts` holds every one to the English
+outline block for block, so a paragraph added to `en.ts` has to be added to the
+other nine. Register: plain spoken language, short sentences, everyday words.
+The page renders the data, and `scripts/build-whitepaper-pdf.mjs` renders the
+same data to `public/whitepaper/nura-swap-whitepaper-<lang>.pdf` through a
+headless Chrome (rerun it after editing the text; the ten PDFs are committed).
+Devanagari and CJK have no bundled webfont and fall through to system faces in
+the PDF, so regenerate on a machine that has them.
 
 Read the nearest neighbours before adding anything. No new UI framework, no
 component library, no CSS-in-JS. No hex colours in components.
