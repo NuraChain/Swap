@@ -19,55 +19,97 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
+import { ar as arDict } from '../src/lib/locales/ar.ts';
 import { en as enDict } from '../src/lib/locales/en.ts';
+import { es as esDict } from '../src/lib/locales/es.ts';
 import { fa as faDict } from '../src/lib/locales/fa.ts';
+import { fr as frDict } from '../src/lib/locales/fr.ts';
+import { hi as hiDict } from '../src/lib/locales/hi.ts';
+import { pt as ptDict } from '../src/lib/locales/pt.ts';
+import { ru as ruDict } from '../src/lib/locales/ru.ts';
+import { tr as trDict } from '../src/lib/locales/tr.ts';
+import { zh as zhDict } from '../src/lib/locales/zh.ts';
+import { ar } from '../src/lib/whitepaper/ar.ts';
 import { en } from '../src/lib/whitepaper/en.ts';
+import { es } from '../src/lib/whitepaper/es.ts';
 import { fa } from '../src/lib/whitepaper/fa.ts';
+import { fr } from '../src/lib/whitepaper/fr.ts';
+import { hi } from '../src/lib/whitepaper/hi.ts';
+import { pt } from '../src/lib/whitepaper/pt.ts';
+import { ru } from '../src/lib/whitepaper/ru.ts';
+import { tr } from '../src/lib/whitepaper/tr.ts';
+import { zh } from '../src/lib/whitepaper/zh.ts';
 import { sectionsOf } from '../src/lib/whitepaper/model.ts';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const OUT_DIR = join(ROOT, 'public', 'whitepaper');
 
-const DOCUMENTS = {
-    en: { doc: en, dict: enDict, dir: 'ltr' },
-    fa: { doc: fa, dict: faDict, dir: 'rtl' }
-};
+// One entry per language the application ships, in the picker's order. The
+// directions repeat LANGS in src/lib/i18n.ts rather than importing it, so this
+// script stays plain Node and never pulls the framework in to print a PDF.
+const RTL = new Set(['fa', 'ar']);
+const DOCS = { en, fa, ar, es, pt, hi, zh, ru, fr, tr };
+const DICTS = { en: enDict, fa: faDict, ar: arDict, es: esDict, pt: ptDict,
+    hi: hiDict, zh: zhDict, ru: ruDict, fr: frDict, tr: trDict };
 
-// The three type roles of styles.css, Vazirmatn second in each so Persian
-// glyphs fall through per glyph exactly as they do on the site.
+const DOCUMENTS = Object.fromEntries(Object.keys(DOCS).map((code) =>
+    [code, { doc: DOCS[code], dict: DICTS[code], dir: RTL.has(code) ? 'rtl' : 'ltr' }]));
+
+// The three type roles of styles.css, Vazirmatn second in each so Persian and
+// Arabic fall through per glyph exactly as they do on the site. Latin-ext
+// carries Turkish and the Iberian and French accents, cyrillic carries Russian;
+// Devanagari and Chinese have no @fontsource package here and fall through to
+// the system faces named in FALLBACK.
 const FONTS = [
     ['Unbounded', 500, 'unbounded/files/unbounded-latin-500-normal.woff2'],
+    ['Unbounded', 500, 'unbounded/files/unbounded-latin-ext-500-normal.woff2'],
+    ['Unbounded', 500, 'unbounded/files/unbounded-cyrillic-500-normal.woff2'],
     ['Unbounded', 700, 'unbounded/files/unbounded-latin-700-normal.woff2'],
+    ['Unbounded', 700, 'unbounded/files/unbounded-latin-ext-700-normal.woff2'],
+    ['Unbounded', 700, 'unbounded/files/unbounded-cyrillic-700-normal.woff2'],
     ['IBM Plex Sans', 400, 'ibm-plex-sans/files/ibm-plex-sans-latin-400-normal.woff2'],
+    ['IBM Plex Sans', 400, 'ibm-plex-sans/files/ibm-plex-sans-latin-ext-400-normal.woff2'],
+    ['IBM Plex Sans', 400, 'ibm-plex-sans/files/ibm-plex-sans-cyrillic-400-normal.woff2'],
     ['IBM Plex Sans', 500, 'ibm-plex-sans/files/ibm-plex-sans-latin-500-normal.woff2'],
+    ['IBM Plex Sans', 500, 'ibm-plex-sans/files/ibm-plex-sans-latin-ext-500-normal.woff2'],
+    ['IBM Plex Sans', 500, 'ibm-plex-sans/files/ibm-plex-sans-cyrillic-500-normal.woff2'],
     ['IBM Plex Sans', 600, 'ibm-plex-sans/files/ibm-plex-sans-latin-600-normal.woff2'],
+    ['IBM Plex Sans', 600, 'ibm-plex-sans/files/ibm-plex-sans-latin-ext-600-normal.woff2'],
+    ['IBM Plex Sans', 600, 'ibm-plex-sans/files/ibm-plex-sans-cyrillic-600-normal.woff2'],
     ['IBM Plex Mono', 400, 'ibm-plex-mono/files/ibm-plex-mono-latin-400-normal.woff2'],
+    ['IBM Plex Mono', 400, 'ibm-plex-mono/files/ibm-plex-mono-latin-ext-400-normal.woff2'],
+    ['IBM Plex Mono', 400, 'ibm-plex-mono/files/ibm-plex-mono-cyrillic-400-normal.woff2'],
     ['IBM Plex Mono', 500, 'ibm-plex-mono/files/ibm-plex-mono-latin-500-normal.woff2'],
+    ['IBM Plex Mono', 500, 'ibm-plex-mono/files/ibm-plex-mono-latin-ext-500-normal.woff2'],
+    ['IBM Plex Mono', 500, 'ibm-plex-mono/files/ibm-plex-mono-cyrillic-500-normal.woff2'],
     ['Vazirmatn', 400, 'vazirmatn/files/vazirmatn-arabic-400-normal.woff2'],
     ['Vazirmatn', 500, 'vazirmatn/files/vazirmatn-arabic-500-normal.woff2'],
     ['Vazirmatn', 700, 'vazirmatn/files/vazirmatn-arabic-700-normal.woff2']
 ];
+
+// Devanagari and CJK, from whatever the printing machine has.
+const FALLBACK = "'Nirmala UI', 'Noto Sans Devanagari', 'Microsoft YaHei', 'Noto Sans SC', 'PingFang SC', 'Noto Sans CJK SC'";
 
 // The print palette is the light theme of styles.css, fixed: paper is white.
 const CSS = `
 @page { size: A4; }
 * { box-sizing: border-box; }
 html { font-size: 10.5pt; }
-body { margin: 0; background: #fff; color: #1c2733; font-family: 'IBM Plex Sans', 'Vazirmatn', sans-serif; line-height: 1.6; text-align: start; }
-h1, h2, h3 { font-family: 'Unbounded', 'Vazirmatn', sans-serif; font-weight: 500; margin: 0; break-after: avoid; }
+body { margin: 0; background: #fff; color: #1c2733; font-family: 'IBM Plex Sans', 'Vazirmatn', ${ FALLBACK }, sans-serif; line-height: 1.6; text-align: start; }
+h1, h2, h3 { font-family: 'Unbounded', 'Vazirmatn', ${ FALLBACK }, sans-serif; font-weight: 500; margin: 0; break-after: avoid; }
 h4 { margin: 0; break-after: avoid; }
 p { margin: 0 0 7pt; orphans: 3; widows: 3; }
 a { color: inherit; text-decoration: none; }
 .eyebrow { font-size: 7.5pt; letter-spacing: 0.18em; text-transform: uppercase; color: #5b6b7a; margin: 0 0 4pt; }
 [dir='rtl'] .eyebrow { letter-spacing: 0; }
-.num, .mono, pre { font-family: 'IBM Plex Mono', 'Vazirmatn', monospace; direction: ltr; unicode-bidi: isolate; }
+.num, .mono, pre { font-family: 'IBM Plex Mono', 'Vazirmatn', ${ FALLBACK }, monospace; direction: ltr; unicode-bidi: isolate; }
 .num { font-size: 8pt; color: #1f6fa8; }
 .mono { font-size: 9pt; }
 
 .cover { height: 236mm; display: flex; flex-direction: column; justify-content: space-between; break-after: page; }
 .cover .mark { width: 88px; height: 88px; color: #1f6fa8; }
 .cover h1 { font-size: 30pt; font-weight: 700; line-height: 1.15; margin-top: 20pt; }
-.cover .kind { font-family: 'Unbounded', 'Vazirmatn', sans-serif; font-size: 16pt; color: #1f6fa8; margin-top: 6pt; }
+.cover .kind { font-family: 'Unbounded', 'Vazirmatn', ${ FALLBACK }, sans-serif; font-size: 16pt; color: #1f6fa8; margin-top: 6pt; }
 .cover .covers { margin-top: 16pt; color: #5b6b7a; max-width: 120mm; font-size: 11pt; }
 .cover .lede { margin-top: 28pt; max-width: 135mm; font-size: 11.5pt; line-height: 1.7; }
 .cover-foot { display: flex; justify-content: space-between; gap: 12pt; font-size: 8.5pt; color: #5b6b7a; border-top: 1px solid rgba(28, 39, 51, 0.14); padding-top: 8pt; }

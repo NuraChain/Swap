@@ -85,8 +85,7 @@ export const en = {
         download: 'Download PDF',
         downloadTitle: 'Take the whitepaper with you',
         downloadBody: 'The same document, laid out for print: A4, with a cover, contents and page numbers.',
-        alsoIn: 'Also in',
-        fallback: 'This document is written in English and Persian; the English text is shown.'
+        alsoIn: 'Other languages'
     },
     wallet:
     {

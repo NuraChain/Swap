@@ -8,9 +8,9 @@ import Shamseh from '../components/ui/shamseh.component.azeroth';
 import WhitepaperBlock from '../components/whitepaper/whitepaper-block.component.azeroth';
 
 // Prerendered static, like the landing page: the text is data, so the build
-// needs nothing live. The language signal picks the document; a language with
-// no translation of its own reads the English one and says so above the
-// abstract. The PDF at the bottom is the same data laid out for print.
+// needs nothing live. The language signal picks the document, and every language
+// the application ships has one of its own. The PDF at the bottom is the same
+// data laid out for print, in the same ten languages.
 
 interface Entry
 {
@@ -58,7 +58,6 @@ export default component WhitepaperPage()
 {
     derived resolved = whitepaper(currentLang());
     derived doc = resolved.doc;
-    derived translated = resolved.lang === currentLang();
     derived parts = numberParts(doc.parts);
     derived contents: Entry[] = sectionsOf(doc).map(({ number, section }) =>
         ({ id: section.id, number: String(number).padStart(2, '0'), title: section.title }));
@@ -159,12 +158,6 @@ export default component WhitepaperPage()
             </nav>
 
             <article class="min-w-0 max-w-3xl">
-                <Show when={ !translated }>
-                    <p class="mb-6 rounded-xl border border-line bg-panel px-4 py-3 text-sm leading-relaxed text-faint">
-                        { t().whitepaper.fallback }
-                    </p>
-                </Show>
-
                 <section id="abstract" class="card-pop scroll-mt-24 p-6 sm:p-8">
                     <h2 class="font-display text-xl font-medium">{ doc.meta.abstractTitle }</h2>
                     <For each={ doc.abstract } key={ (text, index) => `${ index }-${ text.length }` } let={ text }>
@@ -202,7 +195,7 @@ export default component WhitepaperPage()
                     <Shamseh size={ 28 } class="text-ice" />
                     <h2 class="font-display mt-4 text-xl font-medium">{ t().whitepaper.downloadTitle }</h2>
                     <p class="mt-2 max-w-xl text-sm leading-relaxed text-faint">{ t().whitepaper.downloadBody }</p>
-                    <div class="mt-6 flex flex-wrap items-center gap-3">
+                    <div class="mt-6">
                         <a
                             href={ pdf.href }
                             download={ pdf.fileName }
@@ -213,9 +206,13 @@ export default component WhitepaperPage()
                             { t().whitepaper.download }
                             <span class="opacity-70">· { langInfo(pdf.lang).native }</span>
                         </a>
+                    </div>
+                    {/* Nine more languages: chips, not nine full-width buttons. */}
+                    <p class="eyebrow mt-7">{ t().whitepaper.alsoIn }</p>
+                    <div class="mt-2 flex flex-wrap gap-2">
                         <For each={ otherPdfs } key={ (entry) => entry.lang } let={ entry }>
-                            <a href={ entry.href } download={ entry.fileName } class="btn-ghost px-5 py-3 text-sm">
-                                { t().whitepaper.alsoIn } { langInfo(entry.lang).native }
+                            <a href={ entry.href } download={ entry.fileName } class="btn-ghost px-3 py-1.5 text-xs">
+                                { langInfo(entry.lang).native }
                             </a>
                         </For>
                     </div>

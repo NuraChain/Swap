@@ -1,15 +1,25 @@
 // The whitepaper is data rendered twice - by the page and by the print script -
-// and written in two languages. The compiler holds each document to the
-// Whitepaper type; what it cannot see is what this file defends: that the
-// Persian text has every part, section and block the English one has, in the
-// same order; that every anchor is unique and stable across languages; that a
-// PDF actually ships for every language the page offers one in; and that a
-// language with no translation reads English rather than nothing.
+// and written in all ten languages the application ships. The compiler holds
+// each document to the Whitepaper type; what it cannot see is what this file
+// defends: that every translation has every part, section and block the English
+// one has, in the same order; that every anchor is unique and stable across
+// languages; that asking for a language gives you that language; and that a PDF
+// actually ships for each one.
 
 import { describe, expect, it } from 'vitest';
 
+import { LANGS } from '../src/lib/i18n.ts';
+import type { Lang } from '../src/lib/i18n.ts';
+import { ar } from '../src/lib/whitepaper/ar.ts';
 import { en } from '../src/lib/whitepaper/en.ts';
+import { es } from '../src/lib/whitepaper/es.ts';
 import { fa } from '../src/lib/whitepaper/fa.ts';
+import { fr } from '../src/lib/whitepaper/fr.ts';
+import { hi } from '../src/lib/whitepaper/hi.ts';
+import { pt } from '../src/lib/whitepaper/pt.ts';
+import { ru } from '../src/lib/whitepaper/ru.ts';
+import { tr } from '../src/lib/whitepaper/tr.ts';
+import { zh } from '../src/lib/whitepaper/zh.ts';
 import { WHITEPAPER_PDFS, whitepaper } from '../src/lib/whitepaper/index.ts';
 import { sectionsOf } from '../src/lib/whitepaper/model.ts';
 import type { Block, Whitepaper } from '../src/lib/whitepaper/model.ts';
@@ -20,6 +30,10 @@ const PDF_ASSETS = new Set(
     Object.keys(import.meta.glob('../public/whitepaper/*.pdf'))
         .map((path) => path.split('/').pop() ?? '')
 );
+
+const DOCS: Record<Lang, Whitepaper> = { en, fa, ar, es, pt, hi, zh, ru, fr, tr };
+const TRANSLATIONS = (Object.entries(DOCS) as Array<[Lang, Whitepaper]>).filter(([lang]) => lang !== 'en');
+const ALL = Object.values(DOCS);
 
 /** The shape of a document with the words taken out. */
 function outline(doc: Whitepaper): unknown
@@ -94,16 +108,24 @@ function stringsOf(block: Block): string[]
 
 describe('the whitepaper', () =>
 {
-    it('keeps the Persian outline identical to the English one', () =>
+    it('carries a document in every language the application ships', () =>
     {
-        expect(outline(fa)).toEqual(outline(en));
+        expect(Object.keys(DOCS).sort()).toEqual(LANGS.map((entry) => entry.code).sort());
     });
 
-    it('anchors every section once, and the same way in both languages', () =>
+    it.each(TRANSLATIONS)('keeps the %s outline identical to the English one', (_lang, doc) =>
+    {
+        expect(outline(doc)).toEqual(outline(en));
+    });
+
+    it('anchors every section once, and the same way in every language', () =>
     {
         const ids = sectionsOf(en).map(({ section }) => section.id);
         expect(new Set(ids).size).toBe(ids.length);
-        expect(sectionsOf(fa).map(({ section }) => section.id)).toEqual(ids);
+        for (const [lang, doc] of TRANSLATIONS)
+        {
+            expect(sectionsOf(doc).map(({ section }) => section.id), lang).toEqual(ids);
+        }
         for (const id of ids)
         {
             expect(id, id).toMatch(/^[a-z][a-z-]*$/);
@@ -118,9 +140,9 @@ describe('the whitepaper', () =>
         expect(en.parts.length).toBe(2);
     });
 
-    it('says nothing blank, in either language', () =>
+    it('says nothing blank, in any language', () =>
     {
-        for (const doc of [en, fa])
+        for (const doc of ALL)
         {
             for (const text of strings(doc))
             {
@@ -131,7 +153,7 @@ describe('the whitepaper', () =>
 
     it('marks only whole columns as code, inside the table', () =>
     {
-        for (const doc of [en, fa])
+        for (const doc of ALL)
         {
             for (const { section } of sectionsOf(doc))
             {
@@ -153,16 +175,17 @@ describe('the whitepaper', () =>
         }
     });
 
-    it('reads English for a language without a translation of its own', () =>
+    it('reads a language its own document, never a substitute', () =>
     {
-        expect(whitepaper('zh')).toEqual({ doc: en, lang: 'en' });
-        expect(whitepaper('fa')).toEqual({ doc: fa, lang: 'fa' });
-        expect(whitepaper('en')).toEqual({ doc: en, lang: 'en' });
+        for (const { code } of LANGS)
+        {
+            expect(whitepaper(code)).toEqual({ doc: DOCS[code], lang: code });
+        }
     });
 
-    it('ships a PDF for every language it offers one in', () =>
+    it('ships a PDF for every language, in the picker’s order', () =>
     {
-        expect(WHITEPAPER_PDFS.map((pdf) => pdf.lang)).toEqual(['en', 'fa']);
+        expect(WHITEPAPER_PDFS.map((pdf) => pdf.lang)).toEqual(LANGS.map((entry) => entry.code));
         for (const pdf of WHITEPAPER_PDFS)
         {
             expect(PDF_ASSETS, pdf.fileName).toContain(pdf.fileName);

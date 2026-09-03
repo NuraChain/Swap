@@ -457,20 +457,20 @@ describe('the whitepaper page', () =>
         setLang('fa');
         const { container } = renderTest(() => App({ url: '/whitepaper' }));
         await until(() => container.querySelector('[data-testid="whitepaper-download"]') !== null);
-        expect(container.textContent).toContain('در یک نگاه');
+        expect(container.textContent).toContain('خلاصه‌اش این است');
         expect(container.querySelector('[data-testid="whitepaper-download"]')?.getAttribute('href'))
             .toBe('/whitepaper/nura-swap-whitepaper-fa.pdf');
         expect(container.querySelector('a[href="/whitepaper/nura-swap-whitepaper-en.pdf"]')).not.toBeNull();
     });
 
-    it('falls back to the English text for a language without its own, and says so', async () =>
+    it('reads every other language in its own words, never in English', async () =>
     {
         setLang('fr');
         const { container } = renderTest(() => App({ url: '/whitepaper' }));
         await until(() => container.querySelector('[data-testid="whitepaper-download"]') !== null);
-        expect(container.textContent).toContain('In short');
-        expect(container.textContent).toContain('le texte anglais est affiché');
+        expect(container.textContent).toContain('En bref');
+        expect(container.textContent).not.toContain('In short');
         expect(container.querySelector('[data-testid="whitepaper-download"]')?.getAttribute('href'))
-            .toBe('/whitepaper/nura-swap-whitepaper-en.pdf');
+            .toBe('/whitepaper/nura-swap-whitepaper-fr.pdf');
     });
 });
