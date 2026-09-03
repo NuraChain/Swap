@@ -20,7 +20,7 @@
         "@azerothjs/schema": "^2.0.0-beta.2",
         "@nuraswap/shared": "1.3.0",
         "azerothjs": "^2.0.0-beta.2",
-        "viem": "^2.55.19"
+        "viem": "^2.56.0"
     },
     "devDependencies": {
         "@azerothjs/cli": "^2.0.0-beta.2",
@@ -28,12 +28,12 @@
         "@azerothjs/eslint-plugin": "^2.0.0-beta.2",
         "@azerothjs/ws": "^2.0.0-beta.2",
         "@eslint/js": "^10.0.1",
-        "@types/node": "^26.2.0",
-        "eslint": "^10.9.0",
+        "@types/node": "^26.4.0",
+        "eslint": "^10.9.1",
         "globals": "^17.11.0",
         "jiti": "^2.7.0",
         "typescript": "^6.0.3",
-        "typescript-eslint": "^8.67.0",
+        "typescript-eslint": "^8.68.0",
         "vitest": "^4.1.9"
     }
 }
