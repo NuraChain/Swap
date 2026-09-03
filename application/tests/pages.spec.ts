@@ -442,8 +442,8 @@ describe('the whitepaper page', () =>
         const { container } = renderTest(() => App({ url: '/whitepaper' }));
         await until(() => container.querySelector('[data-testid="whitepaper-download"]') !== null);
         expect(container.querySelector('h1')?.textContent).toContain('Nura Swap');
-        expect(container.textContent).toContain('Abstract');
-        expect(container.textContent).toContain('The business plan');
+        expect(container.textContent).toContain('In short');
+        expect(container.textContent).toContain('The plan');
         // Anchors are the contents list's targets and the PDF's section ids alike.
         expect(container.querySelector('#roadmap')).not.toBeNull();
         expect(container.querySelector('nav a[href="#roadmap"]')).not.toBeNull();
@@ -457,7 +457,7 @@ describe('the whitepaper page', () =>
         setLang('fa');
         const { container } = renderTest(() => App({ url: '/whitepaper' }));
         await until(() => container.querySelector('[data-testid="whitepaper-download"]') !== null);
-        expect(container.textContent).toContain('چکیده');
+        expect(container.textContent).toContain('در یک نگاه');
         expect(container.querySelector('[data-testid="whitepaper-download"]')?.getAttribute('href'))
             .toBe('/whitepaper/nura-swap-whitepaper-fa.pdf');
         expect(container.querySelector('a[href="/whitepaper/nura-swap-whitepaper-en.pdf"]')).not.toBeNull();
@@ -468,7 +468,7 @@ describe('the whitepaper page', () =>
         setLang('fr');
         const { container } = renderTest(() => App({ url: '/whitepaper' }));
         await until(() => container.querySelector('[data-testid="whitepaper-download"]') !== null);
-        expect(container.textContent).toContain('Abstract');
+        expect(container.textContent).toContain('In short');
         expect(container.textContent).toContain('le texte anglais est affiché');
         expect(container.querySelector('[data-testid="whitepaper-download"]')?.getAttribute('href'))
             .toBe('/whitepaper/nura-swap-whitepaper-en.pdf');

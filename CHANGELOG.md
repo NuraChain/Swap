@@ -7,6 +7,18 @@ Notable changes to Nura Swap. The format follows
 The exchange contracts live in [their own repository](https://github.com/NuraChain/Swap);
 this changelog covers the application, the indexer, and the shared maths.
 
+## [Unreleased]
+
+### Changed
+
+- **The whitepaper is written for a reader who has never opened a wallet.**
+  Same twenty-one sections, same figures, same addresses - but the prose was
+  rewritten from the ground up in plain language, in English and Persian
+  alike: a pool is a shared pot, prices are rungs on a ladder, and every term
+  is given a picture before it is given a name. Section titles say what the
+  section is about rather than what it is called, and the PDFs have been
+  regenerated to match. The document is now whitepaper v1.1.
+
 ## [1.3.0] - 2026-09-03
 
 ### Added
