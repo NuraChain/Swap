@@ -6,6 +6,4 @@ Swap tokens, provide liquidity, and track your portfolio on a UniswapV3 AMM
 running on Nura Chain (chain id 1020) - self-custody end to end, in ten
 languages with first-class RTL, dark and light themes.
 
-## License
-
-[MIT](LICENSE)
+Licensed under the [MIT License](LICENSE).
