@@ -146,6 +146,10 @@ export function currentLang(): Lang
 
 export function setLang(lang: Lang): void
 {
+    // A decision, so storage stops being the one that decides: without this a
+    // language taken from the URL is overwritten the first time anything reads
+    // currentLang() and initFromStorage runs behind it.
+    initialized = true;
     applyLang(lang);
     try
     {

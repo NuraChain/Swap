@@ -43,7 +43,7 @@ vi.mock('../src/lib/chain.ts', async (importOriginal) =>
 });
 
 const { default: App } = await import('../src/App.azeroth');
-const { setLang } = await import('../src/lib/i18n.ts');
+const { LANGS, setLang } = await import('../src/lib/i18n.ts');
 
 const TOKENS = [
     { address: '0x00000000000000000000000000000000000000b0', symbol: 'WNURA', name: 'Wrapped NURA', decimals: 18, priceUsd: 850 },
@@ -452,10 +452,9 @@ describe('the whitepaper page', () =>
         expect(link?.hasAttribute('download')).toBe(true);
     });
 
-    it('reads in Persian, with the Persian PDF first and the English one a click away', async () =>
+    it('reads in Persian at the Persian address, with the Persian PDF first', async () =>
     {
-        setLang('fa');
-        const { container } = renderTest(() => App({ url: '/whitepaper' }));
+        const { container } = renderTest(() => App({ url: '/whitepaper/fa' }));
         await until(() => container.querySelector('[data-testid="whitepaper-download"]') !== null);
         expect(container.textContent).toContain('خلاصه‌اش این است');
         expect(container.querySelector('[data-testid="whitepaper-download"]')?.getAttribute('href'))
@@ -465,12 +464,38 @@ describe('the whitepaper page', () =>
 
     it('reads every other language in its own words, never in English', async () =>
     {
-        setLang('fr');
-        const { container } = renderTest(() => App({ url: '/whitepaper' }));
+        const { container } = renderTest(() => App({ url: '/whitepaper/fr' }));
         await until(() => container.querySelector('[data-testid="whitepaper-download"]') !== null);
         expect(container.textContent).toContain('En bref');
         expect(container.textContent).not.toContain('In short');
         expect(container.querySelector('[data-testid="whitepaper-download"]')?.getAttribute('href'))
             .toBe('/whitepaper/nura-swap-whitepaper-fr.pdf');
+    });
+
+    // The address is what a search engine indexed and what the page's own
+    // canonical claims, so it has to outrank the reader's stored preference -
+    // otherwise /whitepaper is indexed in English and served in Persian.
+    it('reads English at the English address whatever language was chosen before', async () =>
+    {
+        setLang('fa');
+        const { container } = renderTest(() => App({ url: '/whitepaper' }));
+        await until(() => container.querySelector('[data-testid="whitepaper-download"]') !== null);
+        expect(container.textContent).toContain('In short');
+        expect(container.textContent).not.toContain('خلاصه‌اش این است');
+        expect(container.querySelector('[data-testid="whitepaper-download"]')?.getAttribute('href'))
+            .toBe('/whitepaper/nura-swap-whitepaper-en.pdf');
+    });
+
+    it('links to the other nine translations by their own addresses', async () =>
+    {
+        const { container } = renderTest(() => App({ url: '/whitepaper/fa' }));
+        await until(() => container.querySelector('[data-testid="whitepaper-lang-en"]') !== null);
+        const links = LANGS.filter((entry) => entry.code !== 'fa')
+            .map((entry) => container.querySelector(`[data-testid="whitepaper-lang-${ entry.code }"]`));
+        expect(links.map((link) => link?.getAttribute('href')))
+            .toEqual(['/whitepaper', '/whitepaper/ar', '/whitepaper/es', '/whitepaper/pt', '/whitepaper/hi',
+                '/whitepaper/zh', '/whitepaper/ru', '/whitepaper/fr', '/whitepaper/tr']);
+        // Its own language is not offered as somewhere else to go.
+        expect(container.querySelector('[data-testid="whitepaper-lang-fa"]')).toBeNull();
     });
 });

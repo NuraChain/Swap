@@ -1,16 +1,22 @@
-import { currentLang, langInfo, t } from '../lib/i18n.ts';
-import { WHITEPAPER_PDFS, whitepaper } from '../lib/whitepaper/index.ts';
+import { Link } from 'azerothjs';
+
+import { LANGS, langInfo, t } from '../lib/i18n.ts';
+import type { Lang } from '../lib/i18n.ts';
+import { WHITEPAPER_PDFS, whitepaperPath } from '../lib/whitepaper/index.ts';
+import { setDocumentTitle, whitepaperTitle } from '../lib/seo.ts';
 import { sectionsOf } from '../lib/whitepaper/model.ts';
-import type { Block, Part } from '../lib/whitepaper/model.ts';
+import type { Block, Part, Whitepaper } from '../lib/whitepaper/model.ts';
 
 import Icon from '../components/ui/icon.component.azeroth';
 import Shamseh from '../components/ui/shamseh.component.azeroth';
 import WhitepaperBlock from '../components/whitepaper/whitepaper-block.component.azeroth';
 
 // Prerendered static, like the landing page: the text is data, so the build
-// needs nothing live. The language signal picks the document, and every language
-// the application ships has one of its own. The PDF at the bottom is the same
-// data laid out for print, in the same ten languages.
+// needs nothing live. The document and its language arrive as PROPS from the
+// route (routes.ts), one route per translation - which is what gives each
+// language an address of its own to be found at, and what keeps the other nine
+// out of this page's bundle. The PDF at the bottom is the same data laid out for
+// print, in the same ten languages.
 
 interface Entry
 {
@@ -54,15 +60,18 @@ function numberParts(parts: Part[]): NumberedPart[]
 const TOC_LINK = 'flex gap-2.5 rounded-lg px-2 py-1 text-sm text-faint hover:text-ink';
 const TOC_LINK_ACTIVE = 'flex gap-2.5 rounded-lg px-2 py-1 text-sm text-ice';
 
-export default component WhitepaperPage()
+export default component WhitepaperPage(props: { doc: Whitepaper; lang: Lang })
 {
-    derived resolved = whitepaper(currentLang());
-    derived doc = resolved.doc;
+    derived doc = props.doc;
     derived parts = numberParts(doc.parts);
     derived contents: Entry[] = sectionsOf(doc).map(({ number, section }) =>
         ({ id: section.id, number: String(number).padStart(2, '0'), title: section.title }));
-    derived pdf = WHITEPAPER_PDFS.find((entry) => entry.lang === resolved.lang) ?? WHITEPAPER_PDFS[0];
+    derived pdf = WHITEPAPER_PDFS.find((entry) => entry.lang === props.lang) ?? WHITEPAPER_PDFS[0];
     derived otherPdfs = WHITEPAPER_PDFS.filter((entry) => entry.lang !== pdf.lang);
+    // The nine sibling translations as real links. An hreflang in the head is a
+    // hint; these are how a crawler - and a reader who landed in a language they
+    // do not read - actually reaches the other nine.
+    derived otherLangs = LANGS.filter((entry) => entry.code !== props.lang);
 
     // The contents list follows the reader: the section under the top of the
     // viewport is the highlighted one. Browser-only, and optional - the list is
@@ -72,6 +81,9 @@ export default component WhitepaperPage()
 
     mount
     {
+        // The prerendered head already says this; it is a client-side navigation
+        // from another language - or another page - that would leave it stale.
+        setDocumentTitle(whitepaperTitle(props.doc));
         if (typeof IntersectionObserver !== 'undefined')
         {
             observer = new IntersectionObserver((entries) =>
@@ -118,6 +130,26 @@ export default component WhitepaperPage()
                     </a>
                     <a href="#abstract" class="btn-ghost px-6 py-3 text-sm">{ t().whitepaper.read }</a>
                 </div>
+                {/* High in the page on purpose: a reader who landed in a language
+                    they do not read should not have to find the header picker. */}
+                <nav aria-label={ t().whitepaper.readIn } class="mt-7">
+                    <p class="eyebrow">{ t().whitepaper.readIn }</p>
+                    <ul class="mt-2 flex flex-wrap gap-2">
+                        <For each={ otherLangs } key={ (entry) => entry.code } let={ entry }>
+                            <li>
+                                <Link
+                                    to={ whitepaperPath(entry.code) }
+                                    hreflang={ entry.code }
+                                    lang={ entry.code }
+                                    class="btn-ghost px-3 py-1.5 text-xs"
+                                    data-testid={ `whitepaper-lang-${ entry.code }` }
+                                >
+                                    { entry.native }
+                                </Link>
+                            </li>
+                        </For>
+                    </ul>
+                </nav>
             </div>
         </section>
 

@@ -83,7 +83,8 @@ export const hi: Dict = {
         download: 'PDF डाउनलोड करें',
         downloadTitle: 'व्हाइटपेपर साथ ले जाएँ',
         downloadBody: 'वही दस्तावेज़, छपाई के लिए तैयार: A4, आवरण, विषय-सूची और पृष्ठ संख्या के साथ।',
-        alsoIn: 'अन्य भाषाएँ'
+        alsoIn: 'अन्य भाषाएँ',
+        readIn: 'दूसरी भाषा में पढ़ें'
     },
     wallet:
     {

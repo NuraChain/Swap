@@ -42,8 +42,11 @@ never reaches an effect.
 
 Routes are declared once in `src/routes.ts` and shared by the client router, the
 SSR entry and the server. The landing page prerenders (`render: 'static'`); the
-trading pages are `render: 'client'` and lazy. The whitepaper page is lazy AND
-static: prose in two languages that no other page should carry.
+trading pages are `render: 'client'` and lazy. The whitepaper is TEN lazy static
+routes, one per translation - `/whitepaper` is English and `/whitepaper/<lang>`
+the other nine - generated from `LANGS`, each prerendering its own words and
+loading only its own document. Ten languages behind one URL were nine languages
+no search engine could reach, and one 157 kB chunk every reader paid for.
 
 **SSR safety matters**: the prerender evaluates every page module, so nothing may
 touch `window`/`localStorage` at module scope. `tests/ssr-safety.spec.ts` is the
@@ -105,6 +108,26 @@ the PDF, so regenerate on a machine that has them.
 
 Read the nearest neighbours before adding anything. No new UI framework, no
 component library, no CSS-in-JS. No hex colours in components.
+
+## Page heads, robots and the sitemap
+
+The kit splices markup into the built shell and leaves the head alone, so
+`scripts/build-seo.mjs` writes it after the prerender: `<html lang>`/`dir`,
+title, description, canonical, the ten-way `hreflang` cluster, Open Graph and
+JSON-LD, plus `robots.txt` and `sitemap.xml`. It runs as part of `npm run build`
+(the root script, not `azeroth build` alone) and reads `dist/.vite/manifest.json`
+to preload each page's own language chunk - so `build.manifest` stays on in
+`vite.config.ts`.
+
+The origin comes from `SITE_ORIGIN`, defaulting to `https://swap.nurachain.net`;
+point it elsewhere on a staging host so it cannot claim production's canonical.
+Titles come from `src/lib/seo.ts`, which the app imports too - the prerendered
+head and a client-side navigation set the same string.
+
+A URL may DECLARE a language: the paper's ten addresses do, and that outranks the
+stored preference (`App.azeroth`, and the pre-paint script in `index.html` by the
+same rule). Editing that inline script changes its hash - `server/src/csp.ts`
+carries it and `server/tests/csp.spec.ts` fails until you update it.
 
 ## Responsive rules
 

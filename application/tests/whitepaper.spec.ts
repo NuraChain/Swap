@@ -20,7 +20,7 @@ import { pt } from '../src/lib/whitepaper/pt.ts';
 import { ru } from '../src/lib/whitepaper/ru.ts';
 import { tr } from '../src/lib/whitepaper/tr.ts';
 import { zh } from '../src/lib/whitepaper/zh.ts';
-import { WHITEPAPER_PDFS, whitepaper } from '../src/lib/whitepaper/index.ts';
+import { WHITEPAPER_PDFS, loadWhitepaper, whitepaperLangOf, whitepaperPath } from '../src/lib/whitepaper/index.ts';
 import { sectionsOf } from '../src/lib/whitepaper/model.ts';
 import type { Block, Whitepaper } from '../src/lib/whitepaper/model.ts';
 
@@ -175,11 +175,39 @@ describe('the whitepaper', () =>
         }
     });
 
-    it('reads a language its own document, never a substitute', () =>
+    it('reads a language its own document, never a substitute', async () =>
     {
         for (const { code } of LANGS)
         {
-            expect(whitepaper(code)).toEqual({ doc: DOCS[code], lang: code });
+            await expect(loadWhitepaper(code)).resolves.toEqual(DOCS[code]);
+        }
+    });
+
+    it('gives every language an address, English keeping the bare one', () =>
+    {
+        expect(whitepaperPath('en')).toBe('/whitepaper');
+        for (const { code } of LANGS.filter((entry) => entry.code !== 'en'))
+        {
+            expect(whitepaperPath(code)).toBe(`/whitepaper/${ code }`);
+        }
+        // Round trip: every address the page links to reads back as its language.
+        for (const { code } of LANGS)
+        {
+            expect(whitepaperLangOf(whitepaperPath(code))).toBe(code);
+        }
+    });
+
+    it('reads no language out of a path that is not the paper', () =>
+    {
+        expect(whitepaperLangOf('/')).toBeNull();
+        expect(whitepaperLangOf('/swap')).toBeNull();
+        expect(whitepaperLangOf('/whitepapers')).toBeNull();
+        expect(whitepaperLangOf('/whitepaper/de')).toBeNull();
+        // The PDFs share the prefix - a language code is matched exactly, never
+        // taken as whatever the segment happens to be.
+        for (const pdf of WHITEPAPER_PDFS)
+        {
+            expect(whitepaperLangOf(pdf.href), pdf.href).toBeNull();
         }
     });
 

@@ -83,7 +83,8 @@ export const ru: Dict = {
         download: 'Скачать PDF',
         downloadTitle: 'Возьмите whitepaper с собой',
         downloadBody: 'Тот же документ, свёрстанный для печати: A4, с обложкой, содержанием и номерами страниц.',
-        alsoIn: 'Другие языки'
+        alsoIn: 'Другие языки',
+        readIn: 'Читать на другом языке'
     },
     wallet:
     {

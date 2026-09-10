@@ -1,5 +1,8 @@
+import { useNavigate, useRoute } from 'azerothjs';
+
 import { LANGS, currentLang, setLang, t } from '../../lib/i18n.ts';
 import type { Lang } from '../../lib/i18n.ts';
+import { whitepaperLangOf, whitepaperPath } from '../../lib/whitepaper/index.ts';
 
 import Flag from '../ui/flag.component.azeroth';
 import Icon from '../ui/icon.component.azeroth';
@@ -16,9 +19,20 @@ import Modal from '../ui/modal.component.azeroth';
 
 export default component LanguageModal(props: { onClose: () => void })
 {
+    const location = useRoute();
+    const { navigate } = useNavigate();
+
     const choose = (lang: Lang): void =>
     {
         setLang(lang);
+        // On the paper the language IS the address - one prerendered URL per
+        // translation. Switching in place would leave /whitepaper/fa showing
+        // Turkish and its own canonical link pointing at the Persian it no
+        // longer shows, so the picker moves the reader instead.
+        if (whitepaperLangOf(location().pathname) !== null)
+        {
+            navigate(whitepaperPath(lang));
+        }
         props.onClose();
     };
 

@@ -14,7 +14,7 @@
     "scripts": {
         "dev": "azeroth dev",
         "check": "azeroth check",
-        "build": "azeroth build",
+        "build": "azeroth build && node application/scripts/build-seo.mjs",
         "start": "npm start --workspace server",
         "test": "azeroth test && npm test --workspace shared",
         "test:shared": "npm test --workspace shared",

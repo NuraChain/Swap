@@ -83,7 +83,8 @@ export const fr: Dict = {
         download: 'Télécharger le PDF',
         downloadTitle: 'Emportez le livre blanc',
         downloadBody: "Le même document, mis en page pour l'impression : A4, avec couverture, sommaire et numéros de page.",
-        alsoIn: 'Autres langues'
+        alsoIn: 'Autres langues',
+        readIn: 'Lire dans une autre langue'
     },
     wallet:
     {

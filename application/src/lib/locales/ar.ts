@@ -83,7 +83,8 @@ export const ar: Dict = {
         download: 'تنزيل PDF',
         downloadTitle: 'خذ الورقة البيضاء معك',
         downloadBody: 'المستند نفسه مُعدّ للطباعة: بحجم A4، مع غلاف وفهرس وترقيم للصفحات.',
-        alsoIn: 'لغات أخرى'
+        alsoIn: 'لغات أخرى',
+        readIn: 'اقرأه بلغة أخرى'
     },
     wallet:
     {

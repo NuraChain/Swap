@@ -83,7 +83,8 @@ export const zh: Dict = {
         download: '下载 PDF',
         downloadTitle: '随身携带白皮书',
         downloadBody: '同一份文档的打印版：A4 纸张，含封面、目录和页码。',
-        alsoIn: '其他语言'
+        alsoIn: '其他语言',
+        readIn: '用其他语言阅读'
     },
     wallet:
     {

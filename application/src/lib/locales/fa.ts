@@ -83,7 +83,8 @@ export const fa: Dict = {
         download: 'دانلود PDF',
         downloadTitle: 'وایت‌پیپر را با خود ببرید',
         downloadBody: 'همین سند، چیده‌شده برای چاپ: A4، با جلد، فهرست و شماره صفحه.',
-        alsoIn: 'زبان‌های دیگر'
+        alsoIn: 'زبان‌های دیگر',
+        readIn: 'خواندن به زبانی دیگر'
     },
     wallet:
     {

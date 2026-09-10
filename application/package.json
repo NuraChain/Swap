@@ -9,7 +9,7 @@
     "scripts": {
         "dev": "azeroth dev",
         "check": "azeroth check",
-        "build": "azeroth build",
+        "build": "azeroth build && node scripts/build-seo.mjs",
         "test": "vitest run",
         "coverage": "vitest run --coverage"
     },

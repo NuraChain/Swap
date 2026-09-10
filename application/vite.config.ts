@@ -31,6 +31,14 @@ function apiPort(): string
 
 export default defineConfig({
     plugins: [azeroth(), tailwindcss()],
+    build:
+    {
+        // scripts/build-seo.mjs reads dist/.vite/manifest.json to learn which chunk
+        // holds which whitepaper translation, so it can preload the right one on
+        // each prerendered page. Guessing from a file name would break the day two
+        // chunks start with the same two letters.
+        manifest: true
+    },
     // The SSR bundle (src/entry.server.ts) inlines its dependencies, so dist-server
     // is ONE self-contained file - production imports it with no client node_modules.
     ssr:

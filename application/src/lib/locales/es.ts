@@ -83,7 +83,8 @@ export const es: Dict = {
         download: 'Descargar PDF',
         downloadTitle: 'Llévate el whitepaper',
         downloadBody: 'El mismo documento, maquetado para imprimir: A4, con portada, índice y números de página.',
-        alsoIn: 'Otros idiomas'
+        alsoIn: 'Otros idiomas',
+        readIn: 'Leer en otro idioma'
     },
     wallet:
     {

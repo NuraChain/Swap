@@ -3,8 +3,10 @@ import type { LoaderHandoff } from 'azerothjs';
 
 import { routes } from './routes.ts';
 import { ensureDeployment } from './lib/chain.ts';
-import { currentLang, t } from './lib/i18n.ts';
+import { currentLang, setLang, t } from './lib/i18n.ts';
+import { landingTitle, setDocumentTitle } from './lib/seo.ts';
 import { currentTheme } from './lib/theme.ts';
+import { whitepaperLangOf } from './lib/whitepaper/index.ts';
 import { startNuraConnector } from './lib/wallet/nura.ts';
 
 import Footer from './components/layout/footer.component.azeroth';
@@ -19,6 +21,48 @@ export default component App(props: { url?: string; handoff?: LoaderHandoff })
         history: props.url !== undefined ? createMemoryHistory(props.url) : undefined,
         initialLoaderData: props.handoff
     });
+
+    // A URL can DECLARE a language - the paper's ten addresses do - and when it
+    // does it outranks the stored preference: an address is the more deliberate
+    // choice, and a prerendered /whitepaper/fa has to come out Persian with no
+    // browser to ask. Read during CONSTRUCTION, so the first markup is already
+    // in that language rather than flipping to it a frame later.
+    const declared = whitepaperLangOf(router.location().pathname);
+    if (declared !== null)
+    {
+        setLang(declared);
+    }
+    else if (typeof window === 'undefined')
+    {
+        // Server-side there is nothing to remember a preference, and ONE module
+        // instance renders every prerendered page in turn - so a page that
+        // declares no language says so, rather than inheriting the language of
+        // whichever page was rendered before it.
+        setLang('en');
+    }
+
+    // And it keeps outranking it: following a link from one translation to
+    // another is a language change like any other.
+    effect (router.location().pathname)
+    {
+        const lang = whitepaperLangOf(router.location().pathname);
+        if (lang !== null && lang !== currentLang())
+        {
+            setLang(lang);
+        }
+    }
+
+    // Each prerendered page ships its own title (scripts/build-seo.mjs); a
+    // client-side navigation has to keep it honest, or the tab still names the
+    // page the reader left. The paper's ten pages are the exception - only the
+    // page itself holds the document that names it - so they set their own.
+    effect (router.location().pathname, currentLang())
+    {
+        if (whitepaperLangOf(router.location().pathname) === null)
+        {
+            setDocumentTitle(router.location().pathname === '/' ? landingTitle(t()) : t().nav.home);
+        }
+    }
 
     mount
     {

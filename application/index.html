@@ -21,14 +21,18 @@
         <script>
             // Pre-paint: apply the persisted theme class and text direction so the
             // first frame is already right. Strings localize at hydration.
-            // The language rule matches lib/i18n.ts: a stored choice, else the
-            // first browser preference we translate, else English.
+            // The language rule matches App.azeroth and lib/i18n.ts: a language
+            // the URL DECLARES (the paper has one address per translation) wins,
+            // else a stored choice, else the first browser preference we
+            // translate, else English. The list is spelled out a second time
+            // because this script runs before any module does.
             try
             {
                 var theme = localStorage.getItem('nuraswap.theme');
                 if (theme === 'light' || theme === 'dark') { document.documentElement.classList.add(theme); }
                 var supported = /^(en|fa|ar|es|pt|hi|zh|ru|fr|tr)$/;
-                var lang = localStorage.getItem('nuraswap.lang');
+                var paper = /^\/whitepaper(?:\/(en|fa|ar|es|pt|hi|zh|ru|fr|tr))?\/?$/.exec(location.pathname);
+                var lang = paper ? (paper[1] || 'en') : localStorage.getItem('nuraswap.lang');
                 if (!lang || !supported.test(lang))
                 {
                     var preferred = navigator.languages || (navigator.language ? [navigator.language] : []);
