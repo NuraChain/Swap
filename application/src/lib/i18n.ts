@@ -1,8 +1,9 @@
 // The app's languages as one typed dictionary per locale: a missing key in any
 // of them is a compile error, not a silent English fallback. Reading t() inside
 // a component tracks the language signal, so the picker re-renders every string
-// in place. SSR renders the 'en' default; the persisted choice applies on
-// hydration (and the pre-paint script in index.html sets lang/dir even earlier).
+// in place. SSR renders the 'en' default; on hydration the persisted choice - or,
+// on a first visit, the browser's own locale - takes over (the pre-paint script
+// in index.html sets lang/dir even earlier, by the same rule).
 //
 // Adding a language: write src/lib/locales/<code>.ts against the Dict type, add
 // its row to LANGS, and add its flag to FLAGS in scripts/build-flags.mjs.
@@ -76,6 +77,28 @@ export function flagSrc(lang: Lang): string
     return `/flags/${ langInfo(lang).flag }.svg`;
 }
 
+// The visitor's language before they have ever chosen one: the first entry in
+// the browser's own preference list that we translate. Region is dropped -
+// 'pt-BR' and 'pt-PT' read the same dictionary - and English stands when the
+// list names nothing we speak.
+function browserLang(): Lang
+{
+    // Read structurally: `languages` is absent on older engines, and the whole
+    // object is absent under SSR.
+    const nav: { languages?: readonly string[]; language?: string } | undefined =
+        typeof navigator === 'undefined' ? undefined : navigator;
+    const preferred = nav?.languages ?? (nav?.language === undefined ? [] : [nav.language]);
+    for (const tag of preferred)
+    {
+        const primary = tag.toLowerCase().split('-')[0];
+        if (isLang(primary))
+        {
+            return primary;
+        }
+    }
+    return 'en';
+}
+
 function initFromStorage(): void
 {
     if (initialized || typeof window === 'undefined')
@@ -84,10 +107,11 @@ function initFromStorage(): void
     }
     initialized = true;
     const stored = readStorage(STORAGE_KEY);
-    if (isLang(stored))
-    {
-        applyLang(stored);
-    }
+    // A stored choice pins the language; without one, follow the browser. The
+    // detected language is NOT written back - storage means 'the visitor picked
+    // this', so a reader who never opens the picker keeps following their
+    // system locale when it changes.
+    applyLang(isLang(stored) ? stored : browserLang());
 }
 
 // Storage can be absent or throwing (privacy modes, test DOMs) - degrade to the

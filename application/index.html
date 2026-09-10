@@ -21,16 +21,26 @@
         <script>
             // Pre-paint: apply the persisted theme class and text direction so the
             // first frame is already right. Strings localize at hydration.
+            // The language rule matches lib/i18n.ts: a stored choice, else the
+            // first browser preference we translate, else English.
             try
             {
                 var theme = localStorage.getItem('nuraswap.theme');
                 if (theme === 'light' || theme === 'dark') { document.documentElement.classList.add(theme); }
+                var supported = /^(en|fa|ar|es|pt|hi|zh|ru|fr|tr)$/;
                 var lang = localStorage.getItem('nuraswap.lang');
-                if (lang && /^(en|fa|ar|es|pt|hi|zh|ru|fr|tr)$/.test(lang))
+                if (!lang || !supported.test(lang))
                 {
-                    document.documentElement.lang = lang;
-                    document.documentElement.dir = (lang === 'fa' || lang === 'ar') ? 'rtl' : 'ltr';
+                    var preferred = navigator.languages || (navigator.language ? [navigator.language] : []);
+                    lang = 'en';
+                    for (var i = 0; i < preferred.length; i++)
+                    {
+                        var primary = String(preferred[i]).toLowerCase().split('-')[0];
+                        if (supported.test(primary)) { lang = primary; break; }
+                    }
                 }
+                document.documentElement.lang = lang;
+                document.documentElement.dir = (lang === 'fa' || lang === 'ar') ? 'rtl' : 'ltr';
             }
             catch (error) { /* storage unavailable - defaults stand */ }
         </script>

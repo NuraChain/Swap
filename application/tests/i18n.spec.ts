@@ -4,7 +4,7 @@
 // renders as an empty button, and the number formatting that decides whether a
 // Persian reader sees their own digits.
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { LANGS, currentLang, flagSrc, fmtNumber, fmtUsd, langInfo, setLang, t } from '../src/lib/i18n.ts';
 import { ar } from '../src/lib/locales/ar.ts';
@@ -171,6 +171,89 @@ describe('switching language', () =>
         setLang('ru');
         expect(t().nav.swap).not.toBe(english);
         expect(t().nav.swap).toBe(ru.nav.swap);
+    });
+});
+
+describe('the first visit', () =>
+{
+    // The language is decided once per module load, so each case needs its own
+    // instance: stub the navigator, reset the graph, import again.
+    async function firstLoad(nav: { languages?: string[]; language?: string }, stored?: string)
+    {
+        window.localStorage.clear();
+        if (stored !== undefined)
+        {
+            window.localStorage.setItem('nuraswap.lang', stored);
+        }
+        vi.stubGlobal('navigator', nav);
+        vi.resetModules();
+        return await import('../src/lib/i18n.ts');
+    }
+
+    afterEach(() =>
+    {
+        vi.unstubAllGlobals();
+        vi.resetModules();
+        window.localStorage.clear();
+    });
+
+    it('opens in the language the browser asks for, when nobody has chosen one', async () =>
+    {
+        const i18n = await firstLoad({ languages: ['fa-IR', 'en-US'], language: 'fa-IR' });
+        expect(i18n.currentLang()).toBe('fa');
+        expect(i18n.t().nav.swap).toBe(fa.nav.swap);
+        // An RTL first visit has to arrive already mirrored.
+        expect(document.documentElement.lang).toBe('fa');
+        expect(document.documentElement.dir).toBe('rtl');
+    });
+
+    it('ignores the region: one dictionary serves every variant of a language', async () =>
+    {
+        const i18n = await firstLoad({ languages: ['pt-BR'], language: 'pt-BR' });
+        expect(i18n.currentLang()).toBe('pt');
+    });
+
+    it('takes the first entry it can actually translate, not the first entry', async () =>
+    {
+        const i18n = await firstLoad({ languages: ['ja-JP', 'ko-KR', 'tr-TR'], language: 'ja-JP' });
+        expect(i18n.currentLang()).toBe('tr');
+    });
+
+    it('falls back to English when it speaks none of them', async () =>
+    {
+        const i18n = await firstLoad({ languages: ['ja-JP', 'ko-KR'], language: 'ja-JP' });
+        expect(i18n.currentLang()).toBe('en');
+        expect(document.documentElement.dir).toBe('ltr');
+    });
+
+    it('reads navigator.language where there is no preference list', async () =>
+    {
+        const i18n = await firstLoad({ language: 'ar-EG' });
+        expect(i18n.currentLang()).toBe('ar');
+    });
+
+    it('falls back to English with no navigator at all', async () =>
+    {
+        const i18n = await firstLoad({});
+        expect(i18n.currentLang()).toBe('en');
+    });
+
+    it('lets a stored choice outrank the browser', async () =>
+    {
+        const i18n = await firstLoad({ languages: ['fa-IR'], language: 'fa-IR' }, 'ru');
+        expect(i18n.currentLang()).toBe('ru');
+    });
+
+    it('does not write the detected language back to storage', async () =>
+    {
+        // Storage means 'the visitor picked this'. Left empty, a reader whose
+        // system locale changes is followed rather than pinned - and the picker
+        // still writes on a real choice.
+        const i18n = await firstLoad({ languages: ['es-ES'], language: 'es-ES' });
+        expect(i18n.currentLang()).toBe('es');
+        expect(window.localStorage.getItem('nuraswap.lang')).toBeNull();
+        i18n.setLang('fr');
+        expect(window.localStorage.getItem('nuraswap.lang')).toBe('fr');
     });
 });
 
