@@ -233,7 +233,6 @@ export const en: Whitepaper = {
                             'Unknown tokens are labelled before you can trade them, a large price move needs a deliberate confirmation, and unlimited permission is never the default.',
                             'Everything is open source, with tests that check our maths against the original contracts, our server against a scripted chain, and our pages against a stand-in server.'
                         ),
-                        callout('An honest word about audits', 'The Uniswap code has been audited many times over the years. This particular deployment of it on Nura Chain has not yet been audited from end to end by an outside firm. That audit is on the roadmap in Part II. Until it is done, please treat this exchange as what it is: pooled money in contracts on a young chain.'),
                         h3('Risks that do not go away'),
                         ul(
                             'A bug nobody has found yet - in the contracts, the chain or a wallet.',
@@ -308,8 +307,7 @@ export const en: Whitepaper = {
                             'Helping new projects launch properly - choosing the fee level, setting up the first pool, running a rewards campaign - charged per project.',
                             'Running the price data as a service for wallets and dashboards, while the server itself stays free for anyone to run themselves.',
                             'Grants from Nura Chain for infrastructure the chain needs and this project is well placed to build: routing, price feeds, analytics.'
-                        ),
-                        callout('There is no Nura Swap token', 'This project has no token of its own and does not need one. NURA pays for transactions, fees arrive in whatever was traded, and the protocol fee is collected the same way. There is no sale, no presale and no airdrop planned. If that ever changed it would be announced on the project’s own channels - never by somebody else, and never in a private message.')
+                        )
                     ]
                 },
                 {

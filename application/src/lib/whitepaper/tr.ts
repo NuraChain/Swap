@@ -224,7 +224,6 @@ export const tr: Whitepaper = {
                             'Bilinmeyen tokenler siz işlem yapamadan etiketlenir, büyük fiyat hareketi bilerek onay gerektirir ve sınırsız izin asla varsayılan değildir.',
                             'Her şey açık kaynak; matematiğimizi asıl sözleşmelerle, sunucumuzu senaryolanmış bir zincirle ve sayfalarımızı taklit bir sunucuyla karşılaştıran testlerle birlikte.'
                         ),
-                        callout('Denetimler hakkında dürüst bir söz', 'Uniswap kodu yıllar içinde defalarca denetlendi. Ama bunun Nura Chain üzerindeki bu kurulumu henüz dışarıdan bir firma tarafından baştan sona denetlenmedi. O denetim ikinci bölümdeki yol haritasında var. Yapılana kadar bu borsaya ne ise o gözle bakın: genç bir zincirdeki sözleşmelerde toplanmış para.'),
                         h3('Ortadan kalkmayan riskler'),
                         ul(
                             'Henüz kimsenin bulmadığı bir hata: sözleşmelerde, zincirde ya da bir cüzdanda.',
@@ -299,8 +298,7 @@ export const tr: Whitepaper = {
                             'Yeni projelerin düzgün başlamasına yardım etmek: komisyon kademesini seçmek, ilk havuzu kurmak, bir ödül kampanyası yürütmek; proje başına ücretlendirilir.',
                             'Fiyat verisini cüzdanlara ve panolara hizmet olarak sunmak; sunucunun kendisi ise kendi çalıştırmak isteyen herkese açık kalır.',
                             'Zincirin ihtiyaç duyduğu ve bu projenin kurmaya elverişli olduğu altyapı için Nura Chain’den hibeler: yönlendirme, fiyat akışları, analitik.'
-                        ),
-                        callout('Nura Swap tokeni diye bir şey yok', 'Bu projenin kendi tokeni yok ve gerek de duymuyor. İşlemleri NURA öder, komisyonlar neyle işlem yapıldıysa onunla gelir ve protokol komisyonu da aynı şekilde toplanır. Ne satış, ne ön satış, ne de planlanmış bir airdrop var. Bu bir gün değişirse projenin kendi kanallarından duyurulur; asla başkası tarafından ve asla özel mesajla değil.')
+                        )
                     ]
                 },
                 {

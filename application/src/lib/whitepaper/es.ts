@@ -224,7 +224,6 @@ export const es: Whitepaper = {
                             'Los tokens desconocidos se etiquetan antes de que puedas operarlos, un movimiento de precio grande exige una confirmación deliberada, y el permiso ilimitado nunca viene por defecto.',
                             'Todo es de código abierto, con pruebas que contrastan nuestras matemáticas con los contratos originales, nuestro servidor con una cadena simulada y nuestras páginas con un servidor de mentira.'
                         ),
-                        callout('Una palabra honesta sobre auditorías', 'El código de Uniswap se ha auditado muchas veces a lo largo de los años. Este despliegue concreto en Nura Chain todavía no lo ha auditado de punta a punta una empresa externa. Esa auditoría está en la hoja de ruta de la Parte II. Hasta que se haga, trata este exchange por lo que es: dinero puesto en común en contratos sobre una cadena joven.'),
                         h3('Riesgos que no desaparecen'),
                         ul(
                             'Un fallo que nadie ha encontrado todavía, en los contratos, en la cadena o en una cartera.',
@@ -299,8 +298,7 @@ export const es: Whitepaper = {
                             'Ayudar a proyectos nuevos a arrancar bien: elegir el nivel de comisión, montar el primer pool, llevar una campaña de recompensas; se cobra por proyecto.',
                             'Ofrecer los datos de precios como servicio a carteras y paneles, mientras el servidor sigue siendo gratis para quien quiera ejecutarlo por su cuenta.',
                             'Subvenciones de Nura Chain para infraestructura que la cadena necesita y este proyecto está bien situado para construir: enrutado, feeds de precios, analítica.'
-                        ),
-                        callout('No existe ningún token de Nura Swap', 'Este proyecto no tiene token propio y no lo necesita. NURA paga las transacciones, las comisiones llegan en lo que se haya operado, y la comisión de protocolo se cobra igual. No hay venta, ni preventa, ni airdrop previsto. Si eso cambiara alguna vez, se anunciaría en los canales del propio proyecto, nunca por otra persona y nunca en un mensaje privado.')
+                        )
                     ]
                 },
                 {

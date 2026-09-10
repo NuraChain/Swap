@@ -224,7 +224,6 @@ export const fr: Whitepaper = {
                             'Les jetons inconnus sont signalés avant que vous puissiez les échanger, un gros mouvement de prix exige une confirmation délibérée, et l’autorisation illimitée n’est jamais le réglage par défaut.',
                             'Tout est en open source, avec des tests qui confrontent nos maths aux contrats d’origine, notre serveur à une chaîne scriptée, et nos pages à un serveur factice.'
                         ),
-                        callout('Un mot honnête sur les audits', 'Le code d’Uniswap a été audité de nombreuses fois au fil des ans. Ce déploiement précis sur Nura Chain n’a pas encore été audité de bout en bout par une société extérieure. Cet audit figure dans la feuille de route de la partie II. En attendant, traitez cette plateforme pour ce qu’elle est : de l’argent mis en commun dans des contrats sur une chaîne jeune.'),
                         h3('Des risques qui ne disparaissent pas'),
                         ul(
                             'Un bug que personne n’a encore trouvé, dans les contrats, dans la chaîne ou dans un portefeuille.',
@@ -299,8 +298,7 @@ export const fr: Whitepaper = {
                             'Aider les nouveaux projets à démarrer correctement : choisir le niveau de commission, monter le premier pool, mener une campagne de récompenses ; facturé au projet.',
                             'Fournir les données de prix comme service aux portefeuilles et aux tableaux de bord, le serveur lui-même restant libre pour qui veut le faire tourner soi-même.',
                             'Des subventions de Nura Chain pour l’infrastructure dont la chaîne a besoin et que ce projet est bien placé pour construire : routage, flux de prix, analytique.'
-                        ),
-                        callout('Il n’existe pas de jeton Nura Swap', 'Ce projet n’a pas de jeton à lui et n’en a pas besoin. NURA paie les transactions, les commissions arrivent dans ce qui a été échangé, et la commission de protocole se récolte de la même façon. Il n’y a ni vente, ni prévente, ni airdrop prévu. Si cela changeait un jour, ce serait annoncé sur les canaux du projet lui-même, jamais par quelqu’un d’autre, et jamais en message privé.')
+                        )
                     ]
                 },
                 {

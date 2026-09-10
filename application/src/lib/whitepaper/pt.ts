@@ -224,7 +224,6 @@ export const pt: Whitepaper = {
                             'Tokens desconhecidos são marcados antes de os poder negociar, um movimento de preço grande exige uma confirmação deliberada, e autorização ilimitada nunca é a opção por omissão.',
                             'Tudo é de código aberto, com testes que comparam a nossa matemática com os contratos originais, o nosso servidor com uma cadeia simulada e as nossas páginas com um servidor de faz de conta.'
                         ),
-                        callout('Uma palavra honesta sobre auditorias', 'O código da Uniswap foi auditado muitas vezes ao longo dos anos. Esta instalação em particular na Nura Chain ainda não foi auditada de ponta a ponta por uma empresa de fora. Essa auditoria está no roteiro da Parte II. Até estar feita, trate esta exchange pelo que é: dinheiro reunido em contratos numa cadeia jovem.'),
                         h3('Riscos que não desaparecem'),
                         ul(
                             'Uma falha que ainda ninguém encontrou, nos contratos, na cadeia ou numa carteira.',
@@ -299,8 +298,7 @@ export const pt: Whitepaper = {
                             'Ajudar projetos novos a arrancar como deve ser: escolher o nível de comissão, montar a primeira pool, correr uma campanha de recompensas; cobrado por projeto.',
                             'Fornecer os dados de preços como serviço a carteiras e painéis, enquanto o servidor em si continua livre para quem o quiser correr sozinho.',
                             'Bolsas da Nura Chain para infraestrutura de que a cadeia precisa e que este projeto está bem posicionado para construir: encaminhamento, feeds de preços, análise.'
-                        ),
-                        callout('Não existe nenhum token Nura Swap', 'Este projeto não tem token próprio e não precisa de um. O NURA paga as transações, as comissões chegam naquilo que foi negociado, e a comissão de protocolo é cobrada da mesma maneira. Não há venda, nem pré-venda, nem airdrop previsto. Se isso alguma vez mudar, será anunciado nos canais do próprio projeto, nunca por outra pessoa e nunca numa mensagem privada.')
+                        )
                     ]
                 },
                 {
