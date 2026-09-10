@@ -7,6 +7,47 @@ Notable changes to Nura Swap. The format follows
 The exchange contracts live in [their own repository](https://github.com/NuraChain/Swap);
 this changelog covers the application, the indexer, and the shared maths.
 
+## [1.4.1] - 2026-09-10
+
+### Added
+
+- **The whitepaper has an address in every language it is written in.**
+  `/whitepaper` is English and `/whitepaper/<lang>` the other nine, one
+  prerendered route each, generated from `LANGS`. Ten languages behind one URL
+  were nine languages no search engine could reach; each now carries its own
+  `<html lang>` and direction, title, description, canonical, the ten-way
+  `hreflang` cluster with `x-default`, Open Graph, Twitter and `TechArticle`
+  JSON-LD. The hero lists the nine siblings as real links, so a reader who
+  landed in a language they do not read is one click from their own.
+- **A page head, a sitemap and a robots.txt.** The kit splices markup into the
+  built shell and leaves the head alone, so `scripts/build-seo.mjs` writes it
+  after the prerender - every page, not only the paper - and emits
+  `sitemap.xml` with `xhtml:link` alternates and `robots.txt` beside it. The
+  origin comes from `SITE_ORIGIN`, defaulting to `https://swap.nurachain.net`,
+  so a staging host cannot claim production's canonical.
+- **A first visit follows the browser's locale.** Ten languages were only ever
+  reachable through the picker; now `navigator.languages` chooses among them on
+  a first visit, before paint, and the moment a reader picks for themselves
+  that choice is what persists.
+
+### Changed
+
+- **A whitepaper reader downloads one translation instead of ten.** The
+  document index imported all ten statically, so every reader paid for one
+  502 kB chunk - 157 kB over the wire - to read one language. The imports are
+  dynamic and the route hands the page its own document: 68 kB raw, 18 kB
+  gzipped for an English reader.
+- **A URL that declares a language outranks the stored preference.** The
+  paper's ten addresses declare one, so opening `/whitepaper/tr` reads Turkish
+  even for someone who has read the site in English all year, and the picker
+  navigates to the sibling URL rather than swapping the words in place.
+
+### Removed
+
+- **Two callouts from the whitepaper**, in all ten languages, with the PDFs
+  regenerated: the note on audits under security, and the note under value
+  capture saying the project has no token.
+
 ## [1.4.0] - 2026-09-03
 
 ### Added
