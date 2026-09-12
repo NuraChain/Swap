@@ -38,6 +38,6 @@
     },
     "devDependencies": {
         "@azerothjs/cli": "^2.0.0-beta.2",
-        "@vitest/coverage-v8": "^4.1.11"
+        "@vitest/coverage-v8": "^5.0.0"
     }
 }
