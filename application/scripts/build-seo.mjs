@@ -21,6 +21,8 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { OG_HEIGHT, OG_WIDTH } from './lib/brand.mjs';
+
 import { LANGS } from '../src/lib/i18n.ts';
 import { en as enDict } from '../src/lib/locales/en.ts';
 import { landingTitle, whitepaperTitle } from '../src/lib/seo.ts';
@@ -42,7 +44,20 @@ const DIST = join(ROOT, 'dist');
 // Absolute URLs are not optional here: canonical, hreflang, og:url and every
 // sitemap entry are meaningless relative. One origin, overridable for a staging
 // host that must not claim the production one's canonical.
-const ORIGIN = (process.env.SITE_ORIGIN ?? 'https://swap.nurachain.net').replace(/\/+$/u, '');
+const PRODUCTION_ORIGIN = 'https://swap.nurachain.net';
+const ORIGIN = (process.env.SITE_ORIGIN ?? PRODUCTION_ORIGIN).replace(/\/+$/u, '');
+
+// Only the real site invites a crawler in. A staging host serves the same ten
+// documents under the same titles, and a search engine that finds them has two
+// copies of everything to choose between - so every page it writes there says
+// noindex and robots.txt closes the door behind it. The canonical rule above
+// stops staging CLAIMING production's address; this stops it competing at all.
+const INDEXABLE = ORIGIN === PRODUCTION_ORIGIN;
+
+// `index, follow` is the default a crawler already assumes, so the tag earns its
+// place on the second half: max-image-preview:large is what lets Google show the
+// 1200x630 card rather than a thumbnail, and it is opt-in.
+const ROBOTS = INDEXABLE ? 'index, follow, max-image-preview:large' : 'noindex, nofollow';
 
 const DOCS = { en, fa, ar, es, pt, hi, zh, ru, fr, tr };
 
@@ -51,7 +66,15 @@ const DOCS = { en, fa, ar, es, pt, hi, zh, ru, fr, tr };
 // narrow the match for nothing.
 const HREFLANG = LANGS.map((entry) => entry.code);
 
-const OG_IMAGE = '/icon-512.png';
+// The 1200x630 card scripts/build-og-image.mjs renders and commits. A square app
+// icon was what stood here, and every validator read it the same way: too small
+// for the box every platform crops to, and the wrong ratio for a large summary
+// card, so the preview could only ever be a thumbnail beside the title.
+const OG_IMAGE = '/og.png';
+
+// What the card SAYS, for a reader who cannot see it. Built from the same
+// headline the card renders, so it describes the file that actually ships.
+const OG_IMAGE_ALT = `Nura Swap - ${ enDict.landing.headline }`;
 
 // og:locale is language_TERRITORY, not a BCP 47 tag. LangInfo.locale carries the
 // region for nine of the ten; Arabic is written region-less there on purpose, so
@@ -141,9 +164,13 @@ function chunksFor(manifest, source, seen = new Set())
 // Head rewriting.
 
 /**
- * Replaces the shell's generic head tags with this page's own. Idempotent: the
- * tags it writes are the tags it strips, so a second run over the same file
- * produces the same file.
+ * Replaces the shell's generic head tags with this page's own. Every META tag it
+ * writes is a tag it strips, so a second run neither duplicates nor drops one.
+ * The modulepreloads are the exception and deliberately so: they are filtered
+ * against what is already in the head rather than stripped, because the kit
+ * writes its own and this must not remove those. A re-run therefore leaves them
+ * where they are and rebuilds the block below them - the same tags, once
+ * reordered, stable from then on.
  */
 function writeHead(html, { lang, locale, dir, title, description, canonical, alternates, structured, preloads })
 {
@@ -151,7 +178,11 @@ function writeHead(html, { lang, locale, dir, title, description, canonical, alt
 
     out = out.replace(/[ \t]*<title>[\s\S]*?<\/title>\n?/u, '');
     out = out.replace(/[ \t]*<meta name="description"[^>]*>\n?/u, '');
-    out = out.replace(/[ \t]*<meta property="og:(?:title|description|type|url|image|locale|site_name)"[^>]*>\n?/gu, '');
+    // og:[a-z:] rather than a list, so og:image:width and anything added later
+    // is stripped by the same rule that writes it - a list stops matching the
+    // moment a tag below it is added.
+    out = out.replace(/[ \t]*<meta property="og:[a-z:_]+"[^>]*>\n?/gu, '');
+    out = out.replace(/[ \t]*<meta name="robots"[^>]*>\n?/gu, '');
     out = out.replace(/[ \t]*<meta name="twitter:[^"]*"[^>]*>\n?/gu, '');
     out = out.replace(/[ \t]*<link rel="(?:canonical|alternate)"[^>]*>\n?/gu, '');
     out = out.replace(/[ \t]*<script type="application\/ld\+json">[\s\S]*?<\/script>\n?/gu, '');
@@ -161,6 +192,7 @@ function writeHead(html, { lang, locale, dir, title, description, canonical, alt
     const lines = [
         `<title>${ escapeHtml(title) }</title>`,
         `<meta name="description" content="${ escapeHtml(description) }"/>`,
+        `<meta name="robots" content="${ ROBOTS }"/>`,
         `<link rel="canonical" href="${ canonical }"/>`,
         ...alternates.map(({ hreflang, href }) => `<link rel="alternate" hreflang="${ hreflang }" href="${ href }"/>`),
         '<meta property="og:site_name" content="Nura Swap"/>',
@@ -170,15 +202,62 @@ function writeHead(html, { lang, locale, dir, title, description, canonical, alt
         `<meta property="og:url" content="${ canonical }"/>`,
         `<meta property="og:locale" content="${ locale }"/>`,
         `<meta property="og:image" content="${ ORIGIN }${ OG_IMAGE }"/>`,
-        '<meta name="twitter:card" content="summary"/>',
+        // Stated rather than left to be discovered: a crawler that has not yet
+        // fetched the image still lays the card out correctly, and the first
+        // unfurl is the one that gets cached.
+        `<meta property="og:image:width" content="${ OG_WIDTH }"/>`,
+        `<meta property="og:image:height" content="${ OG_HEIGHT }"/>`,
+        '<meta property="og:image:type" content="image/png"/>',
+        `<meta property="og:image:alt" content="${ escapeHtml(OG_IMAGE_ALT) }"/>`,
+        // summary_large_image, because there is now an image worth the space.
+        '<meta name="twitter:card" content="summary_large_image"/>',
         `<meta name="twitter:title" content="${ escapeHtml(title) }"/>`,
         `<meta name="twitter:description" content="${ escapeHtml(description) }"/>`,
         `<meta name="twitter:image" content="${ ORIGIN }${ OG_IMAGE }"/>`,
+        `<meta name="twitter:image:alt" content="${ escapeHtml(OG_IMAGE_ALT) }"/>`,
         ...fresh.map((href) => `<link rel="modulepreload" crossorigin href="${ href }">`),
         `<script type="application/ld+json">${ jsonLd(structured) }</script>`
     ];
     const block = lines.map((line) => `        ${ line }`).join('\n');
-    return out.replace('</head>', `${ block }\n    </head>`);
+    // The indentation before </head> would otherwise prefix the block's FIRST
+    // line and only that one, leaving it four spaces deeper than its siblings.
+    return out.replace(/[ \t]*<\/head>/u, `${ block }\n    </head>`);
+}
+
+/**
+ * The shell dist/shell.html, which the kit serves for every render: 'client'
+ * route - /swap, /liquidity, /portfolio. It is ONE file behind three addresses,
+ * so it gets no canonical and no og:url; the app sets the real title on
+ * hydration through lib/seo.ts. What it can carry is everything that does not
+ * depend on which of the three you asked for: the robots directive, and the
+ * card, which is the whole reason a link to /swap pasted into a chat looked
+ * like a bare URL before.
+ *
+ * Only the tags it writes are stripped, so the generic og:title and
+ * og:description from index.html survive and this stays idempotent.
+ */
+function writeShellHead(html)
+{
+    let out = html;
+    out = out.replace(/[ \t]*<meta name="robots"[^>]*>\n?/gu, '');
+    out = out.replace(/[ \t]*<meta property="og:image[a-z:_]*"[^>]*>\n?/gu, '');
+    out = out.replace(/[ \t]*<meta name="twitter:[^"]*"[^>]*>\n?/gu, '');
+
+    const lines = [
+        `<meta name="robots" content="${ ROBOTS }"/>`,
+        `<meta property="og:image" content="${ ORIGIN }${ OG_IMAGE }"/>`,
+        `<meta property="og:image:width" content="${ OG_WIDTH }"/>`,
+        `<meta property="og:image:height" content="${ OG_HEIGHT }"/>`,
+        '<meta property="og:image:type" content="image/png"/>',
+        `<meta property="og:image:alt" content="${ escapeHtml(OG_IMAGE_ALT) }"/>`,
+        '<meta name="twitter:card" content="summary_large_image"/>',
+        `<meta name="twitter:image" content="${ ORIGIN }${ OG_IMAGE }"/>`,
+        `<meta name="twitter:image:alt" content="${ escapeHtml(OG_IMAGE_ALT) }"/>`
+    ];
+    const block = lines.map((line) => `        ${ line }`).join('\n');
+    // The indentation before </head> would otherwise prefix the block's FIRST
+    // line and only that one, leaving it four spaces deeper than its siblings.
+    return out.replace(/[ \t]*<\/head>/u, `${ block }\n    </head>`);
 }
 
 function readPage(urlPath)
@@ -274,6 +353,15 @@ function run()
     }), 'utf8');
     written.push('/');
 
+    // The shell behind the three client-rendered routes. It is written by the
+    // kit, not prerendered, so readPage would not find it under a URL.
+    const shellFile = join(DIST, 'shell.html');
+    if (existsSync(shellFile))
+    {
+        writeFileSync(shellFile, writeShellHead(readFileSync(shellFile, 'utf8')), 'utf8');
+        written.push('shell.html');
+    }
+
     // Only the pages that hold text worth ranking. The trading pages render in
     // the browser against a wallet and would be an empty shell to a crawler, and
     // the PDFs are left out on purpose: they say the same thing as the ten HTML
@@ -300,14 +388,21 @@ function run()
     ].join('\n');
     writeFileSync(join(DIST, 'sitemap.xml'), sitemap, 'utf8');
 
-    const robots = [
-        '# Nura Swap. Written by scripts/build-seo.mjs - edit that, not this.',
-        'User-agent: *',
-        'Allow: /',
-        '',
-        `Sitemap: ${ ORIGIN }/sitemap.xml`,
-        ''
-    ].join('\n');
+    // A staging host closes the door and does not advertise the sitemap: the
+    // Sitemap: line is an invitation, and every page it would list says noindex.
+    const robots = (INDEXABLE
+        ? [
+            '# Nura Swap. Written by scripts/build-seo.mjs - edit that, not this.',
+            'User-agent: *',
+            'Allow: /',
+            '',
+            `Sitemap: ${ ORIGIN }/sitemap.xml`
+        ]
+        : [
+            `# Not the production site (${ ORIGIN }). Written by scripts/build-seo.mjs.`,
+            'User-agent: *',
+            'Disallow: /'
+        ]).concat('').join('\n');
     writeFileSync(join(DIST, 'robots.txt'), robots, 'utf8');
 
     console.log(`seo: ${ ORIGIN } -> ${ written.length } pages, sitemap.xml, robots.txt`);

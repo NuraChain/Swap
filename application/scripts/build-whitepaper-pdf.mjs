@@ -13,11 +13,13 @@
 // page numbers is not a document. The fonts are the application's own,
 // embedded as data URIs so a file:// page needs no network and no CORS.
 
-import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
+
+import { esc, fontFaces, shamseh } from './lib/brand.mjs';
+import { findChrome, withPage } from './lib/chrome.mjs';
 
 import { ar as arDict } from '../src/lib/locales/ar.ts';
 import { en as enDict } from '../src/lib/locales/en.ts';
@@ -164,35 +166,9 @@ tr { break-inside: avoid; }
 .disclaimer p { margin: 0; }
 `;
 
-// The shamseh, as ui/shamseh.component.azeroth draws it, at the cover's scale.
-const SHAMSEH = '<svg class="mark" viewBox="-50 -50 100 100" fill="none" stroke="currentColor" aria-hidden="true">'
-    + '<rect x="-31" y="-31" width="62" height="62" stroke-width="1.6"/>'
-    + '<rect x="-31" y="-31" width="62" height="62" stroke-width="1.6" transform="rotate(45)"/>'
-    + '<circle r="19" stroke-width="1.3"/><circle r="4.5" fill="currentColor" stroke="none"/></svg>';
-
-function esc(text)
-{
-    return String(text).replace(/[&<>"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[char]);
-}
-
 function pad(number)
 {
     return String(number).padStart(2, '0');
-}
-
-function fontFaces()
-{
-    const bases = [join(ROOT, 'node_modules', '@fontsource'), join(ROOT, '..', 'node_modules', '@fontsource')];
-    const base = bases.find((candidate) => existsSync(candidate));
-    if (base === undefined)
-    {
-        throw new Error('@fontsource packages not found - run npm install first');
-    }
-    return FONTS.map(([family, weight, file]) =>
-    {
-        const data = readFileSync(join(base, file)).toString('base64');
-        return `@font-face { font-family: '${ family }'; font-weight: ${ weight }; font-style: normal; font-display: block; src: url(data:font/woff2;base64,${ data }) format('woff2'); }`;
-    }).join('\n');
 }
 
 function renderBlock(block)
@@ -235,7 +211,7 @@ function renderDocument(lang, { doc, dict, dir }, fonts)
     const numberOf = new Map(sectionsOf(doc).map(({ number, section }) => [section.id, pad(number)]));
 
     const cover = `<section class="cover">
-        <div>${ SHAMSEH }<h1>${ esc(doc.meta.title) }</h1><p class="kind">${ esc(doc.meta.subtitle) }</p><p class="covers">${ esc(doc.meta.covers) }</p><p class="lede">${ esc(doc.abstract[0]) }</p></div>
+        <div>${ shamseh() }<h1>${ esc(doc.meta.title) }</h1><p class="kind">${ esc(doc.meta.subtitle) }</p><p class="covers">${ esc(doc.meta.covers) }</p><p class="lede">${ esc(doc.abstract[0]) }</p></div>
         <div class="cover-foot"><span>${ esc(doc.meta.version) } · ${ esc(doc.meta.date) }</span><span class="mono">github.com/NuraChain/Swap</span></div>
     </section>`;
 
@@ -262,122 +238,11 @@ function footerTemplate(label, dir)
         + `<span>${ esc(label) }</span><span><span class="pageNumber"></span> / <span class="totalPages"></span></span></div>`;
 }
 
-function findChrome()
-{
-    if (process.env.CHROME !== undefined && process.env.CHROME !== '')
-    {
-        return process.env.CHROME;
-    }
-    const programFiles = process.env.PROGRAMFILES ?? 'C:\\Program Files';
-    const programFilesX86 = process.env['PROGRAMFILES(X86)'] ?? 'C:\\Program Files (x86)';
-    const candidates = process.platform === 'win32'
-        ? [
-            join(programFiles, 'Google', 'Chrome', 'Application', 'chrome.exe'),
-            join(programFilesX86, 'Google', 'Chrome', 'Application', 'chrome.exe'),
-            join(process.env.LOCALAPPDATA ?? '', 'Google', 'Chrome', 'Application', 'chrome.exe'),
-            join(programFilesX86, 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
-            join(programFiles, 'Microsoft', 'Edge', 'Application', 'msedge.exe')
-        ]
-        : process.platform === 'darwin'
-            ? ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '/Applications/Chromium.app/Contents/MacOS/Chromium']
-            : ['/usr/bin/google-chrome', '/usr/bin/google-chrome-stable', '/usr/bin/chromium', '/usr/bin/chromium-browser', '/snap/bin/chromium'];
-    const found = candidates.find((candidate) => existsSync(candidate));
-    if (found === undefined)
-    {
-        throw new Error('no Chrome or Edge found - set CHROME=/path/to/chrome');
-    }
-    return found;
-}
-
-/** A minimal DevTools client: one browser, one page, one print. */
+/** One page, printed. The browser plumbing lives in lib/chrome.mjs. */
 async function printToPdf(chrome, htmlPath, footer)
 {
-    const profile = mkdtempSync(join(tmpdir(), 'nuraswap-whitepaper-'));
-    const child = spawn(chrome, [
-        '--headless=new',
-        '--disable-gpu',
-        '--disable-extensions',
-        '--hide-scrollbars',
-        '--no-first-run',
-        '--no-default-browser-check',
-        '--remote-debugging-port=0',
-        `--user-data-dir=${ profile }`,
-        'about:blank'
-    ], { stdio: ['ignore', 'ignore', 'pipe'] });
-
-    try
+    return withPage(chrome, htmlPath, async (send, sessionId) =>
     {
-        const wsUrl = await new Promise((resolve, reject) =>
-        {
-            let log = '';
-            child.stderr.on('data', (chunk) =>
-            {
-                log += chunk;
-                const match = log.match(/DevTools listening on (ws:\/\/\S+)/);
-                if (match !== null)
-                {
-                    resolve(match[1]);
-                }
-            });
-            child.on('exit', (code) => reject(new Error(`chrome exited with ${ code } before listening:\n${ log }`)));
-            setTimeout(() => reject(new Error('chrome did not start within 30s')), 30_000).unref();
-        });
-
-        const ws = new WebSocket(wsUrl);
-        await new Promise((resolve, reject) =>
-        {
-            ws.onopen = resolve;
-            ws.onerror = () => reject(new Error(`could not connect to ${ wsUrl }`));
-        });
-
-        let nextId = 0;
-        const pending = new Map();
-        const events = [];
-        ws.onmessage = (event) =>
-        {
-            const message = JSON.parse(String(event.data));
-            if (message.id !== undefined)
-            {
-                const call = pending.get(message.id);
-                pending.delete(message.id);
-                if (message.error !== undefined)
-                {
-                    call.reject(new Error(`${ call.method }: ${ message.error.message }`));
-                }
-                else
-                {
-                    call.resolve(message.result);
-                }
-            }
-            else
-            {
-                for (const listener of events)
-                {
-                    listener(message);
-                }
-            }
-        };
-        const send = (method, params = {}, sessionId = undefined) => new Promise((resolve, reject) =>
-        {
-            const id = ++nextId;
-            pending.set(id, { method, resolve, reject });
-            ws.send(JSON.stringify({ id, method, params, sessionId }));
-        });
-
-        const { targetId } = await send('Target.createTarget', { url: 'about:blank' });
-        const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true });
-        await send('Page.enable', {}, sessionId);
-        const loaded = new Promise((resolve) => events.push((message) =>
-        {
-            if (message.method === 'Page.loadEventFired' && message.sessionId === sessionId)
-            {
-                resolve();
-            }
-        }));
-        await send('Page.navigate', { url: pathToFileURL(htmlPath).href }, sessionId);
-        await loaded;
-        // Embedded fonts still decode asynchronously; print only once they have.
-        await send('Runtime.evaluate', { expression: 'document.fonts.ready.then(() => true)', awaitPromise: true }, sessionId);
         const { data } = await send('Page.printToPDF', {
             printBackground: true,
             preferCSSPageSize: true,
@@ -389,27 +254,8 @@ async function printToPdf(chrome, htmlPath, footer)
             marginLeft: 0.65,
             marginRight: 0.65
         }, sessionId);
-        await send('Browser.close').catch(() => undefined);
-        ws.close();
         return Buffer.from(data, 'base64');
-    }
-    finally
-    {
-        // Chrome holds the profile until it is gone; give it the moment it needs
-        // before the directory is removed, and never let the cleanup mask the
-        // error that brought us here.
-        const exited = new Promise((resolve) => child.once('exit', resolve));
-        child.kill();
-        await Promise.race([exited, new Promise((resolve) => setTimeout(resolve, 5_000).unref())]);
-        try
-        {
-            rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
-        }
-        catch
-        {
-            // A stray temp profile is a nuisance, not a failure.
-        }
-    }
+    });
 }
 
 async function main()
@@ -424,7 +270,7 @@ async function main()
         }
     }
     const chrome = findChrome();
-    const fonts = fontFaces();
+    const fonts = fontFaces(FONTS);
     mkdirSync(OUT_DIR, { recursive: true });
     const scratch = mkdtempSync(join(tmpdir(), 'nuraswap-whitepaper-html-'));
     try

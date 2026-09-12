@@ -54,6 +54,23 @@ describe('buildCsp', () =>
             .toContain("img-src 'self' data:");
     });
 
+    it('allows the Cloudflare beacon from static. and lets it report to the apex', () =>
+    {
+        const csp = buildCsp({ rpcUrl: 'https://x.io', explorerUrl: null });
+        expect(csp.split('; ').find((part) => part.startsWith('script-src')))
+            .toContain('https://static.cloudflareinsights.com');
+        expect(csp.split('; ').find((part) => part.startsWith('connect-src')))
+            .toContain('https://cloudflareinsights.com');
+    });
+
+    it('keeps font-src to this origin - vite must not inline a font as a data: URI', () =>
+    {
+        // The counterpart to build.assetsInlineLimit in application/vite.config.ts.
+        // Relaxing this to `data:` would paper over an inlined font rather than
+        // stop it, so the directive is pinned here.
+        expect(buildCsp({ rpcUrl: 'https://x.io', explorerUrl: null })).toContain("font-src 'self'");
+    });
+
     it('survives a malformed rpc url rather than emitting a broken directive', () =>
     {
         const csp = buildCsp({ rpcUrl: 'not a url', explorerUrl: null });

@@ -5,6 +5,13 @@
         <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
         <title>Nura Swap</title>
         <meta name="description" content="Nura Swap - swap tokens and provide liquidity on an open automated market maker. Self-custody, on-chain, in ten languages."/>
+        <!-- The crawler's default, stated, plus the one part of it that is opt-in:
+             max-image-preview:large is what lets the 1200x630 card show at full
+             width rather than as a thumbnail. scripts/build-seo.mjs REWRITES this
+             in dist - on a staging origin it becomes noindex - so this line is
+             what the dev server and an unprocessed build serve, not the last
+             word. -->
+        <meta name="robots" content="index, follow, max-image-preview:large"/>
         <meta property="og:title" content="Nura Swap"/>
         <meta property="og:description" content="Trade straight from your wallet on an open automated market maker."/>
         <meta property="og:type" content="website"/>

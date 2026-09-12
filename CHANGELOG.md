@@ -7,6 +7,57 @@ Notable changes to Nura Swap. The format follows
 The exchange contracts live in [their own repository](https://github.com/NuraChain/Swap);
 this changelog covers the application, the indexer, and the shared maths.
 
+## [Unreleased]
+
+### Added
+
+- **A social card worth unfurling.** A link to the site used to preview as the
+  512x512 app icon: below the 1200x630 every platform crops to, square where a
+  large summary card wants 1.91:1, and so only ever a thumbnail beside the
+  title. `scripts/build-og-image.mjs` renders `public/og.png` at 1200x630
+  through the same headless Chrome the whitepaper PDFs go through, carrying the
+  wordmark in Unbounded and the landing headline, from the SAME dictionary the
+  landing page renders. `twitter:card` is `summary_large_image`, and
+  `og:image:width`/`height`/`type`/`alt` are stated rather than left to be
+  discovered - the first unfurl is the one that gets cached.
+- **A robots directive on every page.** `index, follow, max-image-preview:large`
+  - the default a crawler already assumes, plus the one part of it that is
+  opt-in and is what lets the new card show at full width. On any origin other
+  than production it becomes `noindex, nofollow` and `robots.txt` disallows
+  everything: a staging host was already barred from claiming production's
+  canonical, and now it cannot compete for the query either.
+- **The three client-rendered routes have a head.** `/swap`, `/liquidity` and
+  `/portfolio` are served from `dist/shell.html`, which the SEO step never
+  touched, so a link to any of them unfurled as a bare URL. It now carries the
+  robots directive and the card - but no canonical and no `og:url`, because one
+  file stands behind three addresses.
+
+### Fixed
+
+- **The Cloudflare beacon no longer reports a CSP violation on every page
+  load.** The proxy in front of the site injects Cloudflare Web Analytics,
+  which nothing in this repository asks for and `script-src 'self'` blocked, so
+  the production console was never clean. `static.cloudflareinsights.com` is
+  allowed to load and the apex to receive what it measures; it is the only
+  external script the policy admits. Turning the injection off in the
+  Cloudflare dashboard is the other way, and then both entries come back out.
+- **Four fonts stopped being blocked by `font-src 'self'`.** Vite's 4 kB inline
+  threshold swallowed the Unbounded cyrillic-ext subsets - about 1 kB each -
+  into the stylesheet as `data:` URIs, and the policy blocked all four in
+  production. Fixed at the build end rather than by relaxing the directive: a
+  font is now never inlined, whatever its size. A font in the CSS was also
+  bytes every reader downloaded before first paint to serve the Cyrillic
+  readers alone, twice over, because woff sits beside woff2.
+
+### Changed
+
+- **One headless Chrome, not two.** The browser launch and the DevTools client
+  move to `application/scripts/lib/chrome.mjs`, and the mark, the `@font-face`
+  embedding and the HTML escape to `lib/brand.mjs`, so the PDF script and the
+  new card script share them. The ten PDFs are unchanged: regenerating one
+  gives a file that differs from the committed copy in ten bytes, all of them
+  the embedded timestamp.
+
 ## [1.4.1] - 2026-09-10
 
 ### Added

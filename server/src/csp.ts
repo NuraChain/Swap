@@ -18,6 +18,20 @@
  */
 export const THEME_SCRIPT_HASH = 'sha256-+4y84WB4TTY5nGmWZTVe1CnQFcVst3HuJ0TiSe6rmGk=';
 
+/**
+ * Cloudflare Web Analytics. The beacon is injected by the PROXY in front of this
+ * app, not by anything in this repository, so a policy that omits it reports a
+ * violation on every page load of the production site and the console is never
+ * clean. Two origins, and they are not interchangeable: the script is served
+ * from `static.`, and it POSTs what it measures to the apex.
+ *
+ * This is the only external script the policy allows. Turning the injection off
+ * in the Cloudflare dashboard is the other way to silence it - do that and these
+ * two entries should come back out.
+ */
+const CLOUDFLARE_BEACON_SCRIPT = 'https://static.cloudflareinsights.com';
+const CLOUDFLARE_BEACON_ENDPOINT = 'https://cloudflareinsights.com';
+
 function originOf(url: string): string | null
 {
     try
@@ -40,7 +54,7 @@ export interface CspInput
 
 export function buildCsp(input: CspInput): string
 {
-    const connect = new Set(["'self'"]);
+    const connect = new Set(["'self'", CLOUDFLARE_BEACON_ENDPOINT]);
     const rpc = originOf(input.rpcUrl);
     if (rpc !== null)
     {
@@ -55,7 +69,7 @@ export function buildCsp(input: CspInput): string
         'object-src': "'none'",
         'frame-ancestors': "'none'",
         'form-action': "'self'",
-        'script-src': `'self' '${ THEME_SCRIPT_HASH }'`,
+        'script-src': `'self' '${ THEME_SCRIPT_HASH }' ${ CLOUDFLARE_BEACON_SCRIPT }`,
         // Style ATTRIBUTES carry the token gradients, the identicon, and the chart
         // geometry. Style injection cannot move funds the way script injection can,
         // so this is the one relaxation.

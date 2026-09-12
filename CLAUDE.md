@@ -113,14 +113,30 @@ component library, no CSS-in-JS. No hex colours in components.
 
 The kit splices markup into the built shell and leaves the head alone, so
 `scripts/build-seo.mjs` writes it after the prerender: `<html lang>`/`dir`,
-title, description, canonical, the ten-way `hreflang` cluster, Open Graph and
-JSON-LD, plus `robots.txt` and `sitemap.xml`. It runs as part of `npm run build`
-(the root script, not `azeroth build` alone) and reads `dist/.vite/manifest.json`
-to preload each page's own language chunk - so `build.manifest` stays on in
-`vite.config.ts`.
+title, description, the robots directive, canonical, the ten-way `hreflang`
+cluster, Open Graph and JSON-LD, plus `robots.txt` and `sitemap.xml`. It runs as
+part of `npm run build` (the root script, not `azeroth build` alone) and reads
+`dist/.vite/manifest.json` to preload each page's own language chunk - so
+`build.manifest` stays on in `vite.config.ts`.
+
+It also writes `dist/shell.html`, which the kit serves for the three
+`render: 'client'` routes. That one gets the robots directive and the card only:
+one file stands behind `/swap`, `/liquidity` and `/portfolio`, so a canonical or
+an `og:url` there would claim one address for three.
 
 The origin comes from `SITE_ORIGIN`, defaulting to `https://swap.nurachain.net`;
 point it elsewhere on a staging host so it cannot claim production's canonical.
+Anything other than the production origin also flips every page to
+`noindex, nofollow` and closes `robots.txt` - staging must not compete with
+production for the query.
+
+The share card is `public/og.png`, 1200x630, rendered and **committed** by
+`scripts/build-og-image.mjs`; rerun it after changing the landing copy or the
+palette. It and `build-whitepaper-pdf.mjs` share one headless Chrome
+(`scripts/lib/chrome.mjs`) and one set of brand pieces - the mark, the embedded
+`@font-face` rules, the HTML escape (`scripts/lib/brand.mjs`), which is also
+where the card's dimensions live, so the file and the `og:image:width` that
+declares it cannot disagree.
 Titles come from `src/lib/seo.ts`, which the app imports too - the prerendered
 head and a client-side navigation set the same string.
 
@@ -128,6 +144,15 @@ A URL may DECLARE a language: the paper's ten addresses do, and that outranks th
 stored preference (`App.azeroth`, and the pre-paint script in `index.html` by the
 same rule). Editing that inline script changes its hash - `server/src/csp.ts`
 carries it and `server/tests/csp.spec.ts` fails until you update it.
+
+The CSP is tight on purpose and two build-side rules keep it that way. **A font
+is never inlined**: `build.assetsInlineLimit` in `vite.config.ts` refuses every
+`woff/woff2/ttf/otf`, because vite's 4 kB default turned the small Unbounded
+subsets into `data:` URIs that `font-src 'self'` then blocked in production -
+fix that at the build end, never by relaxing the directive. And the only
+external script the policy admits is the Cloudflare Web Analytics beacon, which
+the proxy injects and this repository never asks for; turn the injection off in
+the Cloudflare dashboard and the two entries in `csp.ts` should come back out.
 
 ## Responsive rules
 
