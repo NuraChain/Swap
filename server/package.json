@@ -28,12 +28,12 @@
         "@azerothjs/eslint-plugin": "^2.0.0-beta.2",
         "@azerothjs/ws": "^2.0.0-beta.2",
         "@eslint/js": "^10.0.1",
-        "@types/node": "^26.4.1",
+        "@types/node": "^26.5.1",
         "eslint": "^10.10.0",
         "globals": "^17.12.0",
         "jiti": "^2.7.0",
         "typescript": "^6.0.3",
-        "typescript-eslint": "^8.69.0",
+        "typescript-eslint": "^8.70.0",
         "vitest": "^5.0.0"
     }
 }
