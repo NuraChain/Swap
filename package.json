@@ -37,7 +37,7 @@
         "@tailwindcss/oxide-win32-x64-msvc": "4.3.3"
     },
     "devDependencies": {
-        "@azerothjs/cli": "^2.0.0-beta.2",
-        "@vitest/coverage-v8": "^5.0.0"
+        "@azerothjs/cli": "^2.1.0",
+        "@vitest/coverage-v8": "^5.0.1"
     }
 }
