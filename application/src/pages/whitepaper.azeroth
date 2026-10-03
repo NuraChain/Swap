@@ -1,9 +1,9 @@
-import { Link } from 'azerothjs';
+import { Link, useHead, useLoader, useParams } from 'azerothjs';
 
-import { LANGS, langInfo, t } from '../lib/i18n.ts';
+import { LANGS, isLang, langInfo, t } from '../lib/i18n.ts';
 import type { Lang } from '../lib/i18n.ts';
 import { WHITEPAPER_PDFS, whitepaperPath } from '../lib/whitepaper/index.ts';
-import { setDocumentTitle, whitepaperTitle } from '../lib/seo.ts';
+import { describe, ogLocale, siteOrigin, whitepaperTitle } from '../lib/seo.ts';
 import { sectionsOf } from '../lib/whitepaper/model.ts';
 import type { Block, Part, Whitepaper } from '../lib/whitepaper/model.ts';
 
@@ -12,11 +12,12 @@ import Shamseh from '../components/ui/shamseh.component.azeroth';
 import WhitepaperBlock from '../components/whitepaper/whitepaper-block.component.azeroth';
 
 // Prerendered static, like the landing page: the text is data, so the build
-// needs nothing live. The document and its language arrive as PROPS from the
-// route (routes.ts), one route per translation - which is what gives each
-// language an address of its own to be found at, and what keeps the other nine
-// out of this page's bundle. The PDF at the bottom is the same data laid out for
-// print, in the same ten languages.
+// needs nothing live. The document arrives through the ROUTE's loader (see
+// routes.ts) - on the server and at prerender it is settled before the render
+// begins, and on a client navigation it is the one dynamic import of the
+// translation the address names. The language is the ADDRESS: /whitepaper is
+// English, /whitepaper/<lang> the other nine. The PDF at the bottom is the
+// same data laid out for print, in the same ten languages.
 
 interface Entry
 {
@@ -60,18 +61,76 @@ function numberParts(parts: Part[]): NumberedPart[]
 const TOC_LINK = 'flex gap-2.5 rounded-lg px-2 py-1 text-sm text-faint hover:text-ink';
 const TOC_LINK_ACTIVE = 'flex gap-2.5 rounded-lg px-2 py-1 text-sm text-ice';
 
-export default component WhitepaperPage(props: { doc: Whitepaper; lang: Lang })
+export default component WhitepaperPage()
 {
-    derived doc = props.doc;
-    derived parts = numberParts(doc.parts);
-    derived contents: Entry[] = sectionsOf(doc).map(({ number, section }) =>
+    // The route's loader - settled before the render on the server, one
+    // translation's dynamic import on a client navigation. The language is the
+    // address: the loader loads the document the URL names, and the page reads
+    // it back through the same channel the prerendered bytes were written from.
+    const resource = useLoader();
+    const params = useParams();
+
+    derived doc: Whitepaper | undefined = resource.data() as Whitepaper | undefined;
+    // The address names the language, but the address is reader input: an
+    // unknown tag (say /whitepaper/xx, which the loader answers with a 404 while
+    // the page still renders its fallback) must never flow into Lang-typed code -
+    // langInfo of it is undefined, and the head factory would crash on it.
+    // Validate instead of cast.
+    derived requested: string | undefined = (params() as { lang?: string }).lang;
+    derived lang: Lang = isLang(requested) ? requested : 'en';
+    derived parts: NumberedPart[] = doc === undefined ? [] : numberParts(doc.parts);
+    derived contents: Entry[] = doc === undefined ? [] : sectionsOf(doc).map(({ number, section }) =>
         ({ id: section.id, number: String(number).padStart(2, '0'), title: section.title }));
-    derived pdf = WHITEPAPER_PDFS.find((entry) => entry.lang === props.lang) ?? WHITEPAPER_PDFS[0];
+    derived pdf = WHITEPAPER_PDFS.find((entry) => entry.lang === lang) ?? WHITEPAPER_PDFS[0];
     derived otherPdfs = WHITEPAPER_PDFS.filter((entry) => entry.lang !== pdf.lang);
     // The nine sibling translations as real links. An hreflang in the head is a
     // hint; these are how a crawler - and a reader who landed in a language they
     // do not read - actually reaches the other nine.
-    derived otherLangs = LANGS.filter((entry) => entry.code !== props.lang);
+    derived otherLangs = LANGS.filter((entry) => entry.code !== lang);
+
+    // The head, from the same document the page renders - title, description,
+    // canonical, the ten-way hreflang cluster with x-default, Open Graph and
+    // the TechArticle block. On the server the getters resolve once, inside the
+    // request, with the loader already settled; on the client they stay live.
+    useHead({
+        title: () => (doc === undefined ? t().nav.whitepaper : whitepaperTitle(doc)),
+        meta: [
+            { name: 'description', content: () => (doc === undefined ? '' : describe(doc.abstract[0])) },
+            { property: 'og:title', content: () => (doc === undefined ? t().nav.whitepaper : whitepaperTitle(doc)) },
+            { property: 'og:description', content: () => (doc === undefined ? '' : describe(doc.abstract[0])) },
+            { property: 'og:url', content: `${ siteOrigin() }${ whitepaperPath(lang) }` },
+            { property: 'og:locale', content: ogLocale(lang) },
+            { name: 'twitter:title', content: () => (doc === undefined ? t().nav.whitepaper : whitepaperTitle(doc)) },
+            { name: 'twitter:description', content: () => (doc === undefined ? '' : describe(doc.abstract[0])) }
+        ],
+        links: [
+            { rel: 'canonical', href: `${ siteOrigin() }${ whitepaperPath(lang) }` },
+            ...LANGS.map((entry) => ({
+                rel: 'alternate',
+                hreflang: entry.code,
+                href: `${ siteOrigin() }${ whitepaperPath(entry.code) }`
+            })),
+            { rel: 'alternate', hreflang: 'x-default', href: `${ siteOrigin() }${ whitepaperPath('en') }` }
+        ],
+        jsonLd: () => (doc === undefined ? [] : [{
+            '@context': 'https://schema.org',
+            '@type': 'TechArticle',
+            headline: whitepaperTitle(doc),
+            description: describe(doc.abstract[0]),
+            inLanguage: lang,
+            url: `${ siteOrigin() }${ whitepaperPath(lang) }`,
+            isAccessibleForFree: true,
+            license: 'https://opensource.org/licenses/MIT',
+            publisher: { '@type': 'Organization', name: 'Nura Swap', url: `${ siteOrigin() }/` },
+            // The same document as a file, which is what the download button
+            // hands over - stated rather than left for a crawler to guess.
+            associatedMedia: {
+                '@type': 'MediaObject',
+                encodingFormat: 'application/pdf',
+                contentUrl: `${ siteOrigin() }${ pdf.href }`
+            }
+        }])
+    });
 
     // The contents list follows the reader: the section under the top of the
     // viewport is the highlighted one. Browser-only, and optional - the list is
@@ -81,9 +140,6 @@ export default component WhitepaperPage(props: { doc: Whitepaper; lang: Lang })
 
     mount
     {
-        // The prerendered head already says this; it is a client-side navigation
-        // from another language - or another page - that would leave it stale.
-        setDocumentTitle(whitepaperTitle(props.doc));
         if (typeof IntersectionObserver !== 'undefined')
         {
             observer = new IntersectionObserver((entries) =>
@@ -108,148 +164,160 @@ export default component WhitepaperPage(props: { doc: Whitepaper; lang: Lang })
         observer?.disconnect();
     }
 
+    // One host element at the page root, with the Show inside it: the route slot
+    // adopts its page the way a <For> adopts a row - against one host element -
+    // and a page whose ROOT is itself control flow (the Show) cannot hydrate from
+    // the server bytes, which falls back to a full client render on every visit.
     <div>
-        <section class="relative overflow-hidden border-b border-line">
-            <div class="pointer-events-none absolute -top-40 -end-40 h-[560px] w-[560px] rounded-full bg-glow blur-3xl" />
-            <Shamseh
-                size={ 480 }
-                strokeWidth={ 0.55 }
-                class="animate-shamseh pointer-events-none absolute -top-24 -end-40 text-ice opacity-30 [mask-image:radial-gradient(closest-side,black_35%,transparent_78%)]"
+        <Show when={ doc } let={ doc } fallback={
+            <section class="mx-auto max-w-6xl px-4 py-24 text-center">
+                <h1 class="font-display text-2xl">{ t().nav.whitepaper }</h1>
+            </section>
+        }>
+            <div>
+                <section class="relative overflow-hidden border-b border-line">
+                    <div class="pointer-events-none absolute -top-40 -end-40 h-[560px] w-[560px] rounded-full bg-glow blur-3xl" />
+                    <Shamseh
+                        size={ 480 }
+                        strokeWidth={ 0.55 }
+                        class="animate-shamseh pointer-events-none absolute -top-24 -end-40 text-ice opacity-30 [mask-image:radial-gradient(closest-side,black_35%,transparent_78%)]"
             />
-            <div class="relative mx-auto max-w-6xl px-4 pb-14 pt-16 sm:pb-20 sm:pt-24">
-                <p class="eyebrow">{ doc.meta.version } · { doc.meta.date }</p>
-                <h1 class="font-display mt-4 text-3xl font-bold leading-snug sm:text-5xl sm:leading-tight">
+                    <div class="relative mx-auto max-w-6xl px-4 pb-14 pt-16 sm:pb-20 sm:pt-24">
+                        <p class="eyebrow">{ doc.meta.version } · { doc.meta.date }</p>
+                        <h1 class="font-display mt-4 text-3xl font-bold leading-snug sm:text-5xl sm:leading-tight">
                     { doc.meta.title }
-                </h1>
-                <p class="font-display mt-2 text-xl text-ice sm:text-2xl">{ doc.meta.subtitle }</p>
-                <p class="mt-6 max-w-xl text-base leading-relaxed text-faint">{ doc.meta.covers }</p>
-                <div class="mt-8 flex flex-wrap gap-3">
-                    <a href={ pdf.href } download={ pdf.fileName } class="btn-ice px-6 py-3 text-sm">
-                        <Icon name="download" size={ 16 } />
+                        </h1>
+                        <p class="font-display mt-2 text-xl text-ice sm:text-2xl">{ doc.meta.subtitle }</p>
+                        <p class="mt-6 max-w-xl text-base leading-relaxed text-faint">{ doc.meta.covers }</p>
+                        <div class="mt-8 flex flex-wrap gap-3">
+                            <a href={ pdf.href } download={ pdf.fileName } class="btn-ice px-6 py-3 text-sm">
+                                <Icon name="download" size={ 16 } />
                         { t().whitepaper.download }
-                    </a>
-                    <a href="#abstract" class="btn-ghost px-6 py-3 text-sm">{ t().whitepaper.read }</a>
-                </div>
+                            </a>
+                            <a href="#abstract" class="btn-ghost px-6 py-3 text-sm">{ t().whitepaper.read }</a>
+                        </div>
                 {/* High in the page on purpose: a reader who landed in a language
                     they do not read should not have to find the header picker. */}
-                <nav aria-label={ t().whitepaper.readIn } class="mt-7">
-                    <p class="eyebrow">{ t().whitepaper.readIn }</p>
-                    <ul class="mt-2 flex flex-wrap gap-2">
-                        <For each={ otherLangs } key={ (entry) => entry.code } let={ entry }>
-                            <li>
-                                <Link
-                                    to={ whitepaperPath(entry.code) }
-                                    hreflang={ entry.code }
-                                    lang={ entry.code }
-                                    class="btn-ghost px-3 py-1.5 text-xs"
-                                    data-testid={ `whitepaper-lang-${ entry.code }` }
-                                >
+                        <nav aria-label={ t().whitepaper.readIn } class="mt-7">
+                            <p class="eyebrow">{ t().whitepaper.readIn }</p>
+                            <ul class="mt-2 flex flex-wrap gap-2">
+                                <For each={ otherLangs } key={ (entry) => entry.code } let={ entry }>
+                                    <li>
+                                        <Link
+                                            to={ whitepaperPath(entry.code) }
+                                            hreflang={ entry.code }
+                                            lang={ entry.code }
+                                            class="btn-ghost px-3 py-1.5 text-xs"
+                                            data-testid={ `whitepaper-lang-${ entry.code }` }
+                                        >
                                     { entry.native }
-                                </Link>
-                            </li>
-                        </For>
-                    </ul>
-                </nav>
-            </div>
-        </section>
+                                        </Link>
+                                    </li>
+                                </For>
+                            </ul>
+                        </nav>
+                    </div>
+                </section>
 
-        <div class="mx-auto max-w-6xl px-4 py-10 sm:py-14 lg:grid lg:grid-cols-[15rem_minmax(0,1fr)] lg:gap-14">
-            <nav aria-label={ t().whitepaper.contents } class="mb-8 lg:mb-0">
-                <details class="card p-4 lg:hidden">
-                    <summary class="eyebrow">{ t().whitepaper.contents }</summary>
-                    <ol class="mt-3 space-y-1">
-                        <For each={ contents } key={ (entry) => entry.id } let={ entry }>
-                            <li>
-                                <a href={ `#${ entry.id }` } class={ TOC_LINK }>
-                                    <span class="font-mono text-xs leading-5 text-ice" data-ltr>{ entry.number }</span>
-                                    <span>{ entry.title }</span>
-                                </a>
-                            </li>
-                        </For>
-                    </ol>
-                </details>
+                <div class="mx-auto max-w-6xl px-4 py-10 sm:py-14 lg:grid lg:grid-cols-[15rem_minmax(0,1fr)] lg:gap-14">
+                    <nav aria-label={ t().whitepaper.contents } class="mb-8 lg:mb-0">
+                        <details class="card p-4 lg:hidden">
+                            <summary class="eyebrow">{ t().whitepaper.contents }</summary>
+                            <ol class="mt-3 space-y-1">
+                                <For each={ contents } key={ (entry) => entry.id } let={ entry }>
+                                    <li>
+                                        <a href={ `#${ entry.id }` } class={ TOC_LINK }>
+                                            <span class="font-mono text-xs leading-5 text-ice" data-ltr>{ entry.number }</span>
+                                            <span>{ entry.title }</span>
+                                        </a>
+                                    </li>
+                                </For>
+                            </ol>
+                        </details>
                 {/* Taller than a short viewport: the list scrolls inside its sticky box
                     rather than pinning its tail out of reach. */}
-                <div class="hidden lg:sticky lg:top-24 lg:block lg:max-h-[calc(100vh-7rem)] lg:overflow-y-auto">
-                    <p class="eyebrow">{ t().whitepaper.contents }</p>
-                    <ol class="mt-3 space-y-0.5">
-                        <For each={ contents } key={ (entry) => entry.id } let={ entry }>
-                            <li>
-                                <a
-                                    href={ `#${ entry.id }` }
-                                    class={ entry.id === active ? TOC_LINK_ACTIVE : TOC_LINK }
-                                    aria-current={ entry.id === active ? 'true' : undefined }
-                                >
-                                    <span class="font-mono text-xs leading-5 text-ice" data-ltr>{ entry.number }</span>
-                                    <span>{ entry.title }</span>
-                                </a>
-                            </li>
-                        </For>
-                    </ol>
-                </div>
-            </nav>
+                        <div class="hidden lg:sticky lg:top-24 lg:block lg:max-h-[calc(100vh-7rem)] lg:overflow-y-auto">
+                            <p class="eyebrow">{ t().whitepaper.contents }</p>
+                            <ol class="mt-3 space-y-0.5">
+                                <For each={ contents } key={ (entry) => entry.id } let={ entry }>
+                                    <li>
+                                        <a
+                                            href={ `#${ entry.id }` }
+                                            class={ entry.id === active ? TOC_LINK_ACTIVE : TOC_LINK }
+                                            aria-current={ entry.id === active ? 'true' : undefined }
+                                        >
+                                            <span class="font-mono text-xs leading-5 text-ice" data-ltr>{ entry.number }</span>
+                                            <span>{ entry.title }</span>
+                                        </a>
+                                    </li>
+                                </For>
+                            </ol>
+                        </div>
+                    </nav>
 
-            <article class="min-w-0 max-w-3xl">
-                <section id="abstract" class="card-pop scroll-mt-24 p-6 sm:p-8">
-                    <h2 class="font-display text-xl font-medium">{ doc.meta.abstractTitle }</h2>
-                    <For each={ doc.abstract } key={ (text, index) => `${ index }-${ text.length }` } let={ text }>
-                        <p class="mt-4 text-base leading-7 text-ink/85">{ text }</p>
-                    </For>
-                </section>
+                    <article class="min-w-0 max-w-3xl">
+                        <section id="abstract" class="card-pop scroll-mt-24 p-6 sm:p-8">
+                            <h2 class="font-display text-xl font-medium">{ doc.meta.abstractTitle }</h2>
+                            <For each={ doc.abstract } key={ (text, index) => `${ index }-${ text.length }` } let={ text }>
+                                <p class="mt-4 text-base leading-7 text-ink/85">{ text }</p>
+                            </For>
+                        </section>
 
-                <For each={ parts } key={ (part) => part.id } let={ part }>
-                    <div class="mt-16">
-                        <p class="eyebrow">{ part.label }</p>
-                        <h2 class="font-display mt-3 text-2xl font-medium sm:text-3xl">{ part.title }</h2>
-                        <p class="mt-3 text-base leading-relaxed text-faint">{ part.lede }</p>
-                        <For each={ part.sections } key={ (section) => section.id } let={ section }>
-                            <section id={ section.id } data-whitepaper-section="true" class="mt-12 scroll-mt-24 border-t border-line pt-8">
-                                <span class="font-mono text-xs text-ice" data-ltr>{ section.number }</span>
-                                <h3 class="font-display mt-2 text-xl font-medium">{ section.title }</h3>
-                                <For each={ section.blocks } key={ (block, index) => `${ index }-${ block.kind }` } let={ block }>
+                        <For each={ parts } key={ (part) => part.id } let={ part }>
+                            <div class="mt-16">
+                                <p class="eyebrow">{ part.label }</p>
+                                <h2 class="font-display mt-3 text-2xl font-medium sm:text-3xl">{ part.title }</h2>
+                                <p class="mt-3 text-base leading-relaxed text-faint">{ part.lede }</p>
+                                <For each={ part.sections } key={ (section) => section.id } let={ section }>
+                                    <section id={ section.id } data-whitepaper-section="true" class="mt-12 scroll-mt-24 border-t border-line pt-8">
+                                        <span class="font-mono text-xs text-ice" data-ltr>{ section.number }</span>
+                                        <h3 class="font-display mt-2 text-xl font-medium">{ section.title }</h3>
+                                        <For each={ section.blocks } key={ (block, index) => `${ index }-${ block.kind }` } let={ block }>
                                     {/* A <For> row has to be one host element; the block's own
                                         control flow lives inside the component. */}
-                                    <div>
-                                        <WhitepaperBlock block={ block } />
-                                    </div>
+                                            <div>
+                                                <WhitepaperBlock block={ block } />
+                                            </div>
+                                        </For>
+                                    </section>
                                 </For>
-                            </section>
+                            </div>
                         </For>
-                    </div>
-                </For>
 
-                <section class="mt-16 rounded-xl border border-line bg-panel p-5">
-                    <h2 class="eyebrow">{ doc.meta.disclaimerTitle }</h2>
-                    <p class="mt-2 text-sm leading-relaxed text-faint">{ doc.meta.disclaimer }</p>
-                </section>
+                        <section class="mt-16 rounded-xl border border-line bg-panel p-5">
+                            <h2 class="eyebrow">{ doc.meta.disclaimerTitle }</h2>
+                            <p class="mt-2 text-sm leading-relaxed text-faint">{ doc.meta.disclaimer }</p>
+                        </section>
 
-                <section id="download" class="card-pop mt-10 scroll-mt-24 p-6 sm:p-8">
-                    <Shamseh size={ 28 } class="text-ice" />
-                    <h2 class="font-display mt-4 text-xl font-medium">{ t().whitepaper.downloadTitle }</h2>
-                    <p class="mt-2 max-w-xl text-sm leading-relaxed text-faint">{ t().whitepaper.downloadBody }</p>
-                    <div class="mt-6">
-                        <a
-                            href={ pdf.href }
-                            download={ pdf.fileName }
-                            class="btn-ice px-6 py-3 text-sm"
-                            data-testid="whitepaper-download"
-                        >
-                            <Icon name="download" size={ 16 } />
+                        <section id="download" class="card-pop mt-10 scroll-mt-24 p-6 sm:p-8">
+                            <Shamseh size={ 28 } class="text-ice" />
+                            <h2 class="font-display mt-4 text-xl font-medium">{ t().whitepaper.downloadTitle }</h2>
+                            <p class="mt-2 max-w-xl text-sm leading-relaxed text-faint">{ t().whitepaper.downloadBody }</p>
+                            <div class="mt-6">
+                                <a
+                                    href={ pdf.href }
+                                    download={ pdf.fileName }
+                                    class="btn-ice px-6 py-3 text-sm"
+                                    data-testid="whitepaper-download"
+                                >
+                                    <Icon name="download" size={ 16 } />
                             { t().whitepaper.download }
-                            <span class="opacity-70">· { langInfo(pdf.lang).native }</span>
-                        </a>
-                    </div>
+                                    <span class="opacity-70">· { langInfo(pdf.lang).native }</span>
+                                </a>
+                            </div>
                     {/* Nine more languages: chips, not nine full-width buttons. */}
-                    <p class="eyebrow mt-7">{ t().whitepaper.alsoIn }</p>
-                    <div class="mt-2 flex flex-wrap gap-2">
-                        <For each={ otherPdfs } key={ (entry) => entry.lang } let={ entry }>
-                            <a href={ entry.href } download={ entry.fileName } class="btn-ghost px-3 py-1.5 text-xs">
+                            <p class="eyebrow mt-7">{ t().whitepaper.alsoIn }</p>
+                            <div class="mt-2 flex flex-wrap gap-2">
+                                <For each={ otherPdfs } key={ (entry) => entry.lang } let={ entry }>
+                                    <a href={ entry.href } download={ entry.fileName } class="btn-ghost px-3 py-1.5 text-xs">
                                 { langInfo(entry.lang).native }
-                            </a>
-                        </For>
-                    </div>
-                </section>
-            </article>
-        </div>
+                                    </a>
+                                </For>
+                            </div>
+                        </section>
+                    </article>
+                </div>
+            </div>
+        </Show>
     </div>
 }

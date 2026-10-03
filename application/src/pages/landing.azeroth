@@ -1,21 +1,38 @@
-import { Link } from 'azerothjs';
+import { Link, useHead, useLoader } from 'azerothjs';
 
-import { client } from '../api.ts';
 import type { Stats } from '../api.ts';
-import { fmtNumber, fmtUsd, t } from '../lib/i18n.ts';
+import { currentLang, fmtNumber, fmtUsd, t } from '../lib/i18n.ts';
+import { describe, landingTitle, pageHead, siteOrigin } from '../lib/seo.ts';
 
 import Shamseh from '../components/ui/shamseh.component.azeroth';
 
 export default component Landing()
 {
-    // Prerendered static: stats arrive client-side after mount, so the build
-    // needs no live API and the numbers are never baked stale into the file.
-    state stats: Stats | null = null;
+    // The market stats arrive through the route's loader, which runs on both
+    // sides: the ISR render bakes them into the cached page (a crawler reads
+    // the numbers now, not a numberless shell), and a client-side navigation
+    // refetches through the same function. A down api half degrades to no
+    // stats section - the loader catches, it never rejects.
+    const loader = useLoader<{ stats: Stats | null }>();
+    derived stats: Stats | null = loader.data()?.stats ?? null;
 
-    mount
-    {
-        void client.market.stats().then((live) => { stats = live; }).catch(() => undefined);
-    }
+    // The head, declared where the page is: the prerender and every ISR
+    // regeneration serialize it into the document, and the getters keep a
+    // client-side language switch honest without a reload.
+    useHead(pageHead({
+        title: () => landingTitle(t()),
+        description: () => describe(t().landing.sub),
+        canonicalPath: '/',
+        lang: currentLang,
+        jsonLd: () => ({
+            '@context': 'https://schema.org',
+            '@type': 'WebSite',
+            name: 'Nura Swap',
+            url: `${ siteOrigin() }/`,
+            description: describe(t().landing.sub),
+            inLanguage: currentLang()
+        })
+    }));
 
     <div>
         <section class="relative overflow-hidden">
@@ -49,15 +66,15 @@ export default component Landing()
                 <div class="mx-auto grid max-w-6xl grid-cols-1 divide-y divide-line px-4 sm:grid-cols-3 sm:divide-x sm:divide-y-0">
                     <div class="py-6 sm:pe-8">
                         <div class="eyebrow">{ t().landing.statTvl }</div>
-                        <div class="mt-2 font-mono text-3xl tracking-tight text-val">{ fmtUsd(live.tvlUsd) }</div>
+                        <div class="mt-2 font-mono text-3xl tracking-tight text-val" data-ltr>{ fmtUsd(live.tvlUsd) }</div>
                     </div>
                     <div class="py-6 sm:px-8">
                         <div class="eyebrow">{ t().landing.statVolume }</div>
-                        <div class="mt-2 font-mono text-3xl tracking-tight text-val">{ fmtUsd(live.volume24hUsd) }</div>
+                        <div class="mt-2 font-mono text-3xl tracking-tight text-val" data-ltr>{ fmtUsd(live.volume24hUsd) }</div>
                     </div>
                     <div class="py-6 sm:ps-8">
                         <div class="eyebrow">{ t().landing.statPools }</div>
-                        <div class="mt-2 font-mono text-3xl tracking-tight text-val">{ fmtNumber(live.poolCount, 0) }</div>
+                        <div class="mt-2 font-mono text-3xl tracking-tight text-val" data-ltr>{ fmtNumber(live.poolCount, 0) }</div>
                     </div>
                 </div>
             </section>

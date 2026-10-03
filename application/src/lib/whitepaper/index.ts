@@ -8,7 +8,7 @@
 // eight more to read none of them. Each is its own dynamic import, so the
 // bundler gives each its own chunk and a reader pays for the one they opened.
 
-import { LANGS, type Lang } from '../i18n.ts';
+import { LANGS, type Lang } from '../langs.ts';
 import type { Whitepaper } from './model.ts';
 
 // Written as ten literal `import()` calls rather than a computed specifier: the
