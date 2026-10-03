@@ -61,6 +61,13 @@ export default component Header()
 
     cleanup
     {
+        // The prerender disposes one page's root when the next render begins,
+        // and disposal runs on the server: a browser teardown there would crash
+        // the build, so it guards itself.
+        if (typeof document === 'undefined')
+        {
+            return;
+        }
         document.removeEventListener('keydown', onKey);
     }
 
@@ -78,10 +85,10 @@ export default component Header()
                 </span>
             </Link>
             <nav class="hidden flex-1 sm:flex">
-                <Link to="/swap" activeClass="active" class={ navLink }>{ t().nav.swap }</Link>
-                <Link to="/liquidity" activeClass="active" class={ navLink }>{ t().nav.liquidity }</Link>
-                <Link to="/portfolio" activeClass="active" class={ navLink }>{ t().nav.portfolio }</Link>
-                <Link to="/whitepaper" activeClass="active" class={ navLink }>{ t().nav.whitepaper }</Link>
+                <Link to="/swap" activeClass="active" prefetch="hover" class={ navLink }>{ t().nav.swap }</Link>
+                <Link to="/liquidity" activeClass="active" prefetch="hover" class={ navLink }>{ t().nav.liquidity }</Link>
+                <Link to="/portfolio" activeClass="active" prefetch="hover" class={ navLink }>{ t().nav.portfolio }</Link>
+                <Link to="/whitepaper" activeClass="active" prefetch="hover" class={ navLink }>{ t().nav.whitepaper }</Link>
             </nav>
             <div class="ms-auto flex items-center gap-1.5">
                 <span class="hidden lg:block">

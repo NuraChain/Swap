@@ -49,6 +49,12 @@ export default component Modal(props: { title: string; onClose: () => void; chil
 
     cleanup
     {
+        // Disposal runs on the server too (the prerender tears one page's root
+        // down when the next render begins), so the browser teardown guards itself.
+        if (typeof document === 'undefined')
+        {
+            return;
+        }
         document.removeEventListener('keydown', onKey);
     }
 

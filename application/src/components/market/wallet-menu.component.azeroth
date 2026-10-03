@@ -46,6 +46,11 @@ export default component WalletMenu(props: { address: string; onClose: () => voi
 
     cleanup
     {
+        // Disposal runs on the server too; the browser teardown guards itself.
+        if (typeof document === 'undefined')
+        {
+            return;
+        }
         document.removeEventListener('keydown', onKey);
     }
 
