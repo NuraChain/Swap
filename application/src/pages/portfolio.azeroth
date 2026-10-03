@@ -1,4 +1,4 @@
-import { Link } from 'azerothjs';
+import { Link, useHead } from 'azerothjs';
 
 import { formatTokenAmount } from '@nuraswap/shared/digits';
 
@@ -32,6 +32,8 @@ interface Holding
 
 export default component Portfolio()
 {
+    // Client-rendered shells carry no per-page head; this is the one writer.
+    useHead({ title: () => `Nura Swap · ${ t().nav.portfolio }` });
     state tokens: TokenWithPrice[] = [];
     state walletOpen = false;
 

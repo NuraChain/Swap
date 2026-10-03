@@ -1,4 +1,4 @@
-import { onCleanup, useQuery } from 'azerothjs';
+import { onCleanup, useHead, useQuery } from 'azerothjs';
 
 import { MAX_UINT256, minOutForSlippage } from '@nuraswap/shared/math';
 import { priceImpactBpsFromMid, rawPriceWadFromSqrtX96 } from '@nuraswap/shared/v3-math';
@@ -62,6 +62,10 @@ interface QuoteState
 
 export default component Swap()
 {
+    // A client-rendered shell carries no per-page head, so this is the one
+    // writer: it applies live on a client-side navigation, where a tab that is
+    // already open has to keep naming the page it shows.
+    useHead({ title: () => `Nura Swap · ${ t().nav.swap }` });
     state info: DeploymentInfo | null = null;
     state tokenIn: TokenRef = NATIVE_TOKEN;
     state tokenOut: TokenRef | null = null;

@@ -1,12 +1,11 @@
-import { RouterProvider, Routes, createRouter, createMemoryHistory } from 'azerothjs';
+import { RouterProvider, Routes, createRouter, createMemoryHistory, useHead } from 'azerothjs';
 import type { LoaderHandoff } from 'azerothjs';
 
 import { routes } from './routes.ts';
 import { ensureDeployment } from './lib/chain.ts';
-import { currentLang, setLang, t } from './lib/i18n.ts';
-import { landingTitle, setDocumentTitle } from './lib/seo.ts';
+import { t } from './lib/i18n.ts';
+import { OG_HEIGHT, OG_IMAGE_PATH, OG_WIDTH, ROBOTS_DIRECTIVE, siteOrigin } from './lib/seo.ts';
 import { currentTheme } from './lib/theme.ts';
-import { whitepaperLangOf } from './lib/whitepaper/index.ts';
 import { startNuraConnector } from './lib/wallet/nura.ts';
 
 import Footer from './components/layout/footer.component.azeroth';
@@ -22,53 +21,36 @@ export default component App(props: { url?: string; handoff?: LoaderHandoff })
         initialLoaderData: props.handoff
     });
 
-    // A URL can DECLARE a language - the paper's ten addresses do - and when it
-    // does it outranks the stored preference: an address is the more deliberate
-    // choice, and a prerendered /whitepaper/fa has to come out Persian with no
-    // browser to ask. Read during CONSTRUCTION, so the first markup is already
-    // in that language rather than flipping to it a frame later.
-    const declared = whitepaperLangOf(router.location().pathname);
-    if (declared !== null)
-    {
-        setLang(declared);
-    }
-    else if (typeof window === 'undefined')
-    {
-        // Server-side there is nothing to remember a preference, and ONE module
-        // instance renders every prerendered page in turn - so a page that
-        // declares no language says so, rather than inheriting the language of
-        // whichever page was rendered before it.
-        setLang('en');
-    }
-
-    // And it keeps outranking it: following a link from one translation to
-    // another is a language change like any other.
-    effect (router.location().pathname)
-    {
-        const lang = whitepaperLangOf(router.location().pathname);
-        if (lang !== null && lang !== currentLang())
-        {
-            setLang(lang);
-        }
-    }
-
-    // Each prerendered page ships its own title (scripts/build-seo.mjs); a
-    // client-side navigation has to keep it honest, or the tab still names the
-    // page the reader left. The paper's ten pages are the exception - only the
-    // page itself holds the document that names it - so they set their own.
-    effect (router.location().pathname, currentLang())
-    {
-        if (whitepaperLangOf(router.location().pathname) === null)
-        {
-            setDocumentTitle(router.location().pathname === '/' ? landingTitle(t()) : t().nav.home);
-        }
-    }
+    // The site-wide head defaults: the card every page shares, the robots
+    // directive of THIS build, and the origin the pages claim. A page's own
+    // useHead wins per key (title, description, og:url, og:locale, the
+    // hreflang cluster) and falls back to these when it declares none - the
+    // nesting IS the precedence, so no page repeats the card. The one inline
+    // fact here is deliberately not here: the language and direction are the
+    // host's to stamp on <html> before any script runs, and the framework's
+    // locale negotiation owns them.
+    useHead({
+        title: () => t().nav.home,
+        meta: [
+            { name: 'robots', content: ROBOTS_DIRECTIVE },
+            { property: 'og:site_name', content: 'Nura Swap' },
+            { property: 'og:type', content: 'website' },
+            { property: 'og:image', content: `${ siteOrigin() }${ OG_IMAGE_PATH }` },
+            // Stated rather than left to be discovered: a crawler that has not
+            // yet fetched the image still lays the card out correctly, and the
+            // first unfurl is the one that gets cached.
+            { property: 'og:image:width', content: String(OG_WIDTH) },
+            { property: 'og:image:height', content: String(OG_HEIGHT) },
+            { property: 'og:image:type', content: 'image/png' },
+            { name: 'twitter:card', content: 'summary_large_image' },
+            { name: 'twitter:image', content: `${ siteOrigin() }${ OG_IMAGE_PATH }` }
+        ]
+    });
 
     mount
     {
-        // First browser read applies the persisted language and theme; the
-        // deployment fetch warms every page's chain access.
-        currentLang();
+        // First browser read applies the persisted theme; the deployment fetch
+        // warms every page's chain access.
         currentTheme();
         // Warm-up only: a failure here is not this component's to report. The
         // pages that need the deployment await it themselves and show their own

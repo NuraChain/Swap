@@ -11,16 +11,16 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const ROOT = fileURLToPath(new URL('../..', import.meta.url));
+// One source of truth for the card's size: src/lib/seo.ts declares it in every
+// page head, and this module - the image renderer's - reads the same pair.
+// Node runs the TypeScript source directly (type stripping), so no second
+// constant can drift.
+import { OG_HEIGHT as CARD_HEIGHT, OG_WIDTH as CARD_WIDTH } from '../../src/lib/seo.ts';
 
-/**
- * The social card's pixel size. Every platform crops a large summary card to
- * 1200x630 - the 1.91:1 they all state - so build-og-image.mjs renders exactly
- * that and build-seo.mjs declares exactly that in og:image:width/height. One
- * pair of numbers, or the declaration and the file disagree.
- */
-export const OG_WIDTH = 1200;
-export const OG_HEIGHT = 630;
+export const OG_WIDTH = CARD_WIDTH;
+export const OG_HEIGHT = CARD_HEIGHT;
+
+const ROOT = fileURLToPath(new URL('../..', import.meta.url));
 
 /** The shamseh, as ui/shamseh.component.azeroth draws it, on a 100x100 field. */
 export function shamseh(className = 'mark')

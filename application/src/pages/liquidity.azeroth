@@ -1,6 +1,8 @@
 import { formatTokenAmount } from '@nuraswap/shared/digits';
 import { priceWadFromSqrtX96 } from '@nuraswap/shared/v3-math';
 
+import { useHead } from 'azerothjs';
+
 import { client } from '../api.ts';
 import type { TokenRef, TokenWithPrice } from '../api.ts';
 import { NATIVE_TOKEN, ensureDeployment, v3Addresses } from '../lib/chain.ts';
@@ -46,6 +48,8 @@ interface PoolRow
 
 export default component Liquidity()
 {
+    // Client-rendered shells carry no per-page head; this is the one writer.
+    useHead({ title: () => `Nura Swap · ${ t().nav.liquidity }` });
     state tokenList: TokenRef[] = [NATIVE_TOKEN];
     state priced: TokenWithPrice[] = [];
     state rows: PoolRow[] = [];
