@@ -1,14 +1,19 @@
-// The app's languages as one typed dictionary per locale: a missing key in any
-// of them is a compile error, not a silent English fallback. Reading t() inside
-// a component tracks the language signal, so the picker re-renders every string
-// in place. SSR renders the 'en' default; on hydration the persisted choice - or,
-// on a first visit, the browser's own locale - takes over (the pre-paint script
-// in index.html sets lang/dir even earlier, by the same rule).
+// The app's languages over the FRAMEWORK's locale system. Negotiation, the
+// persisted choice and `<html lang>`/`<html dir>` belong to azerothjs now: the
+// server stamps the language onto the document before any script runs, the
+// client seeds from that attribute, and `setLocale` writes the choice to a
+// cookie the next request is rendered from. What remains here is the part the
+// framework deliberately leaves to the application - the strings and the
+// display formats - read off the framework's one reactive locale signal so a
+// switch still redraws every string in place.
+//
+// Which languages exist is data, and lives in langs.ts (the server imports it
+// for the kit's `locales` option, so it stays free of framework imports).
 //
 // Adding a language: write src/lib/locales/<code>.ts against the Dict type, add
 // its row to LANGS, and add its flag to FLAGS in scripts/build-flags.mjs.
 
-import { createSignal } from 'azerothjs';
+import { useLocale, setLocale } from 'azerothjs';
 
 import { ar } from './locales/ar.ts';
 import { en, type Dict } from './locales/en.ts';
@@ -20,145 +25,42 @@ import { pt } from './locales/pt.ts';
 import { ru } from './locales/ru.ts';
 import { tr } from './locales/tr.ts';
 import { zh } from './locales/zh.ts';
+import { isLang, langInfo as langInfoOf, type Lang, type LangInfo } from './langs.ts';
 
-export type { Dict };
-
-export type Lang = 'en' | 'fa' | 'ar' | 'es' | 'pt' | 'hi' | 'zh' | 'ru' | 'fr' | 'tr';
-
-export interface LangInfo
-{
-    code: Lang;
-    /** Endonym - a language list nobody can read is not a language list. */
-    native: string;
-    /** ISO 3166-1 alpha-2 COUNTRY code: the flag is a country's, the pairing editorial. */
-    flag: string;
-    /** BCP 47 tag for Intl number and date formatting. */
-    locale: string;
-    dir: 'ltr' | 'rtl';
-    /** Percent sign; Arabic and Persian use U+066A. */
-    percent: string;
-    /** Currency word appended instead of a leading '$', where that reads better. */
-    usdSuffix: string | null;
-}
-
-// Not `readonly`: <For each> takes a mutable array. Order is the picker's order.
-export const LANGS: LangInfo[] = [
-    { code: 'en', native: 'English', flag: 'gb', locale: 'en-US', dir: 'ltr', percent: '%', usdSuffix: null },
-    { code: 'fa', native: 'فارسی', flag: 'ir', locale: 'fa-IR', dir: 'rtl', percent: '٪', usdSuffix: 'دلار' },
-    { code: 'ar', native: 'العربية', flag: 'sa', locale: 'ar', dir: 'rtl', percent: '٪', usdSuffix: 'دولار' },
-    { code: 'es', native: 'Español', flag: 'es', locale: 'es-ES', dir: 'ltr', percent: '%', usdSuffix: null },
-    { code: 'pt', native: 'Português', flag: 'pt', locale: 'pt-PT', dir: 'ltr', percent: '%', usdSuffix: null },
-    { code: 'hi', native: 'हिन्दी', flag: 'in', locale: 'hi-IN', dir: 'ltr', percent: '%', usdSuffix: null },
-    { code: 'zh', native: '中文', flag: 'cn', locale: 'zh-CN', dir: 'ltr', percent: '%', usdSuffix: null },
-    { code: 'ru', native: 'Русский', flag: 'ru', locale: 'ru-RU', dir: 'ltr', percent: '%', usdSuffix: null },
-    { code: 'fr', native: 'Français', flag: 'fr', locale: 'fr-FR', dir: 'ltr', percent: '%', usdSuffix: null },
-    { code: 'tr', native: 'Türkçe', flag: 'tr', locale: 'tr-TR', dir: 'ltr', percent: '%', usdSuffix: null }
-];
+export type { Dict } from './locales/en.ts';
+export { LANGS, SUPPORTED_LOCALES, flagSrc, isLang } from './langs.ts';
+export type { Lang, LangInfo } from './langs.ts';
 
 const DICTS: Record<Lang, Dict> = { en, fa, ar, es, pt, hi, zh, ru, fr, tr };
 
-const STORAGE_KEY = 'nuraswap.lang';
-const [langSignal, setLangSignal] = createSignal<Lang>('en');
-let initialized = false;
-
-function isLang(value: string | null): value is Lang
+/** The primary subtag of a BCP 47 tag: 'fa-IR' -> 'fa'. */
+function primary(tag: string): string
 {
-    return value !== null && Object.prototype.hasOwnProperty.call(DICTS, value);
+    return tag.toLowerCase().split('-')[0];
 }
 
-export function langInfo(lang: Lang = currentLang()): LangInfo
-{
-    return LANGS.find((entry) => entry.code === lang) as LangInfo;
-}
-
-/** Flag asset for a language, served from public/ (see scripts/build-flags.mjs). */
-export function flagSrc(lang: Lang): string
-{
-    return `/flags/${ langInfo(lang).flag }.svg`;
-}
-
-// The visitor's language before they have ever chosen one: the first entry in
-// the browser's own preference list that we translate. Region is dropped -
-// 'pt-BR' and 'pt-PT' read the same dictionary - and English stands when the
-// list names nothing we speak.
-function browserLang(): Lang
-{
-    // Read structurally: `languages` is absent on older engines, and the whole
-    // object is absent under SSR.
-    const nav: { languages?: readonly string[]; language?: string } | undefined =
-        typeof navigator === 'undefined' ? undefined : navigator;
-    const preferred = nav?.languages ?? (nav?.language === undefined ? [] : [nav.language]);
-    for (const tag of preferred)
-    {
-        const primary = tag.toLowerCase().split('-')[0];
-        if (isLang(primary))
-        {
-            return primary;
-        }
-    }
-    return 'en';
-}
-
-function initFromStorage(): void
-{
-    if (initialized || typeof window === 'undefined')
-    {
-        return;
-    }
-    initialized = true;
-    const stored = readStorage(STORAGE_KEY);
-    // A stored choice pins the language; without one, follow the browser. The
-    // detected language is NOT written back - storage means 'the visitor picked
-    // this', so a reader who never opens the picker keeps following their
-    // system locale when it changes.
-    applyLang(isLang(stored) ? stored : browserLang());
-}
-
-// Storage can be absent or throwing (privacy modes, test DOMs) - degrade to the
-// default rather than taking the app down.
-function readStorage(key: string): string | null
-{
-    try
-    {
-        return window.localStorage.getItem(key);
-    }
-    catch
-    {
-        return null;
-    }
-}
-
-function applyLang(lang: Lang): void
-{
-    setLangSignal(lang);
-    if (typeof document !== 'undefined')
-    {
-        document.documentElement.lang = lang;
-        document.documentElement.dir = langInfo(lang).dir;
-    }
-}
-
+/**
+ * The reader's language, reactive: reads the framework's locale signal, which
+// the server pins per render and the client seeds from `<html lang>`. Every
+ * `t()` call inside a markup getter re-runs on a switch, so the picker redraws
+ * the page in place. A regional tag the site does not publish ('pt-BR') reads
+ * the language it belongs to; English stands when nothing matches.
+ */
 export function currentLang(): Lang
 {
-    initFromStorage();
-    return langSignal();
+    const tag = useLocale()();
+    const code = primary(tag);
+    return isLang(code) ? code : 'en';
 }
 
+/**
+ * The reader's language choice, persisted by the framework: `setLocale` writes
+ * the cookie the next request is negotiated from and updates the document's
+ * `lang`/`dir`, so everything derived from {@link currentLang} redraws.
+ */
 export function setLang(lang: Lang): void
 {
-    // A decision, so storage stops being the one that decides: without this a
-    // language taken from the URL is overwritten the first time anything reads
-    // currentLang() and initFromStorage runs behind it.
-    initialized = true;
-    applyLang(lang);
-    try
-    {
-        window.localStorage.setItem(STORAGE_KEY, lang);
-    }
-    catch
-    {
-        // Preference lives for the session only.
-    }
+    setLocale(lang);
 }
 
 export function t(): Dict
@@ -166,12 +68,23 @@ export function t(): Dict
     return DICTS[currentLang()];
 }
 
+/**
+ * The metadata row for a language - the CURRENT one when none is named, so
+ * callers that format for the reader pass no argument. (langs.ts keeps the pure
+ * lookup; the default has to live here, where the locale signal is.)
+ */
+export function langInfo(lang: Lang = currentLang()): LangInfo
+{
+    return langInfoOf(lang);
+}
+
 // Localized display formatting. Locales with their own numerals (Persian,
 // Arabic) get them in DISPLAY only - inputs normalize back to ASCII before
-// parsing (shared/digits).
+// parsing (shared/digits). The region-bearing Intl tag comes from langs.ts
+// ('fa-IR'), which the picker's tag alone would lose.
 export function fmtNumber(value: number, maxFractionDigits = 2): string
 {
-    return new Intl.NumberFormat(langInfo().locale, {
+    return new Intl.NumberFormat(langInfo(currentLang()).locale, {
         maximumFractionDigits: maxFractionDigits
     }).format(value);
 }
@@ -181,7 +94,7 @@ export function fmtNumber(value: number, maxFractionDigits = 2): string
 // a PRICE carries its own precision rule (format.ts) and only borrows the mark.
 export function markUsd(text: string): string
 {
-    const suffix = langInfo().usdSuffix;
+    const suffix = langInfo(currentLang()).usdSuffix;
     return suffix === null ? `$${ text }` : `${ text } ${ suffix }`;
 }
 

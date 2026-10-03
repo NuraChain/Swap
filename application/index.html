@@ -26,32 +26,28 @@
         <link rel="manifest" href="/manifest.webmanifest"/>
         <meta name="apple-mobile-web-app-title" content="Nura Swap"/>
         <script>
-            // Pre-paint: apply the persisted theme class and text direction so the
-            // first frame is already right. Strings localize at hydration.
-            // The language rule matches App.azeroth and lib/i18n.ts: a language
-            // the URL DECLARES (the paper has one address per translation) wins,
-            // else a stored choice, else the first browser preference we
-            // translate, else English. The list is spelled out a second time
-            // because this script runs before any module does.
+            // Pre-paint: apply the persisted theme class so the first frame is
+            // already right. The LANGUAGE is not this script's business any
+            // more - azerothjs negotiates it per request and stamps lang/dir
+            // onto <html> before anything here could run, and the client seeds
+            // from that attribute. The one legacy duty: a visitor who chose a
+            // language before the framework owned the choice has it in
+            // localStorage, where no negotiation can see it - hand it to the
+            // cookie once, and the old key dies.
             try
             {
                 var theme = localStorage.getItem('nuraswap.theme');
                 if (theme === 'light' || theme === 'dark') { document.documentElement.classList.add(theme); }
                 var supported = /^(en|fa|ar|es|pt|hi|zh|ru|fr|tr)$/;
-                var paper = /^\/whitepaper(?:\/(en|fa|ar|es|pt|hi|zh|ru|fr|tr))?\/?$/.exec(location.pathname);
-                var lang = paper ? (paper[1] || 'en') : localStorage.getItem('nuraswap.lang');
-                if (!lang || !supported.test(lang))
+                if (document.cookie.indexOf('locale=') === -1)
                 {
-                    var preferred = navigator.languages || (navigator.language ? [navigator.language] : []);
-                    lang = 'en';
-                    for (var i = 0; i < preferred.length; i++)
+                    var chosen = localStorage.getItem('nuraswap.lang');
+                    if (chosen !== null && supported.test(chosen))
                     {
-                        var primary = String(preferred[i]).toLowerCase().split('-')[0];
-                        if (supported.test(primary)) { lang = primary; break; }
+                        document.cookie = 'locale=' + chosen + '; path=/; max-age=31536000; samesite=lax';
                     }
+                    localStorage.removeItem('nuraswap.lang');
                 }
-                document.documentElement.lang = lang;
-                document.documentElement.dir = (lang === 'fa' || lang === 'ar') ? 'rtl' : 'ltr';
             }
             catch (error) { /* storage unavailable - defaults stand */ }
         </script>

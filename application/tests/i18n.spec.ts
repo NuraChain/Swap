@@ -4,9 +4,11 @@
 // renders as an empty button, and the number formatting that decides whether a
 // Persian reader sees their own digits.
 
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { negotiateLocale, useDirection } from 'azerothjs';
+import { resetLocale } from 'azerothjs/internal';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { LANGS, currentLang, flagSrc, fmtNumber, fmtUsd, langInfo, setLang, t } from '../src/lib/i18n.ts';
+import { LANGS, SUPPORTED_LOCALES, currentLang, flagSrc, fmtNumber, fmtUsd, langInfo, setLang, t } from '../src/lib/i18n.ts';
 import { ar } from '../src/lib/locales/ar.ts';
 import { en } from '../src/lib/locales/en.ts';
 import { es } from '../src/lib/locales/es.ts';
@@ -158,10 +160,20 @@ describe('switching language', () =>
         expect(document.documentElement.dir).toBe('ltr');
     });
 
-    it('persists the choice for the next visit', () =>
+    it('persists the choice where the server can read it', () =>
     {
+        // The framework persists to a cookie, not local storage: the next request has to
+        // arrive ALREADY in the chosen language, and only the server can render it so.
         setLang('tr');
-        expect(window.localStorage.getItem('nuraswap.lang')).toBe('tr');
+        for (const pair of document.cookie.split(';'))
+        {
+            if (pair.trim().startsWith('locale='))
+            {
+                expect(pair.trim().slice('locale='.length)).toBe('tr');
+                return;
+            }
+        }
+        expect.unreachable('setLang() wrote no locale cookie');
     });
 
     it('re-reads t() through the new dictionary', () =>
@@ -176,84 +188,146 @@ describe('switching language', () =>
 
 describe('the first visit', () =>
 {
-    // The language is decided once per module load, so each case needs its own
-    // instance: stub the navigator, reset the graph, import again.
-    async function firstLoad(nav: { languages?: string[]; language?: string }, stored?: string)
+    // A first visit's language is decided before any script runs: the server
+    // negotiates over SUPPORTED_LOCALES and stamps `<html lang>`/`<html dir>`, and
+    // the client seeds from the document rather than being told again. So each case
+    // here stamps the attribute a server would, and resets the framework's locale
+    // module to its just-arrived state - its own test seam.
+    // The persisted choice, parsed out of document.cookie (happy-dom's serializer
+    // keeps expired entries, so a substring test cannot express absence).
+    function chosenLocale(): string | null
     {
-        window.localStorage.clear();
-        if (stored !== undefined)
+        for (const pair of document.cookie.split(';'))
         {
-            window.localStorage.setItem('nuraswap.lang', stored);
+            const at = pair.indexOf('=');
+            if (at !== -1 && pair.slice(0, at).trim() === 'locale')
+            {
+                return pair.slice(at + 1).trim();
+            }
         }
-        vi.stubGlobal('navigator', nav);
-        vi.resetModules();
-        return await import('../src/lib/i18n.ts');
+        return null;
     }
+
+    function justArrived(lang: string | null): void
+    {
+        if (lang === null)
+        {
+            document.documentElement.removeAttribute('lang');
+        }
+        else
+        {
+            document.documentElement.setAttribute('lang', lang);
+        }
+        resetLocale();
+    }
+
+    function forgetChoice(): void
+    {
+        // The past-expires form, not max-age=0: happy-dom stores the latter as a
+        // live empty cookie instead of deleting.
+        document.cookie = 'locale=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+    }
+
+    beforeEach(() =>
+    {
+        forgetChoice();
+    });
 
     afterEach(() =>
     {
-        vi.unstubAllGlobals();
-        vi.resetModules();
-        window.localStorage.clear();
+        resetLocale();
+        document.documentElement.setAttribute('lang', 'en');
+        forgetChoice();
     });
 
-    it('opens in the language the browser asks for, when nobody has chosen one', async () =>
+    it('arrives in the language the server stamped, direction included', () =>
     {
-        const i18n = await firstLoad({ languages: ['fa-IR', 'en-US'], language: 'fa-IR' });
-        expect(i18n.currentLang()).toBe('fa');
-        expect(i18n.t().nav.swap).toBe(fa.nav.swap);
-        // An RTL first visit has to arrive already mirrored.
-        expect(document.documentElement.lang).toBe('fa');
-        expect(document.documentElement.dir).toBe('rtl');
+        justArrived('fa-IR');
+        expect(currentLang()).toBe('fa');
+        expect(t().nav.swap).toBe(fa.nav.swap);
+        // An RTL first visit has to arrive already mirrored - the direction derives
+        // from the seeded language, not from a second source the client keeps.
+        expect(useDirection()()).toBe('rtl');
     });
 
-    it('ignores the region: one dictionary serves every variant of a language', async () =>
+    it('ignores the region: one dictionary serves every variant of a language', () =>
     {
-        const i18n = await firstLoad({ languages: ['pt-BR'], language: 'pt-BR' });
-        expect(i18n.currentLang()).toBe('pt');
+        justArrived('pt-BR');
+        expect(currentLang()).toBe('pt');
     });
 
-    it('takes the first entry it can actually translate, not the first entry', async () =>
+    it('falls back to English for a language the site does not publish', () =>
     {
-        const i18n = await firstLoad({ languages: ['ja-JP', 'ko-KR', 'tr-TR'], language: 'ja-JP' });
-        expect(i18n.currentLang()).toBe('tr');
+        justArrived('ja-JP');
+        expect(currentLang()).toBe('en');
+        expect(useDirection()()).toBe('ltr');
     });
 
-    it('falls back to English when it speaks none of them', async () =>
+    it('opens in English when nothing was stamped at all', () =>
     {
-        const i18n = await firstLoad({ languages: ['ja-JP', 'ko-KR'], language: 'ja-JP' });
-        expect(i18n.currentLang()).toBe('en');
-        expect(document.documentElement.dir).toBe('ltr');
+        justArrived(null);
+        expect(currentLang()).toBe('en');
     });
 
-    it('reads navigator.language where there is no preference list', async () =>
+    it('does not write the detected language back', () =>
     {
-        const i18n = await firstLoad({ language: 'ar-EG' });
-        expect(i18n.currentLang()).toBe('ar');
+        // The stamp means the server already answered; re-recording it as a choice
+        // would pin a reader whose system locale later changes. A real choice
+        // through the picker still writes.
+        justArrived('es-ES');
+        expect(currentLang()).toBe('es');
+        expect(chosenLocale()).toBeNull();
+        setLang('fr');
+        expect(chosenLocale()).toBe('fr');
+    });
+});
+
+describe('negotiating the first visit', () =>
+{
+    // The app's part of negotiation is one thing: publishing SUPPORTED_LOCALES to
+    // the kit's `locales` option (server/src/main.ts). The rule itself is the
+    // framework's - exercised here against the list the app actually publishes, so
+    // a language added to langs.ts keeps negotiating to itself.
+    // A real Request would do, but browsers drop the `Cookie` header from a
+    // constructed one (a forbidden header), and that is exactly the header the
+    // stored-choice case needs. negotiateLocale reads nothing but `headers.get`, so
+    // a faithful two-line stand-in is honest here.
+    const ask = (headers: Record<string, string>): Request =>
+        ({ headers: { get: (name: string) => headers[name.toLowerCase()] ?? null } }) as unknown as Request;
+
+    const negotiate = (headers: Record<string, string>): { locale: string; fromCookie: boolean } =>
+        negotiateLocale(ask(headers), { supported: SUPPORTED_LOCALES });
+
+    it('lets a stored choice outrank the browser', () =>
+    {
+        // The cookie is an answer the reader gave; `Accept-Language` is a guess.
+        expect(negotiate({ cookie: 'locale=ru', 'accept-language': 'fa-IR' }))
+            .toEqual({ locale: 'ru', fromCookie: true });
     });
 
-    it('falls back to English with no navigator at all', async () =>
+    it('answers the browser\'s FIRST preference, not any preference', () =>
     {
-        const i18n = await firstLoad({});
-        expect(i18n.currentLang()).toBe('en');
+        // 'en-US,fa;q=0.9' asked for English; Persian appearing at all is not consent.
+        expect(negotiate({ 'accept-language': 'en-US,fa;q=0.9' }))
+            .toEqual({ locale: 'en', fromCookie: false });
     });
 
-    it('lets a stored choice outrank the browser', async () =>
+    it('serves a regional ask with the language it belongs to', () =>
     {
-        const i18n = await firstLoad({ languages: ['fa-IR'], language: 'fa-IR' }, 'ru');
-        expect(i18n.currentLang()).toBe('ru');
+        expect(negotiate({ 'accept-language': 'fa-AF' }).locale).toBe('fa');
     });
 
-    it('does not write the detected language back to storage', async () =>
+    it('opens in the site\'s own language when the reader names nothing it speaks', () =>
     {
-        // Storage means 'the visitor picked this'. Left empty, a reader whose
-        // system locale changes is followed rather than pinned - and the picker
-        // still writes on a real choice.
-        const i18n = await firstLoad({ languages: ['es-ES'], language: 'es-ES' });
-        expect(i18n.currentLang()).toBe('es');
-        expect(window.localStorage.getItem('nuraswap.lang')).toBeNull();
-        i18n.setLang('fr');
-        expect(window.localStorage.getItem('nuraswap.lang')).toBe('fr');
+        expect(negotiate({ 'accept-language': 'ja-JP,ko-KR' }).locale).toBe('en');
+    });
+
+    it('reaches every published language from its own tag', () =>
+    {
+        for (const entry of LANGS)
+        {
+            expect(negotiate({ 'accept-language': entry.locale }).locale, entry.code).toBe(entry.code);
+        }
     });
 });
 
