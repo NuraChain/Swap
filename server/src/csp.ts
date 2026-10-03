@@ -16,7 +16,7 @@
  * costs a blocking round trip. It is therefore allowed by hash. `csp.spec.ts`
  * recomputes this from the built HTML and fails if the script drifts.
  */
-export const THEME_SCRIPT_HASH = 'sha256-+4y84WB4TTY5nGmWZTVe1CnQFcVst3HuJ0TiSe6rmGk=';
+export const THEME_SCRIPT_HASH = 'sha256-MjX2u1Jx5cCrtmrWFONYKz3+VwWRzV+d80Z7UY/dbX8=';
 
 /**
  * Cloudflare Web Analytics. The beacon is injected by the PROXY in front of this

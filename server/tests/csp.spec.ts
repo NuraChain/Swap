@@ -90,12 +90,13 @@ describe('inline theme script hash', () =>
             return;
         }
         const html = readFileSync(BUILT_HTML, 'utf8');
-        // The JSON-LD block scripts/build-seo.mjs writes is a DATA block, not
-        // JavaScript: the browser never executes it, so script-src never gates it
-        // and it needs no hash. Everything else inline does - and there must
-        // still be exactly one of those.
+        // The JSON-LD block a page declares and the kit's loader handoff are
+        // DATA blocks (`application/ld+json` / `application/json`), not
+        // JavaScript: the browser never executes them, so script-src never
+        // gates them and they need no hash. Everything else inline does - and
+        // there must still be exactly one of those.
         const inline = [...html.matchAll(
-            /<script(?![^>]*\bsrc=)(?![^>]*\btype="application\/ld\+json")[^>]*>([\s\S]*?)<\/script>/g)];
+            /<script(?![^>]*\bsrc=)(?![^>]*\btype="application\/(?:ld\+)?json")[^>]*>([\s\S]*?)<\/script>/g)];
         expect(inline.length).toBe(1);
         const hash = `sha256-${ createHash('sha256').update(inline[0][1], 'utf8').digest('base64') }`;
         expect(
