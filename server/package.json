@@ -14,19 +14,19 @@
         "coverage": "vitest run --coverage"
     },
     "dependencies": {
-        "@azerothjs/http": "^2.0.0-beta.2",
-        "@azerothjs/kit": "^2.0.0-beta.2",
-        "@azerothjs/logger": "^2.0.0-beta.2",
-        "@azerothjs/schema": "^2.0.0-beta.2",
+        "@azerothjs/http": "^2.1.0",
+        "@azerothjs/kit": "^2.1.0",
+        "@azerothjs/logger": "^2.1.0",
+        "@azerothjs/schema": "^2.1.0",
         "@nuraswap/shared": "1.4.1",
-        "azerothjs": "^2.0.0-beta.2",
+        "azerothjs": "^2.1.0",
         "viem": "^2.56.3"
     },
     "devDependencies": {
-        "@azerothjs/cli": "^2.0.0-beta.2",
-        "@azerothjs/devtools": "^2.0.0-beta.2",
-        "@azerothjs/eslint-plugin": "^2.0.0-beta.2",
-        "@azerothjs/ws": "^2.0.0-beta.2",
+        "@azerothjs/cli": "^2.1.0",
+        "@azerothjs/devtools": "^2.1.0",
+        "@azerothjs/eslint-plugin": "^2.1.0",
+        "@azerothjs/ws": "^2.1.0",
         "@eslint/js": "^10.0.1",
         "@types/node": "^26.5.1",
         "eslint": "^10.10.0",
