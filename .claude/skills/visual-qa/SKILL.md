@@ -1,6 +1,6 @@
 ---
 name: visual-qa
-description: The repeatable browser QA loop for this repository - start both halves, drive the Playwright MCP server across three viewports in both text directions, screenshot, inspect against a checklist, fix, re-run. Load after any change that alters what a page looks like, and before calling UI work finished.
+description: The repeatable browser QA loop for this repository - start the one-origin dev session, drive the Playwright MCP server across three viewports in both text directions, screenshot, inspect against a checklist, fix, re-run. Load after any change that alters what a page looks like, and before calling UI work finished.
 ---
 
 # Visual QA loop
@@ -9,28 +9,32 @@ Writing the markup is half the job. A UI change is done when it has been *seen*,
 at every size, in both directions.
 
 ```
-Build -> Start both halves -> Playwright -> desktop -> tablet -> mobile
+Build -> npm run dev -> Playwright -> desktop -> tablet -> mobile
       -> LTR -> RTL -> screenshot -> inspect -> fix -> repeat
 ```
 
 ## Starting the application
 
-Two processes. The app proxies `/api` to the server, so the server goes first:
+**One process, one origin.** The kit's dev session serves the pages from the
+server half with vite running inside it - there is no second port and no dev
+proxy to keep in step.
 
 ```sh
-node server/src/main.ts          # indexer + API on :3000
-npm run dev --workspace application   # vite on :4001
+npm run dev          # one origin; PORT defaults to 3000
 ```
 
-The dev proxy reads the port out of `server/.env`, so if `PORT` is set there the
-API is not on 3000 - `application/vite.config.ts` resolves it. Wait for vite to
-print its URL before navigating; a screenshot of a page that has not booted is a
-screenshot of nothing.
+Use `PORT=3001 npm run dev` if something already holds 3000. Wait until the root
+answers (`curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/`) before
+navigating; a screenshot of a page that has not booted is a screenshot of
+nothing. The dev session still runs the kit's per-request locale negotiation, so
+dev agrees with production about `<html lang dir>`.
 
-The pages that matter: `/` (landing, prerendered), `/swap`, `/liquidity`,
-`/portfolio`. The trading pages render client-side and need the deployment from
-the API, so a dead server half shows empty states rather than content - which is
-itself a state worth checking.
+The pages that matter: `/` (landing, ISR - its live stats are in the HTML),
+`/swap`, `/liquidity`, `/portfolio`, and `/whitepaper` plus a translation such as
+`/whitepaper/fa`. The trading pages render client-side and need the deployment
+from the API, so a dead server half shows empty states rather than content -
+which is itself a state worth checking. **`/whitepaper/<unknown>` must render the
+fallback with a 404 status, not an error overlay.**
 
 ## Viewports
 
@@ -56,21 +60,25 @@ does not need one for this loop):
 
 ```
 browser_resize            { width: 1440, height: 900 }
-browser_navigate          http://localhost:4001/swap
+browser_navigate          http://localhost:3000/swap
 browser_snapshot                              # accessibility tree, not pixels
 browser_take_screenshot   { fullPage: true }
 browser_console_messages                      # errors that never reach the page
 ```
 
-Switch direction by writing the language the app itself persists, then reloading:
+Switch direction by writing the cookie the framework persists, then reloading:
 
 ```
-browser_evaluate  () => localStorage.setItem('nuraswap.lang','fa')
+browser_evaluate  () => { document.cookie = 'locale=fa; path=/; max-age=31536000'; }
 browser_navigate  <same url>
 ```
 
-`en` returns to LTR. The full matrix is 3 viewports × 2 directions × the pages
-you touched.
+`en` returns to LTR. The reload is a REAL per-request negotiation: the server
+stamps `<html lang dir>` and the head resolves in the chosen language, so check
+that rather than trusting a client-side re-render. The header picker writes the
+same cookie through `setLocale()`.
+
+The full matrix is 3 viewports × 2 directions × the pages you touched.
 
 Interactions worth exercising because they have no other coverage: open the
 settings sheet on `/swap`, open the token picker, open the wallet sheet, open the

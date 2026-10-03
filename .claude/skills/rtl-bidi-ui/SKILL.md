@@ -110,11 +110,9 @@ merely looks wrong. For any visible change, view it in both directions:
 
 ```js
 // through the Playwright MCP server
-browser_navigate  http://localhost:4001/swap
-browser_evaluate  () => { localStorage.setItem('nuraswap.lang','fa');
-                          document.documentElement.setAttribute('dir','rtl');
-                          document.documentElement.lang = 'fa'; }
-browser_navigate  http://localhost:4001/swap      // reload so the app re-reads it
+browser_navigate  http://localhost:3000/swap
+browser_evaluate  () => { document.cookie = 'locale=fa; path=/; max-age=31536000'; }
+browser_navigate  http://localhost:3000/swap      // reload: the server negotiates and stamps lang/dir
 browser_take_screenshot
 ```
 

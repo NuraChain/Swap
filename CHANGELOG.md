@@ -34,6 +34,18 @@ this changelog covers the application, the indexer, and the shared maths.
 
 ### Fixed
 
+- **The whitepaper page hydrates from its prerendered bytes again.** As a lazy
+  route it adopted its server markup from the chunk-load write, before the
+  route's loader resource had settled, so `<Show when={ doc }>` gated on
+  `undefined` where the server had rendered the document, hydration failed, and
+  every visit silently fell back to a full client render (a
+  `HydrationMismatchError` in dev). It is an eager `component` now - the
+  configuration the landing page already proved - and the document data stays
+  lazy through the route loader.
+- **`/whitepaper/<unknown>` renders its fallback instead of crashing.** The
+  language parameter is validated with `isLang()` before it reaches `Lang`-typed
+  code: an unknown tag used to reach `langInfo()`, which is undefined for it, and
+  the head factory threw on the way to a 404.
 - **The Cloudflare beacon no longer reports a CSP violation on every page
   load.** The proxy in front of the site injects Cloudflare Web Analytics,
   which nothing in this repository asks for and `script-src 'self'` blocked, so
@@ -51,6 +63,39 @@ this changelog covers the application, the indexer, and the shared maths.
 
 ### Changed
 
+- **AzerothJS 2.0.0-beta.2 -> 2.1.0, and the systems it added.** The
+  framework's own `useHead()` writes the head now: `App.azeroth` declares the
+  shared card, the robots directive and the default title, each page overrides
+  per key, and `src/lib/seo.ts` is the tag factory they share. Title,
+  description, canonical, the ten-way `hreflang` cluster, `og:locale` and the
+  JSON-LD block are therefore written by the same declaration the page renders
+  from - serialized server-side where a crawler reads them, applied live on a
+  client navigation. `scripts/build-seo.mjs` no longer splices tags into
+  prerendered files; it runs the kit's prerender per language and writes the two
+  artifacts no page can: `sitemap.xml` and `robots.txt`.
+- **i18n moves onto the framework.** `server/src/main.ts` hands the kit
+  `locales: { supported: SUPPORTED_LOCALES }`, so negotiation (the `locale`
+  cookie a reader's choice writes first, then `Accept-Language`), the
+  `<html lang dir>` stamp and the per-language prerendered files belong to the
+  framework, and the client seeds from the served attribute instead of being
+  told twice. `src/lib/langs.ts` is the pure-data locale table the server half
+  imports; `src/lib/i18n.ts` keeps the dictionaries and the display formats,
+  read off the framework's one reactive locale so a switch still redraws every
+  string in place. The old `nuraswap.lang` local-storage key is moved onto that
+  cookie once, before first paint.
+- **The landing page is ISR.** `render: 'static'` with `revalidate: 30` and a
+  route loader: the build writes a seed, requests serve it fresh for 30s, and
+  past the window a stale copy is answered while one background render replaces
+  it - which puts the live market stats into the HTML a crawler reads, where
+  before there was a numberless shell the browser filled in.
+- **One origin in development.** `npm run dev` is a single process now: the
+  kit's dev session serves the pages from the server half with vite inside it,
+  so the dev proxy, the `:4001` origin and the `API_PORT` resolution in
+  `application/vite.config.ts` are gone.
+- **The whitepaper is two routes, not ten.** `/whitepaper` (English) and
+  `/whitepaper/:lang` with `staticParams` from `LANGS`; the route loader loads
+  only the translation the address names, so a reader still pays for one
+  document, and the addresses are unchanged.
 - **One headless Chrome, not two.** The browser launch and the DevTools client
   move to `application/scripts/lib/chrome.mjs`, and the mark, the `@font-face`
   embedding and the HTML escape to `lib/brand.mjs`, so the PDF script and the

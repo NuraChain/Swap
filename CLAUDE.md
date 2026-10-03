@@ -41,12 +41,26 @@ Markup control flow is `<Show when={} fallback={} let={}>` and
 never reaches an effect.
 
 Routes are declared once in `src/routes.ts` and shared by the client router, the
-SSR entry and the server. The landing page prerenders (`render: 'static'`); the
-trading pages are `render: 'client'` and lazy. The whitepaper is TEN lazy static
-routes, one per translation - `/whitepaper` is English and `/whitepaper/<lang>`
-the other nine - generated from `LANGS`, each prerendering its own words and
-loading only its own document. Ten languages behind one URL were nine languages
-no search engine could reach, and one 157 kB chunk every reader paid for.
+SSR entry and the server. The landing page prerenders (`render: 'static'`) with
+`revalidate: 30`, so it is ISR: the market stats land in the HTML a crawler reads
+instead of in a numberless shell the browser fills in. The trading pages are
+`render: 'client'` and lazy. The whitepaper is TWO static routes - `/whitepaper`
+for English and `/whitepaper/:lang` for the other nine, enumerated by
+`staticParams` from `LANGS` - and only the translation the address names is
+loaded, so a reader pays for one document. Ten languages behind one URL were nine
+languages no search engine could reach, and one 157 kB chunk every reader paid
+for.
+
+Keep the whitepaper page an **eager `component`, not `lazy`**. A lazy page adopts
+its server markup from a deferred effect run (the chunk-load write), and there the
+route's loader resource has not settled yet - so a page that gates on it
+(`<Show when={ doc }>` where the server rendered the document) hydrates against
+`undefined`, the mismatch makes the framework fall back to a FULL client render,
+and the prerendered bytes are silently thrown away on every visit (a
+`HydrationMismatchError` in dev). An eager page adopts in the main pass, where the
+loader handoff has already been applied - the landing page, eager with the same
+loader-then-Show pattern, is the working reference. What stays lazy is the DATA:
+the route loader imports only the one translation the address names.
 
 **SSR safety matters**: the prerender evaluates every page module, so nothing may
 touch `window`/`localStorage` at module scope. `tests/ssr-safety.spec.ts` is the
@@ -111,13 +125,24 @@ component library, no CSS-in-JS. No hex colours in components.
 
 ## Page heads, robots and the sitemap
 
-The kit splices markup into the built shell and leaves the head alone, so
-`scripts/build-seo.mjs` writes it after the prerender: `<html lang>`/`dir`,
-title, description, the robots directive, canonical, the ten-way `hreflang`
-cluster, Open Graph and JSON-LD, plus `robots.txt` and `sitemap.xml`. It runs as
-part of `npm run build` (the root script, not `azeroth build` alone) and reads
-`dist/.vite/manifest.json` to preload each page's own language chunk - so
-`build.manifest` stays on in `vite.config.ts`.
+The **pages own their head**, through the framework's `useHead()`: `App.azeroth`
+declares the site-wide defaults (robots, `og:site_name`, the share card, the
+default title) and a page overrides per key, so the nesting IS the precedence.
+`src/lib/seo.ts` holds the tag factory (`pageHead`, `describe`, `ogLocale`) and
+the origin/robots policy. Title, description, canonical, the ten-way `hreflang`
+cluster, Open Graph, Twitter and JSON-LD are therefore written in the same run
+that renders the page - serialized server-side where a crawler reads them, and
+live on the client without a build step. `server/src/main.ts` passes
+`locales: { supported: SUPPORTED_LOCALES }` to the kit, which is what makes the
+kit stamp `<html lang>`/`dir` per request and prerender a file per language.
+
+`scripts/build-seo.mjs` no longer splices tags into a head. It runs the
+framework's prerender over `dist-server/entry.server.js` (writing `/`,
+`/whitepaper` and the nine `index.<lang>.html` variants), then writes
+`sitemap.xml` (with `xhtml:link` alternates) and `robots.txt` from the same
+`seo.ts` policy - two artifacts that describe the whole site rather than one
+page, and the sitemap needs the one fact no page knows: the origin. It runs as
+part of `npm run build` (the root script, not `azeroth build` alone).
 
 It also writes `dist/shell.html`, which the kit serves for the three
 `render: 'client'` routes. That one gets the robots directive and the card only:
@@ -137,13 +162,25 @@ palette. It and `build-whitepaper-pdf.mjs` share one headless Chrome
 `@font-face` rules, the HTML escape (`scripts/lib/brand.mjs`), which is also
 where the card's dimensions live, so the file and the `og:image:width` that
 declares it cannot disagree.
-Titles come from `src/lib/seo.ts`, which the app imports too - the prerendered
-head and a client-side navigation set the same string.
+Titles and the rest of the head come from `src/lib/seo.ts`, which the pages
+import too - one `pageHead()` declaration is what the server serializes and what
+a client-side navigation applies, so the two can never set different strings.
 
-A URL may DECLARE a language: the paper's ten addresses do, and that outranks the
-stored preference (`App.azeroth`, and the pre-paint script in `index.html` by the
-same rule). Editing that inline script changes its hash - `server/src/csp.ts`
-carries it and `server/tests/csp.spec.ts` fails until you update it.
+The **language and direction belong to the framework** (AzerothJS 2.1's i18n):
+`server/src/main.ts` hands the kit `locales: { supported: SUPPORTED_LOCALES }`
+for both the dev session and the production pages, the server negotiates per
+request - the `locale` cookie a reader's choice writes first, then
+`Accept-Language` - and stamps `<html lang dir>` before any script runs. The
+client seeds from that attribute, so the two sides cannot disagree, and
+`setLocale()` writes the cookie and updates the document. `src/lib/langs.ts` is
+the pure-data locale table (the server half imports it, so it carries no
+framework imports); `src/lib/i18n.ts` keeps only what the framework leaves to the
+application - the ten dictionaries and the display formats, read off the
+framework's one reactive locale so a switch redraws every string in place. The
+pre-paint script in `index.html` is theme-only now, plus a one-time move of the
+old `nuraswap.lang` local-storage key onto that cookie. Editing that inline
+script changes its hash - `server/src/csp.ts` carries it and
+`server/tests/csp.spec.ts` fails until you update it.
 
 The CSP is tight on purpose and two build-side rules keep it that way. **A font
 is never inlined**: `build.assetsInlineLimit` in `vite.config.ts` refuses every
@@ -205,26 +242,32 @@ do not add a second one.
 ## Visual QA workflow
 
 ```
-Build -> start both halves -> Playwright -> desktop/tablet/mobile -> LTR -> RTL
+Build -> npm run dev -> Playwright -> desktop/tablet/mobile -> LTR -> RTL
       -> screenshot -> inspect -> fix -> repeat
 ```
 
-Start the two halves (the app proxies `/api` to the server, so the server first):
+**One origin now**: the server half serves the pages with vite running inside it
+(the kit's dev session), so the server goes first and there is no second port and
+no dev proxy.
 
 ```sh
-node server/src/main.ts                 # API; PORT comes from server/.env
-npm run dev --workspace application     # vite on :4001
+npm run dev          # one process, one origin; PORT defaults to 3000
 ```
 
-`application/vite.config.ts` resolves the API port from `API_PORT`, then
-`server/.env`, then 3000. **If `/api` requests come back as HTML, something else
-owns the API port** — check for a stray dev server before suspecting the config.
+Use `PORT=3001 npm run dev` when something already holds 3000, and `curl` the
+root before driving a browser - a screenshot of a page that has not booted is a
+screenshot of nothing. (The dev session is also what runs the kit's per-request
+locale negotiation in development, exactly as production does.)
 
-Switch direction by writing the language the app persists, then reloading:
+Switch direction by writing the cookie the framework persists, then reloading:
 
 ```
-browser_evaluate  () => localStorage.setItem('nuraswap.lang','fa')   // 'en' for LTR
+browser_evaluate  () => { document.cookie = 'locale=fa; path=/; max-age=31536000'; }   // 'en' for LTR
 ```
+
+Reload after writing it: the server negotiates per request, so the reload is a
+fresh `<html lang dir>` stamp and a page whose head resolves in the chosen
+language - which is the thing to check, not a client-side re-render.
 
 Inspect with `browser_snapshot` (accessibility tree) as well as screenshots, and
 read `browser_console_messages` — an unhandled rejection is a finding.
@@ -249,8 +292,16 @@ See `TESTING.md` for the full map.
 Measure before changing. Animations stay on `opacity`/`transform` (never width,
 height or offsets) and `prefers-reduced-motion: reduce` disables them in
 `@layer base` — anything new obeys the same rule. Trading pages are lazy routes;
-keep them that way. The wallet store refreshes on receipts and a 5s visible-tab
-timer, never per block — do not add block-driven polling.
+keep them that way. The whitepaper page is the deliberate exception - eager,
+because a lazy page cannot hydrate a loader-gated root (see Architecture) - and
+the document data stays lazy through the route loader. The wallet store refreshes
+on receipts and a 5s visible-tab timer, never per block — do not add block-driven
+polling.
+
+**An SSR page must hydrate from its own bytes.** The browser console is part of
+the gate, not a suggestion: a `HydrationMismatchError` means the framework threw
+the prerendered markup away and re-rendered the page on the client, which is the
+one thing a static route exists to prevent.
 
 ## Gates before calling frontend work done
 
