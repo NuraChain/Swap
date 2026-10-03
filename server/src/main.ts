@@ -10,8 +10,9 @@ import { loadDeploymentIfPresent } from '@nuraswap/shared/deployments';
 import { createPublicClient, http } from 'viem';
 
 import { manifestOf } from '@azerothjs/http/api';
+import { SUPPORTED_LOCALES } from '../../application/src/lib/langs.ts';
 
-import { buildApp, createApi } from './app.ts';
+import { buildApp, createApi, registerApi } from './app.ts';
 import { startPriceFeed } from './feed.ts';
 import { buildCsp } from './csp.ts';
 import { IndexerDb } from './indexer/db.ts';
@@ -112,27 +113,60 @@ const feed = config.priceFeed
     ? startPriceFeed({ log, refreshMs: config.priceFeedMs })
     : { prices: (): ReadonlyMap<string, bigint> => new Map(), stop: (): void => undefined };
 
-// In dev, vite serves the client and proxies /api here; in production this server serves
-// the whole app - one origin, no CORS between halves. The SSR bundle is ONE self-contained
-// file, so importing it gives the kit both the route table and the page renderer.
+// In production this server serves the whole app - one origin, no CORS between halves -
+// from the self-contained SSR bundle, which carries the route table and the page renderer.
 const ssr = isProduction
     ? await import(pathToFileURL(config.ssrEntry).href) as { routes: PageRoute[]; renderPage: PageRenderer }
     : undefined;
 
 const api = createApi({ db, deployment: active, externalPrices: feed.prices, status: indexer.status });
 
-const app = buildApp({
-    dev: !isProduction,
-    api,
-    observe: logRequests(log),
-    onError: (error, mapped) =>
+const observe = logRequests(log);
+const onError = (error: unknown, mapped: { status: number }): void =>
+{
+    if (mapped.status >= 500)
     {
-        if (mapped.status >= 500)
-        {
-            log.error('unhandled error', { status: mapped.status, error });
-        }
+        log.error('unhandled error', { status: mapped.status, error });
+    }
+};
+
+// Dev: the kit owns a vite session inside THIS process - one origin serves the
+// pages, the api and the HMR socket, so there is no second port and no proxy
+// (the session refuses one; it IS that seam). The pages mount reads the SAME
+// source entry production compiles, and the locales option puts the framework's
+// negotiation in front of every page in dev exactly as production runs it.
+// The import is dynamic because vite is a dev dependency the production image
+// never installs.
+const dev = !isProduction;
+const kitDev = dev ? await import('@azerothjs/kit/dev') : undefined;
+const session = await kitDev?.devPages({
+    root: fileURLToPath(new URL('../../application/', import.meta.url)),
+    pages: { manifest: manifestOf(api), locales: { supported: SUPPORTED_LOCALES } },
+    routes: (app) =>
+    {
+        registerApi(app, api);
     },
-    pages: ssr === undefined ? undefined : { routes: ssr.routes, clientDir: config.clientDir, renderer: ssr.renderPage, manifest: manifestOf(api) }
+    app: { dev, observe, onError }
+});
+
+const app = session?.app ?? buildApp({
+    dev,
+    api,
+    observe,
+    onError,
+    pages: ssr === undefined
+        ? undefined
+        : {
+            routes: ssr.routes,
+            clientDir: config.clientDir,
+            renderer: ssr.renderPage,
+            manifest: manifestOf(api),
+            // The site's ten languages: every page is negotiated per request
+            // (cookie, then Accept-Language) and served with its own <html
+            // lang> and <html dir> - which is also what the prerendered
+            // per-language files are served by.
+            locales: { supported: SUPPORTED_LOCALES }
+        }
 });
 
 // The swap page polls quotes, balances, candles, and recent txs from one origin;
@@ -162,8 +196,19 @@ const handler = pipeline(
     rateLimit({ limit: 2000, windowMs: 60_000, trustProxy: config.trustProxy })
 );
 
-const served = await serve(handler, { port: config.port });
-handleShutdownSignals(served);
+// The dev session's vite seam rides `serve`'s `before` - a connect-level
+// middleware, ahead of the whole pipeline, so vite answers its own module and
+// HMR requests and nothing else reaches it. Dev binds the loopback explicitly:
+// `localhost` resolves to ::1 first on some platforms, and the session's
+// open-in-editor refuses non-loopback peers.
+const served = await serve(handler, {
+    port: config.port,
+    before: session?.before,
+    hostname: dev ? (process.env['HOST'] ?? '127.0.0.1') : undefined
+});
+// The HMR socket rides this server: vite was never given one of its own.
+session?.attach(served.server);
+handleShutdownSignals(served, { beforeExit: () => void session?.close() });
 process.once('SIGINT', indexer.stop);
 process.once('SIGTERM', indexer.stop);
 process.once('SIGINT', feed.stop);

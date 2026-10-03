@@ -277,8 +277,25 @@ export interface AppOptions
     observe?: RequestObserver;
     onError?: ErrorObserver;
 
-    /** The built client + SSR renderer (production); omit in dev - vite serves the client. */
+    /** The built client + SSR renderer (production); omit in dev - the kit's dev session owns the pages. */
     pages?: KitOptions;
+}
+
+/**
+ * The api half, on any App: the health probe, the market routes, and the typed
+ * client's runtime manifest. buildApp calls it for the production mount, and
+ * the kit's dev session calls it through its `routes` callback - the SAME
+ * registration, so dev and production cannot drift.
+ */
+export function registerApi(app: App, api: Api): void
+{
+    app.get('/api/healthz', () => json({ ok: true, at: new Date().toISOString() }));
+
+    register(app, api);
+
+    // The typed client's runtime half, projected from the SAME declaration
+    // register just installed. The browser fetches it once at boot.
+    app.get('/api/_manifest', () => json(manifestOf(api)));
 }
 
 // The api is created FIRST (createApi) and passed in: production wiring needs
@@ -288,13 +305,7 @@ export function buildApp(options: AppOptions): App
 {
     const app = new App({ dev: options.dev, observe: options.observe, onError: options.onError });
 
-    app.get('/api/healthz', () => json({ ok: true, at: new Date().toISOString() }));
-
-    register(app, options.api);
-
-    // The typed client's runtime half, projected from the SAME declaration
-    // register just installed. The browser fetches it once at boot.
-    app.get('/api/_manifest', () => json(manifestOf(options.api)));
+    registerApi(app, options.api);
 
     // Mounted LAST so nothing shadows /api.
     if (options.pages !== undefined)
