@@ -83,18 +83,10 @@ Button and badge variants live as **full literal class strings** in
 constraint, not a style preference - a composed class name like
 `` `btn-${kind}` `` is invisible to the scanner and will not be emitted.
 
-## Component inventory - check here before creating anything
+## Component inventory - look before creating anything
 
-```
-ui/       badge  button  empty-state  flag  icon  input  modal
-          pagination  shamseh  skeleton  toasts  tooltip
-market/   add-chain-button  add-liquidity  add-v3-liquidity  amount-field
-          connect-button  faucet-button  fee-tier-select  manage-v3-position
-          positions-grid  price-chart  protocol-switch  remove-liquidity
-          token-icon  token-select  tx-list  v3-positions-grid
-          wallet-menu  wallet-modal
-layout/   footer  header  indexer-banner  language-modal
-```
+The inventory is the directory itself: `application/src/components/` (`ui/`,
+`market/`, `layout/`, `whitepaper/`). List it rather than trusting a copy here.
 
 The order of operations is fixed:
 
@@ -129,7 +121,6 @@ absent: empty and error. The project has parts for most of them:
   the button **without collapsing its width**.
 - Empty: `<EmptyState title hint>` with optional action children.
 - Error / pending / success: the toast queue (`lib/toast.ts`), driven by `sendTx`.
-- Skeleton: `ui/skeleton.component.azeroth`.
 
 Focus is already handled globally - `:focus-visible` paints a 2px `--ice` outline
 with a 2px offset in `@layer base`. Do not remove it, and do not add

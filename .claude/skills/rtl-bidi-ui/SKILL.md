@@ -6,8 +6,9 @@ description: Bidirectional UI rules for this repository's ten languages - two of
 # RTL / LTR / Persian-English
 
 This app ships in ten languages. `fa` (فارسی) and `ar` (العربية) are **RTL**; the
-other eight are LTR. Direction is set on `<html>` from `lib/i18n.ts`, and the
-pre-paint script in `index.html` applies it before first paint.
+other eight are LTR. Direction belongs to the framework: the server negotiates
+the locale per request and stamps `<html lang dir>` before any script runs. The
+pre-paint script in `index.html` is theme-only.
 
 A layout that looks right in English is **not** verified. Half the audience reads
 the mirror image of it.
