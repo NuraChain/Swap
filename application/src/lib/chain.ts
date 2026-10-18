@@ -226,7 +226,51 @@ export function publicClient(): PublicClient
     {
         throw new Error('deployment not loaded yet');
     }
-    publicClientCache ??= createPublicClient({ chain: chainOf(info), transport: http(info.rpcUrl) });
+    if (publicClientCache === null)
+    {
+        // batch: the per-call fallback below goes out as one JSON-RPC batch, not
+        // one request per read.
+        const base = createPublicClient({ chain: chainOf(info), transport: http(info.rpcUrl, { batch: true }) });
+        const multicall3 = info.contracts.multicall3 as Address;
+        // Every balance, pool and position read goes through multicall, and a
+        // Multicall3 with no code does not throw - viem reports EACH read as a
+        // failure, which the callers turn into zeros. That is what a chain reset
+        // did: native NURA kept its balance (a plain getBalance), every ERC20
+        // read 0. So the contract is checked once, and without it the same
+        // reads go out one by one, in the same { status, result } shape.
+        let hasMulticall: Promise<boolean> | null = null;
+        const multicall = (async (args: Parameters<PublicClient['multicall']>[0]) =>
+        {
+            hasMulticall ??= base.getCode({ address: multicall3 })
+                .then((code) => code !== undefined && code !== '0x')
+                .catch(() =>
+                {
+                    hasMulticall = null;
+                    return true;
+                });
+            if (await hasMulticall)
+            {
+                return base.multicall(args);
+            }
+            return Promise.all(args.contracts.map(async (contract) =>
+            {
+                try
+                {
+                    const result = await base.readContract(contract as Parameters<PublicClient['readContract']>[0]);
+                    return args.allowFailure === false ? result : { status: 'success' as const, result };
+                }
+                catch (error)
+                {
+                    if (args.allowFailure === false)
+                    {
+                        throw error;
+                    }
+                    return { status: 'failure' as const, error: error as Error, result: undefined };
+                }
+            }));
+        }) as PublicClient['multicall'];
+        publicClientCache = { ...base, multicall } as PublicClient;
+    }
     return publicClientCache;
 }
 
