@@ -38,7 +38,9 @@ export interface FeedToken
 
 // Add a row to price another bridged asset; nothing else has to change.
 export const FEED_TOKENS: readonly FeedToken[] = [
-    { symbol: 'BNB', binance: 'BNBUSDT', coingecko: 'binancecoin' }
+    { symbol: 'BNB', binance: 'BNBUSDT', coingecko: 'binancecoin' },
+    { symbol: 'BTC', binance: 'BTCUSDT', coingecko: 'bitcoin' },
+    { symbol: 'ETH', binance: 'ETHUSDT', coingecko: 'ethereum' }
 ];
 
 /** USD as a float -> 1e18 fixed point, or null if the number is not a price. */

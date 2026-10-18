@@ -7,6 +7,20 @@ Notable changes to Nura Swap. The format follows
 The exchange contracts live in [their own repository](https://github.com/NuraChain/Swap);
 this changelog covers the application, the indexer, and the shared maths.
 
+## [Unreleased]
+
+### Changed
+
+- **The bridged tokens moved to new contracts, and there are four of them.**
+  `shared/deployments/1020.json` lists Bridge BNB and Bridge USDT at their new
+  addresses and adds Bridge BTC and Bridge ETH, all 18 decimals, as the
+  contracts themselves report. The external price feed prices BTC and ETH the
+  way it already priced BNB, since no pool here can know what either is worth
+  and without a feed row they would read $0. The coin sprite gains the BTC and
+  ETH marks, which a listed address earns the same way the others do. The
+  whitepaper's address appendix and the sentences naming the bridged tokens are
+  updated in all ten languages, and the PDFs are regenerated.
+
 ## [1.5.0] - 2026-10-05
 
 ### Added

@@ -56,7 +56,7 @@ export const fr: Whitepaper = {
                             { label: 'Jetons au lancement', value: 'WNURA, Bridge BNB, Bridge USDT' }
                         ),
                         p('NURA est la pièce de la chaîne elle-même, et c’est elle qui paie la petite commission de chaque transaction. Mais un pool ne peut détenir que des jetons ERC-20, et NURA n’en est pas un. On donne donc à NURA un ticket appelé WNURA : vous remettez un NURA, vous recevez un WNURA, et vous le rendez quand vous voulez. Le site fait ça à l’intérieur de votre échange, donc vous ne voyez que NURA. Les pools détiennent la version WNURA.'),
-                        p('Deux jetons arrivent d’autres chaînes par un pont : Bridge BNB et Bridge USDT. Chacun est un droit sur la vraie pièce, enfermée sur sa chaîne d’origine. Ils comptent pour deux raisons. Ils font entrer de la valeur de l’extérieur. Et comme un jeton dollar vaut à peu près un dollar partout, ils donnent à la chaîne son premier étalon honnête.')
+                        p('Quatre jetons arrivent d’autres chaînes par un pont : Bridge BNB, Bridge BTC, Bridge ETH et Bridge USDT. Chacun est un droit sur la vraie pièce, enfermée sur sa chaîne d’origine. Ils comptent pour deux raisons. Ils font entrer de la valeur de l’extérieur. Et comme un jeton dollar vaut à peu près un dollar partout, ils donnent à la chaîne son premier étalon honnête.')
                     ]
                 },
                 {
@@ -255,7 +255,7 @@ export const fr: Whitepaper = {
                     id: 'market',
                     title: 'Pour qui c’est fait',
                     blocks: [
-                        p('Nura Chain en est au stade où son économie est encore en train de se former. La pièce a des détenteurs, le pont fait passer BNB et USDT, et d’autres jetons arriveront à mesure que des projets démarrent. Tous ont d’abord besoin de la même chose : un endroit où échanger. Celui qui le fournit en premier a tendance à le garder, parce que les échanges attirent l’argent, l’argent attire les échanges, et les deux ensemble attirent tout ce qui serait pénible à déplacer plus tard.'),
+                        p('Nura Chain en est au stade où son économie est encore en train de se former. La pièce a des détenteurs, le pont fait passer BNB, BTC, ETH et USDT, et d’autres jetons arriveront à mesure que des projets démarrent. Tous ont d’abord besoin de la même chose : un endroit où échanger. Celui qui le fournit en premier a tendance à le garder, parce que les échanges attirent l’argent, l’argent attire les échanges, et les deux ensemble attirent tout ce qui serait pénible à déplacer plus tard.'),
                         h3('Quatre sortes de gens'),
                         table(
                             ['Qui', 'Ce dont ils ont besoin', 'Ce qu’ils trouvent ici'],
@@ -269,7 +269,7 @@ export const fr: Whitepaper = {
                         h3('Pourquoi ici, et pourquoi maintenant'),
                         ul(
                             'Il n’y a encore personne. Aucune plateforme installée à déloger, et la communauté parle déjà les langues dans lesquelles le site sort.',
-                            'Le pont est la porte d’entrée. Les BNB et USDT qui arrivent sur Nura Chain ont besoin d’un endroit pour rencontrer NURA, et c’est ici.',
+                            'Le pont est la porte d’entrée. Les BNB, BTC, ETH et USDT qui arrivent sur Nura Chain ont besoin d’un endroit pour rencontrer NURA, et c’est ici.',
                             'Nura Wallet livre un connecteur pour cette plateforme, donc le portefeuille de la chaîne amène ses utilisateurs directement ici.'
                         )
                     ]
@@ -397,8 +397,10 @@ export const fr: Whitepaper = {
                                 ['Tick lens : lit l’échelle', '0xbFdA09e0D89ABa201491F81dcD0993Fd223e66A0'],
                                 ['WNURA : NURA sous forme de jeton', '0xf0a4eC07916feBa4432121Ed5969887D9b939cD0'],
                                 ['Multicall : beaucoup de questions d’un coup', '0xf58884FCf45d8F5Cc8A73c618D23EB27b732CA24'],
-                                ['Bridge BNB', '0xD4221Ad9772BF5bA7423a044bBBEe6af2154A5Fc'],
-                                ['Bridge USDT', '0x4E0DB0B1Da408faF5637202CF48b0bc7733bE6dC'],
+                                ['Bridge BNB', '0x578fACf1f6d7de0E78D59f405C2A53f387d94E93'],
+                                ['Bridge USDT', '0xeAF3361a86C22e9691283A30338b57cA95567207'],
+                                ['Bridge BTC', '0x5891B71b6e18fB8A7d770f65A9060F76C7d2a166'],
+                                ['Bridge ETH', '0x4BEf1c404e6BdE102d9FCeca678BD7471f3Fd0ba'],
                                 ['La clé du propriétaire', '0x4ac0d9300422b408bA2AbF47995C87cF32763712']
                             ],
                             [1]

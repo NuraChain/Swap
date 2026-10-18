@@ -65,7 +65,7 @@ export const en: Whitepaper = {
                             { label: 'Tokens at launch', value: 'WNURA, Bridge BNB, Bridge USDT' }
                         ),
                         p('NURA is the chain’s own coin, and it pays the small fee that every transaction costs. But a pool can only hold ERC-20 tokens, and NURA is not one. So NURA gets a ticket called WNURA: hand in one NURA, get one WNURA, and swap it back whenever you like. The site does this inside your trade, so you only ever see NURA. The pools hold the WNURA version.'),
-                        p('Two tokens arrive from other chains over a bridge: Bridge BNB and Bridge USDT. Each one is a claim on the real coin, locked away on its home chain. They matter for two reasons. They bring value in from outside. And because a dollar token is worth about a dollar anywhere, they give the chain its first honest yardstick for what everything else is worth.')
+                        p('Four tokens arrive from other chains over a bridge: Bridge BNB, Bridge BTC, Bridge ETH and Bridge USDT. Each one is a claim on the real coin, locked away on its home chain. They matter for two reasons. They bring value in from outside. And because a dollar token is worth about a dollar anywhere, they give the chain its first honest yardstick for what everything else is worth.')
                     ]
                 },
                 {
@@ -264,7 +264,7 @@ export const en: Whitepaper = {
                     id: 'market',
                     title: 'Who this is for',
                     blocks: [
-                        p('Nura Chain is at the stage where its economy is still forming. The coin has holders, the bridge brings BNB and USDT across, and more tokens will arrive as projects launch. All of them need the same thing first: somewhere to trade. Whoever provides that first tends to keep it, because trading attracts money, money attracts trading, and the two together attract everything that would be a nuisance to move later.'),
+                        p('Nura Chain is at the stage where its economy is still forming. The coin has holders, the bridge brings BNB, BTC, ETH and USDT across, and more tokens will arrive as projects launch. All of them need the same thing first: somewhere to trade. Whoever provides that first tends to keep it, because trading attracts money, money attracts trading, and the two together attract everything that would be a nuisance to move later.'),
                         h3('Four kinds of people'),
                         table(
                             ['Who', 'What they need', 'What they get here'],
@@ -278,7 +278,7 @@ export const en: Whitepaper = {
                         h3('Why here, and why now'),
                         ul(
                             'Nobody is here yet. There is no established exchange to displace, and the community already speaks the languages the site ships in.',
-                            'The bridge is the front door. BNB and USDT arriving on Nura Chain need somewhere to meet NURA, and this is that place.',
+                            'The bridge is the front door. BNB, BTC, ETH and USDT arriving on Nura Chain need somewhere to meet NURA, and this is that place.',
                             'Nura Wallet ships a connector for this exchange, so the chain’s own wallet brings its users straight here.'
                         )
                     ]
@@ -406,8 +406,10 @@ export const en: Whitepaper = {
                                 ['Tick lens - reads the ladder', '0xbFdA09e0D89ABa201491F81dcD0993Fd223e66A0'],
                                 ['WNURA - NURA as a token', '0xf0a4eC07916feBa4432121Ed5969887D9b939cD0'],
                                 ['Multicall - many questions at once', '0xf58884FCf45d8F5Cc8A73c618D23EB27b732CA24'],
-                                ['Bridge BNB', '0xD4221Ad9772BF5bA7423a044bBBEe6af2154A5Fc'],
-                                ['Bridge USDT', '0x4E0DB0B1Da408faF5637202CF48b0bc7733bE6dC'],
+                                ['Bridge BNB', '0x578fACf1f6d7de0E78D59f405C2A53f387d94E93'],
+                                ['Bridge USDT', '0xeAF3361a86C22e9691283A30338b57cA95567207'],
+                                ['Bridge BTC', '0x5891B71b6e18fB8A7d770f65A9060F76C7d2a166'],
+                                ['Bridge ETH', '0x4BEf1c404e6BdE102d9FCeca678BD7471f3Fd0ba'],
                                 ['The owner key', '0x4ac0d9300422b408bA2AbF47995C87cF32763712']
                             ],
                             [1]

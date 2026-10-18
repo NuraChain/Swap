@@ -19,7 +19,8 @@ const COIN_ID: Record<string, string> = {
     USDC: 'usdc',
     DAI: 'dai',
     WBTC: 'wbtc',
-    BTC: 'btc'
+    BTC: 'btc',
+    ETH: 'eth'
 };
 
 export default component TokenIcon(props: { symbol: string; address: string; size?: number })

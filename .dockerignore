@@ -1,0 +1,21 @@
+# Docker reads this from the BUILD CONTEXT ROOT. Patterns are `**/`-prefixed
+# because a bare `node_modules` would only match the root one, and this is a
+# workspace.
+.git
+**/node_modules
+**/logs
+**/coverage
+# Built on the host; stage 1 builds its own, and a stale copy would silently win.
+**/dist
+**/dist-server
+**/.azeroth
+data
+**/*.db
+**/*.db-shm
+**/*.db-wal
+.env
+**/.env
+**/*.local
+.playwright-mcp
+.claude
+.opencode

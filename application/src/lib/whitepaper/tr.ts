@@ -56,7 +56,7 @@ export const tr: Whitepaper = {
                             { label: 'Başlangıçtaki tokenler', value: 'WNURA, Bridge BNB, Bridge USDT' }
                         ),
                         p('NURA zincirin kendi parasıdır ve her işlemin küçük ücretini o öder. Ama bir havuz yalnızca ERC-20 türü token tutabilir, NURA ise o türden değil. Bu yüzden NURA’ya WNURA adında bir fiş verilir: bir NURA verirsiniz, bir WNURA alırsınız ve istediğiniz zaman geri çevirirsiniz. Site bunu işleminizin içinde yapar, siz yalnızca NURA görürsünüz. Havuzlar WNURA sürümünü tutar.'),
-                        p('İki token başka zincirlerden bir köprüyle gelir: Bridge BNB ve Bridge USDT. Her biri, kendi zincirinde kilitli duran gerçek paranın üstündeki bir haktır. İki sebepten önemliler. Dışarıdan değer getirirler. Ve bir dolar tokeni her yerde aşağı yukarı bir dolar ettiği için, zincire her şeyin değerini ölçecek ilk dürüst cetveli verirler.')
+                        p('Dört token başka zincirlerden bir köprüyle gelir: Bridge BNB, Bridge BTC, Bridge ETH ve Bridge USDT. Her biri, kendi zincirinde kilitli duran gerçek paranın üstündeki bir haktır. İki sebepten önemliler. Dışarıdan değer getirirler. Ve bir dolar tokeni her yerde aşağı yukarı bir dolar ettiği için, zincire her şeyin değerini ölçecek ilk dürüst cetveli verirler.')
                     ]
                 },
                 {
@@ -255,7 +255,7 @@ export const tr: Whitepaper = {
                     id: 'market',
                     title: 'Bu kimin için',
                     blocks: [
-                        p('Nura Chain, ekonomisinin hâlâ şekillendiği bir aşamada. Parasının sahipleri var, köprü BNB ve USDT’yi karşıya geçiriyor, projeler başladıkça daha çok token gelecek. Hepsinin önce aynı şeye ihtiyacı var: işlem yapacak bir yer. Bunu ilk sağlayan genelde elinde tutar; çünkü işlem parayı çeker, para işlemi çeker ve ikisi birlikte sonradan taşınması zahmetli olacak her şeyi çeker.'),
+                        p('Nura Chain, ekonomisinin hâlâ şekillendiği bir aşamada. Parasının sahipleri var, köprü BNB, BTC, ETH ve USDT’yi karşıya geçiriyor, projeler başladıkça daha çok token gelecek. Hepsinin önce aynı şeye ihtiyacı var: işlem yapacak bir yer. Bunu ilk sağlayan genelde elinde tutar; çünkü işlem parayı çeker, para işlemi çeker ve ikisi birlikte sonradan taşınması zahmetli olacak her şeyi çeker.'),
                         h3('Dört tür insan'),
                         table(
                             ['Kim', 'Neye ihtiyacı var', 'Burada ne buluyor'],
@@ -269,7 +269,7 @@ export const tr: Whitepaper = {
                         h3('Neden burada ve neden şimdi'),
                         ul(
                             'Henüz kimse burada değil. Yerinden edilecek yerleşik bir borsa yok ve topluluk zaten sitenin çıktığı dilleri konuşuyor.',
-                            'Köprü ön kapı. Nura Chain’e gelen BNB ve USDT’nin NURA ile buluşacağı bir yere ihtiyacı var; o yer burası.',
+                            'Köprü ön kapı. Nura Chain’e gelen BNB, BTC, ETH ve USDT’nin NURA ile buluşacağı bir yere ihtiyacı var; o yer burası.',
                             'Nura Wallet bu borsa için bir bağlayıcıyla geliyor; yani zincirin kendi cüzdanı kullanıcılarını doğrudan buraya getiriyor.'
                         )
                     ]
@@ -397,8 +397,10 @@ export const tr: Whitepaper = {
                                 ['Tick lens - merdiveni okur', '0xbFdA09e0D89ABa201491F81dcD0993Fd223e66A0'],
                                 ['WNURA - token hâlindeki NURA', '0xf0a4eC07916feBa4432121Ed5969887D9b939cD0'],
                                 ['Multicall - tek seferde çok soru', '0xf58884FCf45d8F5Cc8A73c618D23EB27b732CA24'],
-                                ['Bridge BNB', '0xD4221Ad9772BF5bA7423a044bBBEe6af2154A5Fc'],
-                                ['Bridge USDT', '0x4E0DB0B1Da408faF5637202CF48b0bc7733bE6dC'],
+                                ['Bridge BNB', '0x578fACf1f6d7de0E78D59f405C2A53f387d94E93'],
+                                ['Bridge USDT', '0xeAF3361a86C22e9691283A30338b57cA95567207'],
+                                ['Bridge BTC', '0x5891B71b6e18fB8A7d770f65A9060F76C7d2a166'],
+                                ['Bridge ETH', '0x4BEf1c404e6BdE102d9FCeca678BD7471f3Fd0ba'],
                                 ['Sahip anahtarı', '0x4ac0d9300422b408bA2AbF47995C87cF32763712']
                             ],
                             [1]

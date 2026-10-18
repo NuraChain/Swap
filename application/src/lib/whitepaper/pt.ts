@@ -56,7 +56,7 @@ export const pt: Whitepaper = {
                             { label: 'Tokens no arranque', value: 'WNURA, Bridge BNB, Bridge USDT' }
                         ),
                         p('O NURA é a moeda da própria cadeia e paga a pequena taxa de cada transação. Mas uma pool só consegue segurar tokens ERC-20, e o NURA não é um. Por isso o NURA recebe um talão chamado WNURA: entrega um NURA, recebe um WNURA, e troca de volta quando quiser. O site faz isto dentro da sua troca, por isso você só vê NURA. As pools guardam a versão WNURA.'),
-                        p('Dois tokens chegam de outras cadeias por uma ponte: Bridge BNB e Bridge USDT. Cada um é um direito sobre a moeda verdadeira, fechada à chave na cadeia de origem. Interessam por duas razões. Trazem valor de fora. E como um token dólar vale mais ou menos um dólar em qualquer sítio, dão à cadeia a sua primeira régua honesta.')
+                        p('Quatro tokens chegam de outras cadeias por uma ponte: Bridge BNB, Bridge BTC, Bridge ETH e Bridge USDT. Cada um é um direito sobre a moeda verdadeira, fechada à chave na cadeia de origem. Interessam por duas razões. Trazem valor de fora. E como um token dólar vale mais ou menos um dólar em qualquer sítio, dão à cadeia a sua primeira régua honesta.')
                     ]
                 },
                 {
@@ -255,7 +255,7 @@ export const pt: Whitepaper = {
                     id: 'market',
                     title: 'Para quem é isto',
                     blocks: [
-                        p('A Nura Chain está na fase em que a economia ainda se está a formar. A moeda tem detentores, a ponte traz BNB e USDT, e chegarão mais tokens à medida que os projetos arrancarem. Todos precisam primeiro da mesma coisa: um sítio onde negociar. Quem o der primeiro tende a ficar com ele, porque negociar atrai dinheiro, o dinheiro atrai negociação, e os dois juntos atraem tudo o que depois seria uma chatice mudar.'),
+                        p('A Nura Chain está na fase em que a economia ainda se está a formar. A moeda tem detentores, a ponte traz BNB, BTC, ETH e USDT, e chegarão mais tokens à medida que os projetos arrancarem. Todos precisam primeiro da mesma coisa: um sítio onde negociar. Quem o der primeiro tende a ficar com ele, porque negociar atrai dinheiro, o dinheiro atrai negociação, e os dois juntos atraem tudo o que depois seria uma chatice mudar.'),
                         h3('Quatro tipos de pessoas'),
                         table(
                             ['Quem', 'Do que precisa', 'O que encontra aqui'],
@@ -269,7 +269,7 @@ export const pt: Whitepaper = {
                         h3('Porquê aqui e porquê agora'),
                         ul(
                             'Ainda não está aqui ninguém. Não há uma exchange instalada para desalojar, e a comunidade já fala as línguas em que o site sai.',
-                            'A ponte é a porta de entrada. BNB e USDT que chegam à Nura Chain precisam de um sítio para se encontrarem com o NURA, e é este.',
+                            'A ponte é a porta de entrada. BNB, BTC, ETH e USDT que chegam à Nura Chain precisam de um sítio para se encontrarem com o NURA, e é este.',
                             'A Nura Wallet traz um conector para esta exchange, por isso a carteira da própria cadeia traz os utilizadores diretamente para aqui.'
                         )
                     ]
@@ -397,8 +397,10 @@ export const pt: Whitepaper = {
                                 ['Tick lens: lê a escada', '0xbFdA09e0D89ABa201491F81dcD0993Fd223e66A0'],
                                 ['WNURA: NURA como token', '0xf0a4eC07916feBa4432121Ed5969887D9b939cD0'],
                                 ['Multicall: muitas perguntas de uma vez', '0xf58884FCf45d8F5Cc8A73c618D23EB27b732CA24'],
-                                ['Bridge BNB', '0xD4221Ad9772BF5bA7423a044bBBEe6af2154A5Fc'],
-                                ['Bridge USDT', '0x4E0DB0B1Da408faF5637202CF48b0bc7733bE6dC'],
+                                ['Bridge BNB', '0x578fACf1f6d7de0E78D59f405C2A53f387d94E93'],
+                                ['Bridge USDT', '0xeAF3361a86C22e9691283A30338b57cA95567207'],
+                                ['Bridge BTC', '0x5891B71b6e18fB8A7d770f65A9060F76C7d2a166'],
+                                ['Bridge ETH', '0x4BEf1c404e6BdE102d9FCeca678BD7471f3Fd0ba'],
                                 ['A chave do dono', '0x4ac0d9300422b408bA2AbF47995C87cF32763712']
                             ],
                             [1]

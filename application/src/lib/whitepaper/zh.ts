@@ -56,7 +56,7 @@ export const zh: Whitepaper = {
                             { label: '上线时的代币', value: 'WNURA、Bridge BNB、Bridge USDT' }
                         ),
                         p('NURA 是这条链自己的币，每笔交易的小额费用都由它支付。但资金池只能装 ERC-20 代币，而 NURA 不是。于是给 NURA 配了一张票据，叫 WNURA：交一个 NURA，拿一个 WNURA，想换回来随时都行。网站在你的交易内部就把这件事办了，所以你只会看到 NURA。池子里放的是 WNURA。'),
-                        p('还有两种代币通过桥从别的链过来：Bridge BNB 和 Bridge USDT。每一种都是对真币的一张凭据，真币被锁在它自己的原链上。它们重要有两个理由：把外部价值带进来；而且因为美元代币在哪儿都值大约一美元，它们给了这条链第一把诚实的尺子，用来量别的东西值多少。')
+                        p('还有四种代币通过桥从别的链过来：Bridge BNB、Bridge BTC、Bridge ETH 和 Bridge USDT。每一种都是对真币的一张凭据，真币被锁在它自己的原链上。它们重要有两个理由：把外部价值带进来；而且因为美元代币在哪儿都值大约一美元，它们给了这条链第一把诚实的尺子，用来量别的东西值多少。')
                     ]
                 },
                 {
@@ -255,7 +255,7 @@ export const zh: Whitepaper = {
                     id: 'market',
                     title: '这是给谁做的',
                     blocks: [
-                        p('Nura Chain 正处在经济体还在成形的阶段。币有持有者，桥把 BNB 和 USDT 送过来，随着项目上线还会有更多代币出现。它们首先需要的都是同一样东西：一个能交易的地方。谁先提供，谁往往就守得住，因为成交吸引资金，资金吸引成交，两者合在一起又会吸引那些日后搬起来很麻烦的东西。'),
+                        p('Nura Chain 正处在经济体还在成形的阶段。币有持有者，桥把 BNB、BTC、ETH 和 USDT 送过来，随着项目上线还会有更多代币出现。它们首先需要的都是同一样东西：一个能交易的地方。谁先提供，谁往往就守得住，因为成交吸引资金，资金吸引成交，两者合在一起又会吸引那些日后搬起来很麻烦的东西。'),
                         h3('四种人'),
                         table(
                             ['谁', '他们需要什么', '在这里得到什么'],
@@ -269,7 +269,7 @@ export const zh: Whitepaper = {
                         h3('为什么是这里，为什么是现在'),
                         ul(
                             '这里还没有人。没有已经站稳的交易所需要挤掉，而社区本来就说着网站支持的那些语言。',
-                            '桥是正门。来到 Nura Chain 的 BNB 和 USDT 需要一个和 NURA 相遇的地方，这里就是。',
+                            '桥是正门。来到 Nura Chain 的 BNB、BTC、ETH 和 USDT 需要一个和 NURA 相遇的地方，这里就是。',
                             'Nura Wallet 自带这个交易所的连接器，所以这条链自己的钱包会把用户直接带过来。'
                         )
                     ]
@@ -397,8 +397,10 @@ export const zh: Whitepaper = {
                                 ['Tick lens——读取梯子', '0xbFdA09e0D89ABa201491F81dcD0993Fd223e66A0'],
                                 ['WNURA——代币形式的 NURA', '0xf0a4eC07916feBa4432121Ed5969887D9b939cD0'],
                                 ['Multicall——一次问很多问题', '0xf58884FCf45d8F5Cc8A73c618D23EB27b732CA24'],
-                                ['Bridge BNB', '0xD4221Ad9772BF5bA7423a044bBBEe6af2154A5Fc'],
-                                ['Bridge USDT', '0x4E0DB0B1Da408faF5637202CF48b0bc7733bE6dC'],
+                                ['Bridge BNB', '0x578fACf1f6d7de0E78D59f405C2A53f387d94E93'],
+                                ['Bridge USDT', '0xeAF3361a86C22e9691283A30338b57cA95567207'],
+                                ['Bridge BTC', '0x5891B71b6e18fB8A7d770f65A9060F76C7d2a166'],
+                                ['Bridge ETH', '0x4BEf1c404e6BdE102d9FCeca678BD7471f3Fd0ba'],
                                 ['拥有者私钥', '0x4ac0d9300422b408bA2AbF47995C87cF32763712']
                             ],
                             [1]
