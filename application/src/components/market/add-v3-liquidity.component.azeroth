@@ -34,7 +34,6 @@ import { account, balances, nativeBalance, requiredWallet, sendTx, txEpoch } fro
 import AmountField from './amount-field.component.azeroth';
 import TokenSelect from './token-select.component.azeroth';
 import WalletModal from './wallet-modal.component.azeroth';
-import Badge from '../ui/badge.component.azeroth';
 import Button from '../ui/button.component.azeroth';
 import Modal from '../ui/modal.component.azeroth';
 
@@ -451,9 +450,6 @@ export default component AddV3Liquidity(props: {
                             onClick={ () => { fee = tier.fee; } }
                         >
                             <span data-ltr>{ fmtPercentBps(tier.fee / 100) }</span>
-                            <Show when={ !pools.some((entry) => entry.fee === tier.fee) }>
-                                <Badge>{ t().v3.newPool }</Badge>
-                            </Show>
                         </button>
                     </For>
                 </div>

@@ -195,7 +195,6 @@ export const en = {
         currentPrice: 'Current price',
         invalidRange: 'The minimum price has to be below the maximum.',
         oneSided: 'This range sits entirely on one side of the price, so the pool takes only one of the two tokens.',
-        newPool: 'New',
         createPool: 'No pool at this fee tier yet. Your deposit creates it and sets the opening price - match the market, or arbitrage takes the difference.',
         openingPrice: 'Opening price',
         inRange: 'In range',

@@ -190,7 +190,6 @@ export const zh: Dict = {
         currentPrice: '当前价格',
         invalidRange: '最低价格必须小于最高价格。',
         oneSided: '该区间完全位于价格的一侧，因此资金池只会接收其中一种代币。',
-        newPool: '新建',
         createPool: '该手续费档位尚无资金池。你的存入将创建它并决定开盘价——请与市场保持一致，否则套利者会赚走价差。',
         openingPrice: '开盘价',
         inRange: '区间内',

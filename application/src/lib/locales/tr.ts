@@ -190,7 +190,6 @@ export const tr: Dict = {
         currentPrice: 'Güncel fiyat',
         invalidRange: 'En düşük fiyat, en yüksekten küçük olmalı.',
         oneSided: 'Bu aralık tamamen fiyatın bir tarafında; havuz bu yüzden yalnızca tek bir token alır.',
-        newPool: 'Yeni',
         createPool: 'Bu ücret kademesinde henüz havuz yok. Yatırdığınız tutar havuzu oluşturur ve açılış fiyatını belirler - piyasayla uyumlu tutun, yoksa farkı arbitraj alır.',
         openingPrice: 'Açılış fiyatı',
         inRange: 'Aralıkta',
