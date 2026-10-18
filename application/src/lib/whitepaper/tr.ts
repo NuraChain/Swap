@@ -390,11 +390,11 @@ export const tr: Whitepaper = {
                         table(
                             ['Nedir', 'Adres'],
                             [
-                                ['Fabrika - havuzları yaratır', '0x88E8bB62E1654e695043FD5416D5E5415AFFd39b'],
-                                ['Yönlendirici - takasları yapar', '0x98b52fB699F1F91494b2937fECf109f8E09570Ae'],
-                                ['Fiyatlayıcı - «ne alırım?» sorusuna cevap verir', '0x4b6f7C7d1337F6C6A624677688EA8035c3Ed6782'],
-                                ['Pozisyon yöneticisi - makbuzlarınız', '0xcf00BFaA3c292205D38d37f9086c4F3838339Fbb'],
-                                ['Tick lens - merdiveni okur', '0xbFdA09e0D89ABa201491F81dcD0993Fd223e66A0'],
+                                ['Fabrika - havuzları yaratır', '0xe5D168482F49A3089a58042c48Fd8f39e9466421'],
+                                ['Yönlendirici - takasları yapar', '0x692420a1bba97c2953bE5255436c59a555C6c2CE'],
+                                ['Fiyatlayıcı - «ne alırım?» sorusuna cevap verir', '0xAbd9e45896BdABD2823e001022B3597A230eB8b2'],
+                                ['Pozisyon yöneticisi - makbuzlarınız', '0x862795E8B54ADc2af6C3eE8A553BF326CcD31Fc2'],
+                                ['Tick lens - merdiveni okur', '0xb002829401939969d6FCA4C7A2bB5b185A7B76Dc'],
                                 ['WNURA - token hâlindeki NURA', '0xf0a4eC07916feBa4432121Ed5969887D9b939cD0'],
                                 ['Multicall - tek seferde çok soru', '0xf58884FCf45d8F5Cc8A73c618D23EB27b732CA24'],
                                 ['Bridge BNB', '0x578fACf1f6d7de0E78D59f405C2A53f387d94E93'],
@@ -407,7 +407,7 @@ export const tr: Whitepaper = {
                         ),
                         facts(
                             { label: 'Zincir kimliği', value: '1020', mono: true },
-                            { label: 'Kurulduğu blok', value: '124110', mono: true },
+                            { label: 'Kurulduğu blok', value: '66733', mono: true },
                             { label: 'Ondalık basamak', value: '18 - listelenen her tokende', mono: true }
                         )
                     ]
