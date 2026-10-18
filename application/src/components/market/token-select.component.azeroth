@@ -1,9 +1,9 @@
 import type { TokenRef } from '../../api.ts';
-import { ERC20_ABI, ERC20_BYTES32_ABI, publicClient } from '../../lib/chain.ts';
+import { ERC20_ABI, ERC20_BYTES32_ABI, isNativeToken, publicClient } from '../../lib/chain.ts';
 import type { Address } from '../../lib/chain.ts';
 import { fmtAmount } from '../../lib/format.ts';
 import { t } from '../../lib/i18n.ts';
-import { balances } from '../../lib/wallet/store.ts';
+import { balances, nativeBalance } from '../../lib/wallet/store.ts';
 
 import Icon from '../ui/icon.component.azeroth';
 import Input from '../ui/input.component.azeroth';
@@ -90,7 +90,9 @@ export default component TokenSelect(props: {
         })();
     }
 
-    const balanceOf = (address: string): bigint => balances()[address.toLowerCase()] ?? 0n;
+    // NURA is the chain's own coin, not an ERC20: its balance lives apart.
+    const balanceOf = (token: TokenRef): bigint =>
+        (isNativeToken(token) ? nativeBalance() : balances()[token.address.toLowerCase()] ?? 0n);
 
     <Modal title={ t().swap.selectToken } onClose={ props.onClose }>
         <div class="flex flex-col gap-3">
@@ -114,7 +116,7 @@ export default component TokenSelect(props: {
                             <span class="block text-xs text-faint">{ token.name }</span>
                         </span>
                         <span class="font-mono text-xs text-faint">
-                            { fmtAmount(balanceOf(token.address), token.decimals) }
+                            { fmtAmount(balanceOf(token), token.decimals) }
                         </span>
                     </button>
                 </For>
