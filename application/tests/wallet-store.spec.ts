@@ -419,6 +419,50 @@ describe('account and chain events', () =>
         expect(window.localStorage.getItem('nuraswap.wallet')).toBeNull();
     });
 
+    // Not every wallet announces its lock with accountsChanged([]). The poll
+    // asks eth_accounts itself, so a locked wallet stops showing as connected.
+    it('notices a wallet that locked without saying so', async () =>
+    {
+        vi.useFakeTimers();
+        try
+        {
+            const { store } = await loadStore();
+            const script: ProviderScript = {};
+            const provider = fakeProvider(script);
+            await store.connectInjected({ id: 'x', name: 'x', icon: null, provider });
+            expect(store.account()).toBe(ALICE);
+
+            script.accounts = [];
+            await vi.advanceTimersByTimeAsync(5000);
+
+            expect(store.account()).toBeNull();
+        }
+        finally
+        {
+            vi.useRealTimers();
+        }
+    });
+
+    it('keeps an unlocked wallet connected across poll ticks', async () =>
+    {
+        vi.useFakeTimers();
+        try
+        {
+            const { store } = await loadStore();
+            const provider = fakeProvider({ accounts: [ALICE] });
+            await store.connectInjected({ id: 'x', name: 'x', icon: null, provider });
+
+            await vi.advanceTimersByTimeAsync(10_000);
+
+            expect(provider.calls).toContain('eth_accounts');
+            expect(store.account()).toBe(ALICE);
+        }
+        finally
+        {
+            vi.useRealTimers();
+        }
+    });
+
     it('follows the wallet onto another chain', async () =>
     {
         const { store } = await loadStore();

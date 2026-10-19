@@ -182,10 +182,52 @@ function startPolling(): void
     {
         if (!document.hidden && accountSignal() !== null)
         {
+            void checkAccounts();
             void refreshBalances();
             setTxEpoch(txEpochSignal() + 1);
         }
     }, 5000);
+}
+
+// A wallet that locks is supposed to say so with accountsChanged([]), and not
+// every wallet does - so the header went on showing an address the wallet would
+// no longer sign for, and the first sign of it was a swap that failed. eth_accounts
+// is answered by the extension itself (no RPC, never a prompt) and comes back
+// empty while the wallet is locked, so the tick asks it directly.
+async function checkAccounts(): Promise<void>
+{
+    const provider = activeProvider;
+    if (provider === null)
+    {
+        return;
+    }
+    let accounts: string[];
+    try
+    {
+        accounts = await provider.request({ method: 'eth_accounts' }) as string[];
+    }
+    catch
+    {
+        // A provider that cannot answer is not proof of a lock - the next tick asks again.
+        return;
+    }
+    // The wallet may have been switched or disconnected while we waited.
+    if (provider !== activeProvider)
+    {
+        return;
+    }
+    if (accounts.length === 0)
+    {
+        disconnect();
+        return;
+    }
+    const current = accountSignal();
+    const info = deployment();
+    if (current !== null && info !== null && accounts[0].toLowerCase() !== current.toLowerCase())
+    {
+        adoptAccount(provider, accounts[0] as Address, info);
+        void refreshBalances();
+    }
 }
 
 function stopPolling(): void
