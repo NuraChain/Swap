@@ -53,7 +53,7 @@ export default component NuraPrice(props: { block?: boolean })
             data-testid="nura-price"
         >
             <span class="text-faint">NURA</span>
-            <span class="font-mono text-val">{ fmtUsdPriceLabel(priceUsd) }</span>
+            <span class="whitespace-nowrap font-mono text-val">{ fmtUsdPriceLabel(priceUsd) }</span>
         </span>
     </Show>
 }

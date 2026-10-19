@@ -5,7 +5,7 @@
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { addressGradient, fmtAmount, fmtPercentBps, fmtTime, fmtUsdPrice, shortAddress } from '../src/lib/format.ts';
+import { addressGradient, fmtAmount, fmtAmountCompact, fmtPercentBps, fmtTime, fmtUsdPrice, shortAddress } from '../src/lib/format.ts';
 import { setLang } from '../src/lib/i18n.ts';
 
 const WAD = 10n ** 18n;
@@ -80,6 +80,39 @@ describe('fmtUsdPrice', () =>
     {
         expect(fmtUsdPrice(0.000000004)).toBe('0');
         expect(fmtUsdPrice(1234.56789)).toBe('1,234.5679');
+    });
+});
+
+describe('fmtAmountCompact', () =>
+{
+    // The header balance: a large NURA balance printed in full walked the
+    // connect button off the page.
+    it('goes compact from a thousand up', () =>
+    {
+        setLang('en');
+        expect(fmtAmountCompact(WAD * 999n, 18)).toBe('999');
+        expect(fmtAmountCompact(WAD * 12_345n, 18)).toBe('12.35K');
+        expect(fmtAmountCompact(WAD * 1_234_567_890n, 18)).toBe('1.23B');
+    });
+
+    it('keeps small balances readable', () =>
+    {
+        setLang('en');
+        expect(fmtAmountCompact(WAD * 5n + WAD / 4n, 18)).toBe('5.25');
+        expect(fmtAmountCompact(WAD / 1000n, 18)).toBe('0.001');
+        expect(fmtAmountCompact(0n, 18)).toBe('0');
+    });
+
+    it('stays short however large the balance grows', () =>
+    {
+        setLang('en');
+        expect(fmtAmountCompact(WAD * 10n ** 15n, 18).length).toBeLessThanOrEqual(8);
+    });
+
+    it("uses the reader's own digits", () =>
+    {
+        setLang('fa');
+        expect(fmtAmountCompact(WAD * 1_500_000n, 18)).toMatch(/[۰-۹]/);
     });
 });
 

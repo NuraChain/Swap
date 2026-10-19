@@ -44,6 +44,29 @@ export function fmtAmount(raw: bigint, decimals: number): string
     return fmtNumber(value, fraction);
 }
 
+// The same amount in a slot that cannot grow: the header balance. fmtAmount
+// drops the fraction above ten thousand but keeps every grouped digit, so a large
+// NURA balance pushed the connect button, and the header with it, off the page.
+// Here a thousand and up goes compact in the reader's locale (1.23M, ۱٫۲ میلیون);
+// the exact figure stays in the wallet menu.
+export function fmtAmountCompact(raw: bigint, decimals: number): string
+{
+    const plain = formatTokenAmount(raw, decimals);
+    const value = Number(plain);
+    if (!Number.isFinite(value))
+    {
+        return plain;
+    }
+    if (Math.abs(value) < 1000)
+    {
+        return fmtNumber(value, Math.abs(value) >= 1 ? 2 : 4);
+    }
+    return new Intl.NumberFormat(langInfo().locale, {
+        notation: 'compact',
+        maximumFractionDigits: 2
+    }).format(value);
+}
+
 // One bound of a V3 range, as a price. A full-range position sits on the tick
 // limits, and the upper limit prices out around 3.4e38 - fifty-one grouped
 // digits that walk straight out of whatever card they are printed in. The add

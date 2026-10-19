@@ -1,4 +1,4 @@
-import { addressGradient, fmtAmount, shortAddress } from '../../lib/format.ts';
+import { addressGradient, fmtAmountCompact, shortAddress } from '../../lib/format.ts';
 import { t } from '../../lib/i18n.ts';
 import { account, nativeBalance, onRightChain, startDiscovery, switchChain } from '../../lib/wallet/store.ts';
 
@@ -52,9 +52,12 @@ export default component ConnectButton()
                     style={ `background:${ addressGradient(address) }` }
                     aria-hidden="true"
                 />
-                <span class="font-mono" data-ltr>{ shortAddress(address) }</span>
-                <span class="hidden font-mono text-faint sm:inline">
-                    { fmtAmount(nativeBalance(), 18) } NURA
+                <span class="whitespace-nowrap font-mono" data-ltr>{ shortAddress(address) }</span>
+                {/* NOT a data-ltr island: in fa/ar the compact figure carries a word
+                    (۵۰۰ میلیون), and isolating it LTR reverses the two. From md, not
+                    sm: between them the row has no room for it. */}
+                <span class="hidden whitespace-nowrap font-mono text-faint md:inline">
+                    { fmtAmountCompact(nativeBalance(), 18) } NURA
                 </span>
             </button>
             <Show when={ menuOpen }>

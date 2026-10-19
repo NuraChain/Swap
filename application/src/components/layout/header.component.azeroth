@@ -104,7 +104,9 @@ export default component Header()
                     onClick={ () => { langOpen = true; } }
                 >
                     <Flag lang={ currentLang() } size={ 18 } />
-                    <span>{ langInfo().native }</span>
+                    {/* The flag alone between sm and md: with a wallet connected the
+                        language name was what pushed the row past a 640px viewport. */}
+                    <span class="hidden md:inline">{ langInfo().native }</span>
                     <Icon name="chevron-down" size={ 14 } />
                 </button>
                 <button
