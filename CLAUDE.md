@@ -112,9 +112,8 @@ component library, no CSS-in-JS. No hex colours in components.
 
 ## Page heads, locale and the CSP
 
-The detail - how the head, the sitemap, the share card, the locale negotiation
-and the CSP fit together, and why - lives in `.claude/rules/head-seo-csp.md`,
-which loads when you touch those files. What always holds:
+How the head, the sitemap, the share card, the locale negotiation and the CSP
+fit together. What always holds:
 
 - The **pages own their head**, through `useHead()` and the `pageHead()` factory
   in `src/lib/seo.ts`. Nothing splices tags into a head at build time.
@@ -178,8 +177,7 @@ do not add a second one.
 
 ## Visual QA workflow
 
-Load the `visual-qa` skill before reviewing any visible change - it holds the
-whole loop: the one-origin `npm run dev` (`curl` the root before driving a
+Review any visible change in a browser: the one-origin `npm run dev` (`curl` the root before driving a
 browser), the three viewports, both directions (write the `locale` cookie, then
 reload - the server negotiates per request), `browser_snapshot` as well as
 screenshots, and `browser_console_messages` - an unhandled rejection is a
