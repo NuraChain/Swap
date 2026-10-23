@@ -391,9 +391,9 @@ export const pt: Whitepaper = {
                             ['O que é', 'Endereço'],
                             [
                                 ['Factory: cria as pools', '0xe5D168482F49A3089a58042c48Fd8f39e9466421'],
-                                ['Router: faz as trocas', '0x274C1e3C0065090c586eFad77Ba7cA3330F7130e'],
-                                ['Cotador: responde «quanto receberia?»', '0xa5d8BE053D40C70E12d73F3310F5F8536973E311'],
-                                ['Gestor de posições: os seus talões', '0x39de142d17643b847ED7837031527764e64597B2'],
+                                ['Router: faz as trocas', '0x692420a1bba97c2953bE5255436c59a555C6c2CE'],
+                                ['Cotador: responde «quanto receberia?»', '0xAbd9e45896BdABD2823e001022B3597A230eB8b2'],
+                                ['Gestor de posições: os seus talões', '0x862795E8B54ADc2af6C3eE8A553BF326CcD31Fc2'],
                                 ['Tick lens: lê a escada', '0xb002829401939969d6FCA4C7A2bB5b185A7B76Dc'],
                                 ['WNURA: NURA como token', '0x186c7AADB2EA4B20E21fC002033b53CEBD3EBBc2'],
                                 ['Multicall: muitas perguntas de uma vez', '0xf58884FCf45d8F5Cc8A73c618D23EB27b732CA24'],
