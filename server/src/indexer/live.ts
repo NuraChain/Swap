@@ -46,7 +46,7 @@ export interface IndexerOptions
 export interface RunningIndexer
 {
     status: () => { headBlock: number; indexedBlock: number };
-    stop: () => void;
+    stop: () => Promise<void>;
 }
 
 export function startIndexer(options: IndexerOptions): RunningIndexer
@@ -61,15 +61,18 @@ export function startIndexer(options: IndexerOptions): RunningIndexer
     let chunkSize = 2000;
     let stopped = false;
     let timer: NodeJS.Timeout | null = null;
+    let wake = (): void => undefined;
 
     async function registerToken(address: Address): Promise<void>
     {
-        if (db.getToken(address) !== null)
+        if (await db.getToken(address) !== null)
         {
             return;
         }
-        db.upsertToken({ address, ...await readTokenMetadata(client, address) });
-    }    async function fetchLogs(fromBlock: bigint, toBlock: bigint, addresses: Address[]): Promise<RawLog[]>
+        await db.upsertToken({ address, ...await readTokenMetadata(client, address) });
+    }
+
+    async function fetchLogs(fromBlock: bigint, toBlock: bigint, addresses: Address[]): Promise<RawLog[]>
     {
         const logs = await client.getLogs({ fromBlock, toBlock, address: addresses });
         return (logs as unknown as RawLog[])
@@ -79,7 +82,7 @@ export function startIndexer(options: IndexerOptions): RunningIndexer
 
     async function applyChunk(fromBlock: bigint, toBlock: bigint): Promise<void>
     {
-        const known = db.listV3Pools().map((pool) => pool.address);
+        const known = (await db.listV3Pools()).map((pool) => pool.address);
         let logs = await fetchLogs(fromBlock, toBlock, [factory, ...known]);
 
         // Pools born inside this chunk emitted their first events before we knew
@@ -133,6 +136,9 @@ export function startIndexer(options: IndexerOptions): RunningIndexer
             return from;
         };
 
+        // Every token this chunk can name is registered by now; one read answers
+        // the decimals of all of them instead of a query per event.
+        const decimals = new Map<string, number>((await db.listTokens()).map((token) => [token.address, token.decimals]));
         for (const rawLog of logs)
         {
             const event: DomainEvent | null = decodeLog(rawLog, factory);
@@ -144,20 +150,20 @@ export function startIndexer(options: IndexerOptions): RunningIndexer
             {
                 event.account = await senderOf(event.txHash);
             }
-            applyEvent(db, event, {
+            await applyEvent(db, event, {
                 timestampOf: (blockNumber) => timestamps.get(blockNumber) ?? 0,
-                decimalsOf: (address) => db.getToken(address)?.decimals ?? 18
+                decimalsOf: (address) => decimals.get(address.toLowerCase()) ?? 18
             });
         }
     }
 
     // Reads every V3 pool's balances and its slot0 price into storage, so the API
-    // can answer TVL and pricing questions out of sqlite synchronously like every
-    // other figure it serves. A pool that cannot be read keeps the last state
+    // can answer TVL and pricing questions out of the database like every other
+    // figure it serves. A pool that cannot be read keeps the last state
     // that could be: a momentary RPC failure should not blank its TVL.
     async function refreshV3Pools(now: number): Promise<void>
     {
-        const pools = db.listV3Pools();
+        const pools = await db.listV3Pools();
         if (pools.length === 0 || now - v3StateAt < V3_STATE_MS)
         {
             return;
@@ -186,8 +192,8 @@ export function startIndexer(options: IndexerOptions): RunningIndexer
                         functionName: 'slot0'
                     })
                 ]);
-                db.updateV3Balances(pool.address, balance0, balance1);
-                db.updateV3Price(pool.address, slot0[0]);
+                await db.updateV3Balances(pool.address, balance0, balance1);
+                await db.updateV3Price(pool.address, slot0[0]);
             }
             catch (error)
             {
@@ -208,19 +214,19 @@ export function startIndexer(options: IndexerOptions): RunningIndexer
         const identity = `${ deployment.chainId }:${ factory }`;
         const startBlock = await client.getBlock({ blockNumber: BigInt(deployment.startBlock) });
         const stamp = `${ identity }:${ startBlock.hash }`;
-        if (db.getMeta('identity') !== stamp)
+        if (await db.getMeta('identity') !== stamp)
         {
             log.info('chain identity changed - reindexing from scratch', { stamp });
-            db.wipe();
-            db.setMeta('identity', stamp);
+            await db.wipe();
+            await db.setMeta('identity', stamp);
             for (const token of deployment.tokens)
             {
-                db.upsertToken({ ...token, address: token.address.toLowerCase() as Address });
+                await db.upsertToken({ ...token, address: token.address.toLowerCase() as Address });
             }
             return BigInt(deployment.startBlock);
         }
 
-        const cursorRaw = db.getMeta('cursor');
+        const cursorRaw = await db.getMeta('cursor');
         if (cursorRaw === null)
         {
             return BigInt(deployment.startBlock);
@@ -233,15 +239,15 @@ export function startIndexer(options: IndexerOptions): RunningIndexer
                 cursor: Number(cursor),
                 head: Number(head)
             });
-            db.wipe();
-            db.setMeta('identity', stamp);
+            await db.wipe();
+            await db.setMeta('identity', stamp);
             for (const token of deployment.tokens)
             {
-                db.upsertToken({ ...token, address: token.address.toLowerCase() as Address });
+                await db.upsertToken({ ...token, address: token.address.toLowerCase() as Address });
             }
             return BigInt(deployment.startBlock);
         }
-        const cursorHash = db.getMeta('cursorHash');
+        const cursorHash = await db.getMeta('cursorHash');
         if (cursorHash !== null)
         {
             const block = await client.getBlock({ blockNumber: cursor });
@@ -265,8 +271,8 @@ export function startIndexer(options: IndexerOptions): RunningIndexer
             {
                 await applyChunk(cursor, end);
                 const endBlock = await client.getBlock({ blockNumber: end });
-                db.setMeta('cursor', end.toString());
-                db.setMeta('cursorHash', endBlock.hash ?? '');
+                await db.setMeta('cursor', end.toString());
+                await db.setMeta('cursorHash', endBlock.hash ?? '');
                 indexedBlock = Number(end);
                 cursor = end + 1n;
                 chunkSize = Math.min(5000, Math.ceil(chunkSize * 3 / 2));
@@ -317,26 +323,31 @@ export function startIndexer(options: IndexerOptions): RunningIndexer
             {
                 await new Promise<void>((resolve) =>
                 {
+                    wake = resolve;
                     timer = setTimeout(resolve, options.pollingIntervalMs);
                 });
             }
         }
     }
 
-    void loop().catch((error) =>
+    const running = loop().catch((error: unknown) =>
     {
         log.error('indexer loop died', { error });
     });
 
     return {
         status: () => ({ headBlock, indexedBlock }),
-        stop: () =>
+        // Resolves once the loop has left its last query, so the caller can end
+        // the database client without cutting a write in half.
+        stop: async () =>
         {
             stopped = true;
             if (timer !== null)
             {
                 clearTimeout(timer);
             }
+            wake();
+            await running;
         }
     };
 }

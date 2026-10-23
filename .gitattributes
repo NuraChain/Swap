@@ -3,8 +3,5 @@
 * text=auto eol=lf
 
 # Runtime artifacts and true binaries (defensive: most are gitignored).
-*.db binary
-*.db-shm binary
-*.db-wal binary
 *.png binary
 *.ico binary

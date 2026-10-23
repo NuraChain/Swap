@@ -5,7 +5,7 @@
         "allowImportingTsExtensions": true,
         "noEmit": true,
         "strict": true,
-        "types": ["node"]
+        "types": ["node", "emscripten"]
     },
     "include": ["src", "tests"]
 }

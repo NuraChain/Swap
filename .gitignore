@@ -4,10 +4,6 @@ dist-server/
 .azeroth/
 logs/
 coverage/
-data/
-*.db
-*.db-shm
-*.db-wal
 .playwright-mcp/
 *.tsbuildinfo
 .env

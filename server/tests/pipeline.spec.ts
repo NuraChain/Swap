@@ -4,13 +4,14 @@
 // pipeline. What is pinned here is the composition, not the library.
 
 import { MemoryRateStore, pipeline, rateLimit, requestId, securityHeaders, withResponseHeaders, type WebHandler } from '@azerothjs/http';
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import { buildApp, createApi } from '../src/app.ts';
 import { buildCsp } from '../src/csp.ts';
-import { IndexerDb } from '../src/indexer/db.ts';
 import type { Address } from '../src/indexer/db.ts';
 import type { Deployment } from '@nuraswap/shared/deployments';
+
+import { freshDb } from './pg.ts';
 
 const DEPLOYMENT: Deployment = {
     chainId: 1020,
@@ -34,16 +35,6 @@ const DEPLOYMENT: Deployment = {
     }
 };
 
-const open: IndexerDb[] = [];
-
-afterEach(() =>
-{
-    while (open.length > 0)
-    {
-        open.pop()?.close();
-    }
-});
-
 interface EdgeOptions
 {
     production?: boolean;
@@ -53,11 +44,14 @@ interface EdgeOptions
     sharedPeer?: boolean;
 }
 
-/** The same shape main.ts builds, with the knobs the tests need to move. */
-function edge(options: EdgeOptions = {}): { handler: WebHandler; csp: string }
+/**
+ * The same shape main.ts builds, with the knobs the tests need to move. Every
+ * edge reads the file's one shared database, emptied per call - nothing here
+ * writes to it, so two edges in one test see the same empty exchange.
+ */
+async function edge(options: EdgeOptions = {}): Promise<{ handler: WebHandler; csp: string }>
 {
-    const db = new IndexerDb(':memory:');
-    open.push(db);
+    const db = await freshDb();
     const api = createApi({
         db,
         deployment: DEPLOYMENT,
@@ -105,7 +99,7 @@ describe('security headers', () =>
 {
     it('marks every response nosniff, same-origin and referrer-free', async () =>
     {
-        const { handler } = edge();
+        const { handler } = await edge();
         const response = await get(handler, '/api/market/stats');
         expect(response.status).toBe(200);
         expect(response.headers.get('x-content-type-options')).toBe('nosniff');
@@ -117,7 +111,7 @@ describe('security headers', () =>
 
     it('carries them on error responses too - a 404 is still a response', async () =>
     {
-        const { handler } = edge();
+        const { handler } = await edge();
         const response = await get(handler, '/api/nope');
         expect(response.status).toBe(404);
         expect(response.headers.get('x-content-type-options')).toBe('nosniff');
@@ -125,7 +119,7 @@ describe('security headers', () =>
 
     it('assigns a correlation id to every request', async () =>
     {
-        const { handler } = edge();
+        const { handler } = await edge();
         const first = await get(handler, '/api/healthz');
         const second = await get(handler, '/api/healthz');
         const idOf = (response: Response): string | null => response.headers.get('x-request-id');
@@ -141,7 +135,7 @@ describe('content security policy', () =>
     // address an approval is signed for. The policy has to be ON in production.
     it('is applied to production responses, exactly as buildCsp composed it', async () =>
     {
-        const { handler, csp } = edge({ production: true });
+        const { handler, csp } = await edge({ production: true });
         const response = await get(handler, '/api/market/stats');
         expect(response.headers.get('content-security-policy')).toBe(csp);
         expect(response.headers.get('content-security-policy')).toContain("script-src 'self'");
@@ -150,14 +144,14 @@ describe('content security policy', () =>
 
     it('is absent in dev, where vite needs its inline HMR client', async () =>
     {
-        const { handler } = edge({ production: false });
+        const { handler } = await edge({ production: false });
         const response = await get(handler, '/api/market/stats');
         expect(response.headers.get('content-security-policy')).toBeNull();
     });
 
     it('covers error responses as well as successful ones', async () =>
     {
-        const { handler, csp } = edge({ production: true });
+        const { handler, csp } = await edge({ production: true });
         const response = await get(handler, '/api/nope');
         expect(response.headers.get('content-security-policy')).toBe(csp);
     });
@@ -167,7 +161,7 @@ describe('rate limiting', () =>
 {
     it('serves up to the budget, then refuses with 429 and a Retry-After', async () =>
     {
-        const { handler } = edge({ limit: 3 });
+        const { handler } = await edge({ limit: 3 });
         const client = { 'x-test-client': 'a' };
         for (let request = 0; request < 3; request++)
         {
@@ -180,7 +174,7 @@ describe('rate limiting', () =>
 
     it('publishes the remaining budget on every response', async () =>
     {
-        const { handler } = edge({ limit: 5 });
+        const { handler } = await edge({ limit: 5 });
         const response = await get(handler, '/api/healthz', { 'x-test-client': 'b' });
         expect(response.headers.get('ratelimit-limit')).toBe('5');
         expect(response.headers.get('ratelimit-remaining')).toBe('4');
@@ -188,7 +182,7 @@ describe('rate limiting', () =>
 
     it('gives each client its own budget', async () =>
     {
-        const { handler } = edge({ limit: 1 });
+        const { handler } = await edge({ limit: 1 });
         expect((await get(handler, '/api/healthz', { 'x-test-client': 'c' })).status).toBe(200);
         expect((await get(handler, '/api/healthz', { 'x-test-client': 'c' })).status).toBe(429);
         // A different client is unaffected by the first one's exhaustion.
@@ -201,7 +195,7 @@ describe('rate limiting', () =>
     // any visitor can exhaust for everybody. TRUST_PROXY is what separates them.
     it('separates clients behind a proxy only when the forwarded address is trusted', async () =>
     {
-        const trusting = edge({ limit: 1, trustProxy: true });
+        const trusting = await edge({ limit: 1, trustProxy: true });
         expect((await get(trusting.handler, '/api/healthz', { 'x-forwarded-for': '203.0.113.1' })).status).toBe(200);
         expect((await get(trusting.handler, '/api/healthz', { 'x-forwarded-for': '203.0.113.1' })).status).toBe(429);
         // A second visitor still gets served: the first one only exhausted its own.
@@ -210,14 +204,14 @@ describe('rate limiting', () =>
         // The other half: with the forwarded address distrusted, the limiter sees
         // the proxy's own address for everyone. Two different visitors, one
         // bucket - the first exhausts the budget and the second is refused.
-        const distrusting = edge({ limit: 1, sharedPeer: true });
+        const distrusting = await edge({ limit: 1, sharedPeer: true });
         expect((await get(distrusting.handler, '/api/healthz', { 'x-forwarded-for': '203.0.113.1' })).status).toBe(200);
         expect((await get(distrusting.handler, '/api/healthz', { 'x-forwarded-for': '198.51.100.7' })).status).toBe(429);
     });
 
     it('still refuses cleanly rather than crashing when the budget is spent', async () =>
     {
-        const { handler } = edge({ limit: 1 });
+        const { handler } = await edge({ limit: 1 });
         const client = { 'x-test-client': 'e' };
         await get(handler, '/api/healthz', client);
         const refused = await get(handler, '/api/market/stats', client);
@@ -231,7 +225,7 @@ describe('runtime smoke', () =>
 {
     it('answers the health probe an orchestrator polls', async () =>
     {
-        const { handler } = edge();
+        const { handler } = await edge();
         const response = await get(handler, '/api/healthz');
         expect(response.status).toBe(200);
         const body = await response.json();
@@ -241,7 +235,7 @@ describe('runtime smoke', () =>
 
     it('serves the whole read surface through the full edge', async () =>
     {
-        const { handler } = edge();
+        const { handler } = await edge();
         for (const path of ['/api/market/stats', '/api/market/pools', '/api/market/tokens', '/api/market/txs', '/api/market/deployment'])
         {
             const response = await get(handler, path);

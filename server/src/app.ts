@@ -1,7 +1,7 @@
 // The market API over the indexer's storage: pool list, pool detail with candles,
 // chain stats, token registry, recent transactions, and the active deployment.
-// Handlers read sqlite synchronously per request - the dataset is a DEX's hot
-// state, not a warehouse - and every response is schema-validated at the boundary.
+// Handlers read the database per request - the dataset is a DEX's hot state, not
+// a warehouse - and every response is schema-validated at the boundary.
 
 import { App, NotFoundError, json, type ErrorObserver, type RequestObserver } from '@azerothjs/http';
 import { feature, manifestOf, register } from '@azerothjs/http/api';
@@ -17,10 +17,11 @@ import {
     poolTvlUsd,
     toUsdNumber,
     toUsdPrice,
-    volumeUsd
+    volumeUsd,
+    type PriceMap
 } from './indexer/pricing.ts';
 import { deploymentInfo, pool, poolDetail, stats, tokenWithPrice, txItem } from './schemas.ts';
-import type { EventRow, IndexerDb, V3PoolRow } from './indexer/db.ts';
+import type { EventRow, IndexerDb, TokenRow, V3PoolRow } from './indexer/db.ts';
 import type { Pool, TokenRef, TxItem } from './schemas.ts';
 
 export interface IndexerStatus
@@ -57,26 +58,29 @@ export function createApi(state: ApiState)
         wrappedNative: deployment.contracts.wnura.toLowerCase()
     };
 
-    function tokenRefOf(address: string): TokenRef
+    // Everything one response reads about tokens and pools, loaded once per
+    // request. The pricing helpers take synchronous lookups, and a query per
+    // row costs a round trip each against a database server.
+    interface View
     {
-        const row = db.getToken(address);
-        return row ?? { address: address.toLowerCase(), ...UNKNOWN_TOKEN };
-    }
-
-    function decimalsOf(address: string): number
-    {
-        return db.getToken(address)?.decimals ?? 18;
+        tokens: TokenRow[];
+        pools: V3PoolRow[];
+        tokenBy: Map<string, TokenRow>;
+        poolBy: Map<string, V3PoolRow>;
+        decimalsOf: (address: string) => number;
+        prices: PriceMap;
+        anchored: PriceMap;
     }
 
     // The feed knows symbols; the price map is keyed by address. The token
     // registry is the only thing that can join them, and it is read per request
     // rather than cached at boot so a token the indexer discovers later is
     // priced the moment it appears.
-    function externalSeeds(): Map<string, bigint>
+    function externalSeeds(tokens: TokenRow[]): Map<string, bigint>
     {
         const feed = state.externalPrices();
         const seeds = new Map<string, bigint>();
-        for (const token of feed.size === 0 ? [] : db.listTokens())
+        for (const token of feed.size === 0 ? [] : tokens)
         {
             const price = feed.get(token.symbol.toUpperCase());
             if (price !== undefined)
@@ -93,11 +97,26 @@ export function createApi(state: ApiState)
     // subset that came from outside the exchange, and they are what money
     // figures are summed over: a pool cannot be counted as valuable on the
     // strength of a rate it set itself.
-    function priceView(): { prices: ReturnType<typeof buildPriceMap>; anchored: ReturnType<typeof buildPriceMap> }
+    async function view(): Promise<View>
     {
-        const seeds = externalSeeds();
-        const prices = buildPriceMap(db.listV3Pools(), db.listTokens(), refs, seeds);
-        return { prices, anchored: anchorsOnly(prices, refs, seeds) };
+        const [tokens, pools] = await Promise.all([db.listTokens(), db.listV3Pools()]);
+        const tokenBy = new Map(tokens.map((token) => [token.address.toLowerCase(), token]));
+        const seeds = externalSeeds(tokens);
+        const prices = buildPriceMap(pools, tokens, refs, seeds);
+        return {
+            tokens,
+            pools,
+            tokenBy,
+            poolBy: new Map(pools.map((entry) => [entry.address.toLowerCase(), entry])),
+            decimalsOf: (address) => tokenBy.get(address.toLowerCase())?.decimals ?? 18,
+            prices,
+            anchored: anchorsOnly(prices, refs, seeds)
+        };
+    }
+
+    function tokenRefOf(current: View, address: string): TokenRef
+    {
+        return current.tokenBy.get(address.toLowerCase()) ?? { address: address.toLowerCase(), ...UNKNOWN_TOKEN };
     }
 
     // A concentrated pool has no reserves, so the token BALANCES the indexer
@@ -105,23 +124,22 @@ export function createApi(state: ApiState)
     // already counts it by - and the price comes off the last candle, which is
     // the pool's own post-trade sqrtPriceX96 rather than a ratio of those
     // balances. The fee APR uses the pool's own tier fee: ppm on chain, bps here.
-    function poolWire(
-        pool: V3PoolRow,
-        prices: ReturnType<typeof buildPriceMap>,
-        anchored: ReturnType<typeof buildPriceMap>
-    ): Pool
+    async function poolWire(current: View, pool: V3PoolRow): Promise<Pool>
     {
         const hourNow = hourStartOf(Math.floor(Date.now() / 1000));
-        const dayVolume = db.volumeSince(pool.address, hourNow - 23 * HOUR);
-        const volume24hUsd = volumeUsd(dayVolume.volume0, dayVolume.volume1, pool, anchored, decimalsOf);
-        const tvlUsd = poolTvlUsd(pool, pool.balance0, pool.balance1, anchored, decimalsOf);
+        const [dayVolume, close] = await Promise.all([
+            db.volumeSince(pool.address, hourNow - 23 * HOUR),
+            db.latestClose(pool.address)
+        ]);
+        const volume24hUsd = volumeUsd(dayVolume.volume0, dayVolume.volume1, pool, current.anchored, current.decimalsOf);
+        const tvlUsd = poolTvlUsd(pool, pool.balance0, pool.balance1, current.anchored, current.decimalsOf);
         return {
             address: pool.address,
-            token0: tokenRefOf(pool.token0),
-            token1: tokenRefOf(pool.token1),
+            token0: tokenRefOf(current, pool.token0),
+            token1: tokenRefOf(current, pool.token1),
             reserve0: pool.balance0.toString(),
             reserve1: pool.balance1.toString(),
-            priceWad: (db.latestClose(pool.address) ?? 0n).toString(),
+            priceWad: (close ?? 0n).toString(),
             tvlUsd: toUsdNumber(tvlUsd),
             volume24hUsd: toUsdNumber(volume24hUsd),
             feeAprBps: feeAprBps(volume24hUsd, tvlUsd, pool.fee / 100)
@@ -130,17 +148,11 @@ export function createApi(state: ApiState)
 
     // A transaction row only ever wants the two tokens traded, which the pool
     // table answers for any event it stored.
-    function poolTokensOf(event: EventRow): { token0: string; token1: string }
+    function txWire(current: View, event: EventRow): TxItem
     {
-        const pool = db.getV3Pool(event.pair);
-        return { token0: pool?.token0 ?? event.pair, token1: pool?.token1 ?? event.pair };
-    }
-
-    function txWire(event: EventRow): TxItem
-    {
-        const tokens = poolTokensOf(event);
-        const token0 = tokenRefOf(tokens.token0);
-        const token1 = tokenRefOf(tokens.token1);
+        const pool = current.poolBy.get(event.pair.toLowerCase());
+        const token0 = tokenRefOf(current, pool?.token0 ?? event.pair);
+        const token1 = tokenRefOf(current, pool?.token1 ?? event.pair);
         const base = {
             txHash: event.txHash,
             kind: event.kind,
@@ -170,10 +182,9 @@ export function createApi(state: ApiState)
 
     return {
         market: feature('/market', (routes) => ({
-            stats: routes.get('/stats', { output: stats }, () =>
+            stats: routes.get('/stats', { output: stats }, async () =>
             {
-                const pools = db.listV3Pools();
-                const { anchored } = priceView();
+                const current = await view();
                 const hourNow = hourStartOf(Math.floor(Date.now() / 1000));
                 const dayStart = hourNow - 23 * HOUR;
                 let tvlUsd = 0n;
@@ -181,39 +192,39 @@ export function createApi(state: ApiState)
                 // One market, one set of totals. A pool's worth is what it HOLDS,
                 // read onto the row by the indexer, and its volume is summed off
                 // the hourly candles every swap feeds.
-                for (const pool of pools)
+                const dayVolumes = await Promise.all(current.pools.map((pool) => db.volumeSince(pool.address, dayStart)));
+                current.pools.forEach((pool, index) =>
                 {
-                    tvlUsd += poolTvlUsd(pool, pool.balance0, pool.balance1, anchored, decimalsOf);
-                    const dayVolume = db.volumeSince(pool.address, dayStart);
-                    volume24hUsd += volumeUsd(dayVolume.volume0, dayVolume.volume1, pool, anchored, decimalsOf);
-                }
+                    const dayVolume = dayVolumes[index];
+                    tvlUsd += poolTvlUsd(pool, pool.balance0, pool.balance1, current.anchored, current.decimalsOf);
+                    volume24hUsd += volumeUsd(dayVolume.volume0, dayVolume.volume1, pool, current.anchored, current.decimalsOf);
+                });
                 const status = state.status();
                 return {
                     chainId: deployment.chainId,
-                    poolCount: pools.length,
+                    poolCount: current.pools.length,
                     tvlUsd: toUsdNumber(tvlUsd),
                     volume24hUsd: toUsdNumber(volume24hUsd),
                     indexedBlock: status.indexedBlock,
                     blocksBehind: Math.max(0, status.headBlock - status.indexedBlock)
                 };
             }),
-            pools: routes.get('/pools', { output: array(pool) }, () =>
+            pools: routes.get('/pools', { output: array(pool) }, async () =>
             {
-                const pools = db.listV3Pools();
-                const { prices, anchored } = priceView();
-                return pools.map((entry) => poolWire(entry, prices, anchored));
+                const current = await view();
+                return Promise.all(current.pools.map((entry) => poolWire(current, entry)));
             }),
-            pool: routes.get('/pools/:address', { output: poolDetail }, (context) =>
+            pool: routes.get('/pools/:address', { output: poolDetail }, async (context) =>
             {
-                const v3Pool = db.getV3Pool(context.params.address);
-                if (v3Pool === null)
+                const current = await view();
+                const v3Pool = current.poolBy.get(context.params.address.toLowerCase());
+                if (v3Pool === undefined)
                 {
                     throw new NotFoundError('unknown pool');
                 }
-                const { prices, anchored } = priceView();
-                const wire = poolWire(v3Pool, prices, anchored);
+                const wire = await poolWire(current, v3Pool);
                 const hourNow = hourStartOf(Math.floor(Date.now() / 1000));
-                const raw = db.candles(wire.address, hourNow - 72 * HOUR);
+                const raw = await db.candles(wire.address, hourNow - 72 * HOUR);
                 // Chain time can run AHEAD of wall time (local chains walk their
                 // clock forward); fill to whichever is later or the fill is empty.
                 const toHour = Math.max(hourNow, raw.at(-1)?.hourStart ?? hourNow);
@@ -233,26 +244,30 @@ export function createApi(state: ApiState)
             // Whether the pool has traded recently - one boolean instead of the
             // whole candle detail, so a chart can skip a pool that would draw an
             // all-flat line. A deposit is deliberately not a trade.
-            traded: routes.get('/pools/:address/traded', { output: object({ traded: boolean() }) }, (context) =>
+            traded: routes.get('/pools/:address/traded', { output: object({ traded: boolean() }) }, async (context) =>
             {
                 const hourNow = hourStartOf(Math.floor(Date.now() / 1000));
-                const traded = db.candles(context.params.address, hourNow - 72 * HOUR)
+                const traded = (await db.candles(context.params.address, hourNow - 72 * HOUR))
                     .some((point) => point.volume0 > 0n || point.volume1 > 0n);
                 return { traded };
             }),
-            tokens: routes.get('/tokens', { output: array(tokenWithPrice) }, () =>
+            tokens: routes.get('/tokens', { output: array(tokenWithPrice) }, async () =>
             {
-                const { prices, anchored } = priceView();
-                return db.listTokens().map((token) => ({
+                const current = await view();
+                return current.tokens.map((token) => ({
                     ...token,
-                    priceUsd: toUsdPrice(prices.get(token.address) ?? 0n),
-                    anchored: anchored.has(token.address)
+                    priceUsd: toUsdPrice(current.prices.get(token.address) ?? 0n),
+                    anchored: current.anchored.has(token.address)
                 }));
             }),
             txs: routes.get(
                 '/txs',
                 { query: object({ account: string().optional() }), output: array(txItem) },
-                (context) => db.recentEvents(30, { account: context.query.account }).map(txWire)
+                async (context) =>
+                {
+                    const [current, events] = await Promise.all([view(), db.recentEvents(30, { account: context.query.account })]);
+                    return events.map((event) => txWire(current, event));
+                }
             ),
             deployment: routes.get('/deployment', { output: deploymentInfo }, () => ({
                 chainId: deployment.chainId,

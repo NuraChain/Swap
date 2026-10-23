@@ -22,11 +22,11 @@ export interface ApplyContext
     decimalsOf: (address: string) => number;
 }
 
-export function applyEvent(db: IndexerDb, event: DomainEvent, context: ApplyContext): void
+export async function applyEvent(db: IndexerDb, event: DomainEvent, context: ApplyContext): Promise<void>
 {
     if (event.kind === 'poolCreated')
     {
-        db.upsertV3Pool({
+        await db.upsertV3Pool({
             address: event.pool,
             token0: event.token0,
             token1: event.token1,
@@ -40,7 +40,7 @@ export function applyEvent(db: IndexerDb, event: DomainEvent, context: ApplyCont
 
     if (event.kind === 'swap')
     {
-        const inserted = db.insertEvent({
+        const inserted = await db.insertEvent({
             blockNumber: event.blockNumber,
             logIndex: event.logIndex,
             txHash: event.txHash,
@@ -57,14 +57,14 @@ export function applyEvent(db: IndexerDb, event: DomainEvent, context: ApplyCont
         {
             return; // replayed tail - candle already counted it
         }
-        const pool = db.getV3Pool(event.pair);
+        const pool = await db.getV3Pool(event.pair);
         // A swap on a pool the indexer never saw created, or one from a
         // node that omitted the price: nothing honest to chart.
         if (pool === null || event.sqrtPriceX96 === undefined || event.sqrtPriceX96 <= 0n)
         {
             return;
         }
-        db.recordCandlePoint(
+        await db.recordCandlePoint(
             event.pair,
             hourStartOf(timestamp),
             priceWadFromSqrtX96(
@@ -86,7 +86,7 @@ export function applyEvent(db: IndexerDb, event: DomainEvent, context: ApplyCont
         return;
     }
 
-    db.insertEvent({
+    await db.insertEvent({
         blockNumber: event.blockNumber,
         logIndex: event.logIndex,
         txHash: event.txHash,

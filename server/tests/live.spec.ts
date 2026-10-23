@@ -1,5 +1,5 @@
 // The live indexer driven end to end against a scripted chain: real logs, real
-// decoding, real SQLite - only the RPC transport is replaced. This is the module
+// decoding, real PostgreSQL (PGlite) - only the RPC transport is replaced. This is the module
 // with the most states and the least visibility in production, and every one of
 // its restart paths silently rewrites what the whole app believes about the
 // market, so each is pinned here.
@@ -11,10 +11,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { FakeChain } from './fake-chain.ts';
-import { IndexerDb } from '../src/indexer/db.ts';
+import { freshDb } from './pg.ts';
 import { startIndexer } from '../src/indexer/live.ts';
 import type { Deployment } from '@nuraswap/shared/deployments';
-import type { Address } from '../src/indexer/db.ts';
+import type { Address, IndexerDb } from '../src/indexer/db.ts';
 
 const FACTORY = '0x00000000000000000000000000000000000000f3' as Address;
 const POOL = '0x00000000000000000000000000000000000000b3' as Address;
@@ -103,15 +103,14 @@ function fakeLogger(): { lines: LogLine[]; log: never }
     };
 }
 
-const running: Array<{ stop: () => void }> = [];
+const running: Array<{ stop: () => Promise<void> }> = [];
 
 function run(
-    db: IndexerDb,
     log: never,
     overrides: { startBlock?: number; confirmations?: number } = {}
 ): {
     status: () => { headBlock: number; indexedBlock: number };
-    stop: () => void;
+    stop: () => Promise<void>;
 }
 {
     const indexer = startIndexer({
@@ -126,50 +125,43 @@ function run(
 }
 
 /** Advances fake time one poll at a time until `ready`, or fails after `polls`. */
-async function settle(ready: () => boolean, polls = 60): Promise<void>
+async function settle(ready: () => boolean | Promise<boolean>, polls = 60): Promise<void>
 {
     for (let step = 0; step < polls; step++)
     {
-        if (ready())
+        if (await ready())
         {
             return;
         }
         await vi.advanceTimersByTimeAsync(POLL_MS);
     }
-    if (!ready())
+    if (!await ready())
     {
         throw new Error(`the indexer never reached the expected state within ${ polls } polls`);
     }
 }
 
-const dbs: IndexerDb[] = [];
+// One database per test, opened before the clock is faked: the file shares a
+// single PGlite, so a second open would wipe the first.
+let db: IndexerDb;
 
-function freshDb(): IndexerDb
+beforeEach(async () =>
 {
-    const db = new IndexerDb(':memory:');
-    dbs.push(db);
-    return db;
-}
-
-beforeEach(() =>
-{
+    db = await freshDb();
     vi.useFakeTimers();
     chain = new FakeChain(12);
     chain.addToken(NURA, { symbol: 'WNURA', name: 'Wrapped NURA', decimals: 18 });
     chain.addToken(USDT, { symbol: 'mUSDT', name: 'Mock Tether USD', decimals: 6 });
 });
 
-afterEach(() =>
+// Every loop has left its last query before the next test wipes the database.
+afterEach(async () =>
 {
     while (running.length > 0)
     {
-        running.pop()?.stop();
+        await running.pop()?.stop();
     }
     vi.useRealTimers();
-    while (dbs.length > 0)
-    {
-        dbs.pop()?.close();
-    }
 });
 
 /** A pool created at block 2 that trades at block 3. */
@@ -197,31 +189,29 @@ describe('pool indexing', () =>
 {
     it('indexes a pool the factory created and reads what it holds', async () =>
     {
-        const db = freshDb();
         const { log } = fakeLogger();
         scriptOnePool();
 
-        const indexer = run(db, log);
-        await settle(() => db.getV3Pool(POOL)?.balance0 === 40_000n * 10n ** 18n);
+        const indexer = run(log);
+        await settle(async () => (await db.getV3Pool(POOL))?.balance0 === 40_000n * 10n ** 18n);
 
-        const pool = db.getV3Pool(POOL);
+        const pool = await db.getV3Pool(POOL);
         expect(pool?.token0).toBe(NURA);
         expect(pool?.token1).toBe(USDT);
         expect(pool?.fee).toBe(500);
         expect(pool?.balance1).toBe(100_000n * 10n ** 6n);
         // slot0, not a ratio of the balances - 2^96 is the Q64.96 encoding of 1:1.
         expect(pool?.sqrtPriceX96).toBe(SQRT_ONE);
-        indexer.stop();
+        await indexer.stop();
     });
 
     it('holds the last readable balances when the RPC stops answering', async () =>
     {
-        const db = freshDb();
         const { log, lines } = fakeLogger();
         scriptOnePool();
 
-        const indexer = run(db, log);
-        await settle(() => db.getV3Pool(POOL)?.balance0 === 40_000n * 10n ** 18n);
+        const indexer = run(log);
+        await settle(async () => (await db.getV3Pool(POOL))?.balance0 === 40_000n * 10n ** 18n);
 
         // Blanking a pool's TVL because one read timed out would be a worse
         // answer than the one from fifteen seconds ago.
@@ -229,46 +219,44 @@ describe('pool indexing', () =>
         // Long enough to outlast the balance beat: balances are read on their own
         // slower timer, not once per log scan, and this waits for the NEXT one.
         await settle(() => lines.some((line) => line.message.includes('state unreadable')), 400);
-        expect(db.getV3Pool(POOL)?.balance0).toBe(40_000n * 10n ** 18n);
-        indexer.stop();
+        expect((await db.getV3Pool(POOL))?.balance0).toBe(40_000n * 10n ** 18n);
+        await indexer.stop();
     });
 
     it('stamps identity, seeds the artifact tokens, and indexes to head', async () =>
     {
-        const db = freshDb();
         const { log } = fakeLogger();
         scriptOnePool();
-        const indexer = run(db, log);
+        const indexer = run(log);
 
         await settle(() => indexer.status().indexedBlock >= chain.height);
 
-        expect(db.getMeta('identity')).toBe(`1020:${ FACTORY }:${ chain.blocks[0].hash }`);
-        expect(db.getMeta('cursor')).toBe(String(chain.height));
-        expect(db.getMeta('cursorHash')).toBe(chain.blocks[chain.height].hash);
+        expect(await db.getMeta('identity')).toBe(`1020:${ FACTORY }:${ chain.blocks[0].hash }`);
+        expect(await db.getMeta('cursor')).toBe(String(chain.height));
+        expect(await db.getMeta('cursorHash')).toBe(chain.blocks[chain.height].hash);
         expect(indexer.status().headBlock).toBe(chain.height);
         // The artifact's tokens are seeded before the scan so a pool's first
         // candle has decimals to price with.
-        expect(db.getToken(NURA)).not.toBeNull();
-        expect(db.getToken(USDT)).not.toBeNull();
+        expect(await db.getToken(NURA)).not.toBeNull();
+        expect(await db.getToken(USDT)).not.toBeNull();
     });
 
     it('applies the pool and its trade in chain order', async () =>
     {
-        const db = freshDb();
         const { log } = fakeLogger();
         scriptOnePool();
-        run(db, log);
+        run(log);
 
-        await settle(() => db.recentEvents(10).length > 0);
+        await settle(async () => (await db.recentEvents(10)).length > 0);
 
-        const [trade] = db.recentEvents(10);
+        const [trade] = await db.recentEvents(10);
         expect(trade.kind).toBe('swap');
         expect(trade.account).toBe(ALICE);
         expect(trade.amount0In).toBe(100n * 10n ** 18n);
 
         // The swap states its own post-trade price: Q96 over 18dp/6dp decimals
         // is a raw 1:1, i.e. 10^30 in 1e18 fixed point.
-        const [candle] = db.candles(POOL, 0);
+        const [candle] = await db.candles(POOL, 0);
         expect(candle.close).toBe(10n ** 30n);
         expect(candle.volume0).toBe(100n * 10n ** 18n);
         expect(candle.volume1).toBe(248n * 10n ** 6n);
@@ -276,16 +264,15 @@ describe('pool indexing', () =>
 
     it('reads metadata for tokens the artifact never listed', async () =>
     {
-        const db = freshDb();
         const { log } = fakeLogger();
         const NEW_TOKEN = '0x0000000000000000000000000000000000000009' as Address;
         chain.addToken(NEW_TOKEN, { symbol: 'mDAI', name: 'Mock Dai', decimals: 8 });
         chain.poolCreated({ factory: FACTORY, pool: POOL, token0: NURA, token1: NEW_TOKEN, fee: 500, blockNumber: 2, logIndex: 0 });
-        run(db, log);
+        run(log);
 
-        await settle(() => db.getToken(NEW_TOKEN) !== null);
+        await settle(async () => await db.getToken(NEW_TOKEN) !== null);
 
-        expect(db.getToken(NEW_TOKEN)).toEqual({
+        expect(await db.getToken(NEW_TOKEN)).toEqual({
             address: NEW_TOKEN,
             symbol: 'mDAI',
             name: 'Mock Dai',
@@ -295,46 +282,43 @@ describe('pool indexing', () =>
 
     it('keeps a token whose contract answers nothing, as the unknown placeholder', async () =>
     {
-        const db = freshDb();
         const { log } = fakeLogger();
         const SILENT = '0x000000000000000000000000000000000000000a' as Address;
         chain.unreadableTokens.add(SILENT);
         chain.poolCreated({ factory: FACTORY, pool: POOL, token0: NURA, token1: SILENT, fee: 500, blockNumber: 2, logIndex: 0 });
-        run(db, log);
+        run(log);
 
-        await settle(() => db.getToken(SILENT) !== null);
+        await settle(async () => await db.getToken(SILENT) !== null);
 
         // Registered rather than skipped: an unnamed token still has a pool, and
         // dropping it here would drop the pool from every list downstream.
-        expect(db.getToken(SILENT)?.symbol).toBe('???');
-        expect(db.getToken(SILENT)?.decimals).toBe(18);
+        expect((await db.getToken(SILENT))?.symbol).toBe('???');
+        expect((await db.getToken(SILENT))?.decimals).toBe(18);
     });
 
     it('ignores a foreign log sitting on a watched address', async () =>
     {
-        const db = freshDb();
         const { log } = fakeLogger();
         scriptOnePool();
         chain.foreignLog(POOL, 4, 0);
-        const indexer = run(db, log);
+        const indexer = run(log);
 
         await settle(() => indexer.status().indexedBlock >= chain.height);
 
-        expect(db.recentEvents(10)).toHaveLength(1);
+        expect(await db.recentEvents(10)).toHaveLength(1);
     });
 
     it('sorts the node output before applying it', async () =>
     {
         // FakeChain hands logs back reversed on purpose. The pool must exist and
         // its trade applied after it regardless of the order the node returned.
-        const db = freshDb();
         const { log } = fakeLogger();
         scriptOnePool();
-        run(db, log);
+        run(log);
 
-        await settle(() => db.candles(POOL, 0).length > 0);
+        await settle(async () => (await db.candles(POOL, 0)).length > 0);
 
-        expect(db.candles(POOL, 0)[0].close).toBe(10n ** 30n);
+        expect((await db.candles(POOL, 0))[0].close).toBe(10n ** 30n);
     });
 });
 
@@ -346,7 +330,6 @@ describe('pools born mid-chunk', () =>
     // forever, because the cursor moves past them.
     it('backfills the logs of a pool created inside the same chunk', async () =>
     {
-        const db = freshDb();
         const { log } = fakeLogger();
         chain.setPoolPrice(POOL, SQRT_ONE);
         chain.poolCreated({ factory: FACTORY, pool: POOL, token0: NURA, token1: USDT, fee: 500, blockNumber: 2, logIndex: 0 });
@@ -360,27 +343,26 @@ describe('pools born mid-chunk', () =>
             blockNumber: 2,
             logIndex: 1
         });
-        const indexer = run(db, log);
+        const indexer = run(log);
 
         await settle(() => indexer.status().indexedBlock >= chain.height);
 
-        expect(db.getV3Pool(POOL)?.token0).toBe(NURA);
-        expect(db.recentEvents(10)).toHaveLength(1);
-        expect(db.candles(POOL, 0)).toHaveLength(1);
+        expect((await db.getV3Pool(POOL))?.token0).toBe(NURA);
+        expect(await db.recentEvents(10)).toHaveLength(1);
+        expect(await db.candles(POOL, 0)).toHaveLength(1);
     });
 
     it('handles several pools created in one chunk', async () =>
     {
-        const db = freshDb();
         const { log } = fakeLogger();
         chain.poolCreated({ factory: FACTORY, pool: POOL, token0: NURA, token1: USDT, fee: 500, blockNumber: 2, logIndex: 0 });
         chain.poolCreated({ factory: FACTORY, pool: POOL_TWO, token0: USDT, token1: NURA, fee: 3000, blockNumber: 2, logIndex: 1 });
-        const indexer = run(db, log);
+        const indexer = run(log);
 
         await settle(() => indexer.status().indexedBlock >= chain.height);
 
-        expect(db.listV3Pools()).toHaveLength(2);
-        expect(db.getV3Pool(POOL_TWO)?.fee).toBe(3000);
+        expect(await db.listV3Pools()).toHaveLength(2);
+        expect((await db.getV3Pool(POOL_TWO))?.fee).toBe(3000);
     });
 });
 
@@ -392,7 +374,6 @@ describe('liquidity accounting', () =>
     // stranger's liquidity as yours.
     it('files a mint under the transaction sender, not the position manager', async () =>
     {
-        const db = freshDb();
         const { log } = fakeLogger();
         chain.poolCreated({ factory: FACTORY, pool: POOL, token0: NURA, token1: USDT, fee: 500, blockNumber: 2, logIndex: 0 });
         chain.txFrom.set('0xdep', BOB);
@@ -405,11 +386,11 @@ describe('liquidity accounting', () =>
             logIndex: 0,
             txHash: '0xdep'
         });
-        run(db, log);
+        run(log);
 
-        await settle(() => db.recentEvents(10).length > 0);
+        await settle(async () => (await db.recentEvents(10)).length > 0);
 
-        const [deposit] = db.recentEvents(10);
+        const [deposit] = await db.recentEvents(10);
         expect(deposit.kind).toBe('mint');
         expect(deposit.account).toBe(BOB);
         expect(deposit.account).not.toBe(MANAGER);
@@ -421,7 +402,6 @@ describe('liquidity accounting', () =>
     {
         // Same override as the mint: the event's owner is the manager, while the
         // truthful account is whoever signed the withdrawal.
-        const db = freshDb();
         const { log } = fakeLogger();
         chain.poolCreated({ factory: FACTORY, pool: POOL, token0: NURA, token1: USDT, fee: 500, blockNumber: 2, logIndex: 0 });
         chain.txFrom.set('0xwit', ALICE);
@@ -434,12 +414,12 @@ describe('liquidity accounting', () =>
             logIndex: 0,
             txHash: '0xwit'
         });
-        run(db, log);
+        run(log);
 
-        await settle(() => db.recentEvents(10).length > 0);
+        await settle(async () => (await db.recentEvents(10)).length > 0);
 
-        expect(db.recentEvents(10)[0].account).toBe(ALICE);
-        expect(db.recentEvents(10)[0].kind).toBe('burn');
+        expect((await db.recentEvents(10))[0].account).toBe(ALICE);
+        expect((await db.recentEvents(10))[0].kind).toBe('burn');
     });
 });
 
@@ -447,13 +427,12 @@ describe('restart safety', () =>
 {
     it('resumes from the stored cursor without wiping what is already indexed', async () =>
     {
-        const db = freshDb();
         const { log } = fakeLogger();
         scriptOnePool();
-        const first = run(db, log);
+        const first = run(log);
         await settle(() => first.status().indexedBlock >= chain.height);
-        first.stop();
-        const cursorAfterFirst = db.getMeta('cursor');
+        await first.stop();
+        const cursorAfterFirst = await db.getMeta('cursor');
 
         // New trade appears, then the process restarts against the same database.
         chain.extendTo(chain.height + 2);
@@ -468,106 +447,101 @@ describe('restart safety', () =>
             blockNumber: chain.height,
             logIndex: 0
         });
-        const second = run(db, log);
-        await settle(() => db.recentEvents(10).length === 2);
+        const second = run(log);
+        await settle(async () => (await db.recentEvents(10)).length === 2);
 
-        expect(db.getMeta('identity')).not.toBeNull();
-        expect(Number(db.getMeta('cursor'))).toBeGreaterThan(Number(cursorAfterFirst));
+        expect(await db.getMeta('identity')).not.toBeNull();
+        expect(Number(await db.getMeta('cursor'))).toBeGreaterThan(Number(cursorAfterFirst));
         // Nothing was wiped: the first run's trade is still there.
-        expect(db.recentEvents(10).map((row) => row.account).sort()).toEqual([ALICE, BOB].sort());
-        second.stop();
+        expect((await db.recentEvents(10)).map((row) => row.account).sort()).toEqual([ALICE, BOB].sort());
+        await second.stop();
     });
 
     it('wipes and re-indexes when the chain identity changes', async () =>
     {
-        const db = freshDb();
         const { log, lines } = fakeLogger();
         scriptOnePool();
-        const first = run(db, log);
+        const first = run(log);
         await settle(() => first.status().indexedBlock >= chain.height);
-        first.stop();
-        expect(db.recentEvents(10)).toHaveLength(1);
+        await first.stop();
+        expect(await db.recentEvents(10)).toHaveLength(1);
 
         // The node was re-genesised: same heights, different hashes.
         chain.regenesis();
-        const second = run(db, log);
-        await settle(() => db.getMeta('identity') === `1020:${ FACTORY }:${ chain.blocks[0].hash }`);
+        const second = run(log);
+        await settle(async () => await db.getMeta('identity') === `1020:${ FACTORY }:${ chain.blocks[0].hash }`);
 
         expect(lines.some((line) => line.message.includes('chain identity changed'))).toBe(true);
         // Re-indexed rather than merged: exactly one copy of the same trade.
-        await settle(() => db.recentEvents(10).length === 1);
-        second.stop();
+        await settle(async () => (await db.recentEvents(10)).length === 1);
+        await second.stop();
     });
 
     it('wipes when the cursor points past the head - a chain reset', async () =>
     {
-        const db = freshDb();
         const { log, lines } = fakeLogger();
         scriptOnePool();
         // Identity matches, but the cursor claims a block the chain does not have.
-        db.setMeta('identity', `1020:${ FACTORY }:${ chain.blocks[0].hash }`);
-        db.setMeta('cursor', '9999');
-        db.upsertV3Pool({ address: POOL_TWO, token0: NURA, token1: USDT, fee: 500, createdBlock: 4242 });
+        await db.setMeta('identity', `1020:${ FACTORY }:${ chain.blocks[0].hash }`);
+        await db.setMeta('cursor', '9999');
+        await db.upsertV3Pool({ address: POOL_TWO, token0: NURA, token1: USDT, fee: 500, createdBlock: 4242 });
 
-        const indexer = run(db, log);
+        const indexer = run(log);
         await settle(() => lines.some((line) => line.message.includes('cursor beyond head')));
         await settle(() => indexer.status().indexedBlock >= chain.height);
 
         // The phantom pool from the old chain is gone; the real one is indexed.
-        expect(db.getV3Pool(POOL_TWO)).toBeNull();
-        expect(db.getV3Pool(POOL)).not.toBeNull();
+        expect(await db.getV3Pool(POOL_TWO)).toBeNull();
+        expect(await db.getV3Pool(POOL)).not.toBeNull();
     });
 
     it('rewinds and rescans when the cursor block hash no longer matches', async () =>
     {
-        const db = freshDb();
         const { log, lines } = fakeLogger();
         scriptOnePool();
-        const first = run(db, log);
+        const first = run(log);
         await settle(() => first.status().indexedBlock >= chain.height);
-        first.stop();
+        await first.stop();
 
         // A reorg rewrote the block the cursor sits on.
         chain.rewriteBlock(chain.height);
         const before = chain.getLogsCalls.length;
-        const second = run(db, log);
+        const second = run(log);
         await settle(() => lines.some((line) => line.message.includes('cursor hash mismatch')));
         await settle(() => chain.getLogsCalls.length > before);
 
         // The rescan replays the tail, and idempotent inserts keep it at one
         // trade and one candle rather than double-counting the volume.
         await settle(() => second.status().indexedBlock >= chain.height);
-        expect(db.recentEvents(10)).toHaveLength(1);
-        expect(db.candles(POOL, 0)[0].volume0).toBe(100n * 10n ** 18n);
-        second.stop();
+        expect(await db.recentEvents(10)).toHaveLength(1);
+        expect((await db.candles(POOL, 0))[0].volume0).toBe(100n * 10n ** 18n);
+        await second.stop();
     });
 
     it('rewinds no further back than the deployment start block', async () =>
     {
-        const db = freshDb();
         const { log } = fakeLogger();
         scriptOnePool();
-        const first = run(db, log, { startBlock: 1 });
+        const first = run(log, { startBlock: 1 });
         await settle(() => first.status().indexedBlock >= chain.height);
-        first.stop();
+        await first.stop();
 
         chain.rewriteBlock(chain.height);
         chain.getLogsCalls.length = 0;
-        const second = run(db, log, { startBlock: 1 });
+        const second = run(log, { startBlock: 1 });
         await settle(() => chain.getLogsCalls.length > 0);
 
         // The cursor is far below REWIND_BLOCKS, so the rewind clamps to the
         // start block instead of asking the node for a negative range.
         expect(chain.getLogsCalls[0].fromBlock).toBe(1n);
-        second.stop();
+        await second.stop();
     });
 
     it('re-runs the identity check when the chain gets shorter mid-run', async () =>
     {
-        const db = freshDb();
         const { log } = fakeLogger();
         scriptOnePool();
-        const indexer = run(db, log);
+        const indexer = run(log);
         await settle(() => indexer.status().indexedBlock >= chain.height);
 
         // A fresh local node replaces the one we were following.
@@ -575,7 +549,7 @@ describe('restart safety', () =>
         chain.regenesis();
         await settle(() => indexer.status().indexedBlock <= chain.height);
 
-        expect(db.getMeta('identity')).toBe(`1020:${ FACTORY }:${ chain.blocks[0].hash }`);
+        expect(await db.getMeta('identity')).toBe(`1020:${ FACTORY }:${ chain.blocks[0].hash }`);
     });
 });
 
@@ -583,39 +557,36 @@ describe('resilience', () =>
 {
     it('halves the chunk size on a failed scan and still finishes', async () =>
     {
-        const db = freshDb();
         const { log, lines } = fakeLogger();
         scriptOnePool();
         chain.failGetLogs = 1;
-        const indexer = run(db, log);
+        const indexer = run(log);
 
         await settle(() => indexer.status().indexedBlock >= chain.height);
 
         expect(lines.some((line) => line.message.includes('halving chunk size'))).toBe(true);
         // The retry covered the same ground: the trade is indexed exactly once.
-        expect(db.recentEvents(10)).toHaveLength(1);
+        expect(await db.recentEvents(10)).toHaveLength(1);
     });
 
     it('survives a poll whose head read fails and catches up on the next tick', async () =>
     {
-        const db = freshDb();
         const { log, lines } = fakeLogger();
         scriptOnePool();
         chain.failHead = 1;
-        const indexer = run(db, log);
+        const indexer = run(log);
 
         await settle(() => indexer.status().indexedBlock >= chain.height);
 
         expect(lines.some((line) => line.message.includes('indexer poll failed'))).toBe(true);
-        expect(db.recentEvents(10)).toHaveLength(1);
+        expect(await db.recentEvents(10)).toHaveLength(1);
     });
 
     it('honours the confirmation cushion', async () =>
     {
-        const db = freshDb();
         const { log } = fakeLogger();
         scriptOnePool();
-        const indexer = run(db, log, { confirmations: 3 });
+        const indexer = run(log, { confirmations: 3 });
 
         await settle(() => indexer.status().indexedBlock >= chain.height - 3);
 
@@ -625,13 +596,12 @@ describe('resilience', () =>
 
     it('stops scanning once stop() is called', async () =>
     {
-        const db = freshDb();
         const { log } = fakeLogger();
         scriptOnePool();
-        const indexer = run(db, log);
+        const indexer = run(log);
         await settle(() => indexer.status().indexedBlock >= chain.height);
 
-        indexer.stop();
+        await indexer.stop();
         const callsAtStop = chain.getLogsCalls.length;
         chain.extendTo(chain.height + 5);
         chain.swap({
@@ -647,14 +617,13 @@ describe('resilience', () =>
         await vi.advanceTimersByTimeAsync(POLL_MS * 10);
 
         expect(chain.getLogsCalls.length).toBe(callsAtStop);
-        expect(db.recentEvents(10)).toHaveLength(1);
+        expect(await db.recentEvents(10)).toHaveLength(1);
     });
 
     it('reports head and indexed height so the API can say how far behind it is', async () =>
     {
-        const db = freshDb();
         const { log } = fakeLogger();
-        const indexer = run(db, log);
+        const indexer = run(log);
 
         await settle(() => indexer.status().indexedBlock >= chain.height);
 

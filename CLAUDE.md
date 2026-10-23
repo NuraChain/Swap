@@ -6,7 +6,7 @@ UniswapV3 only. Three workspaces, one npm lockfile:
 ```
 shared/        bigint maths (V3 Q64.96 ticks), digit normalization, the typed
                deployment artifacts
-server/        indexer + market API: chain watcher -> sqlite -> REST (@azerothjs/http)
+server/        indexer + market API: chain watcher -> PostgreSQL -> REST (@azerothjs/http)
 application/   the site: compiled .azeroth components on vite (AzerothJS)
 ```
 
@@ -196,7 +196,8 @@ npm test                # all three suites
 npm run coverage        # per-workspace HTML in <workspace>/coverage
 ```
 
-See `TESTING.md` for the full map.
+The server suite runs against an in-process PostgreSQL (PGlite) - no database
+server, socket or file is needed to run it.
 
 ## Performance rules
 

@@ -8,10 +8,10 @@ import { describe, expect, it } from 'vitest';
 
 import { HOUR, applyEvent, fillCandles, hourStartOf } from '../src/indexer/apply.ts';
 import { V3_FACTORY_ABI, V3_POOL_ABI, decodeLog } from '../src/indexer/decode.ts';
-import { IndexerDb } from '../src/indexer/db.ts';
+import { freshDb } from './pg.ts';
 import type { ApplyContext } from '../src/indexer/apply.ts';
 import type { RawLog } from '../src/indexer/decode.ts';
-import type { Address, TokenRow } from '../src/indexer/db.ts';
+import type { Address, IndexerDb, TokenRow } from '../src/indexer/db.ts';
 
 const FACTORY = '0x00000000000000000000000000000000000000f3' as Address;
 const POOL = '0x00000000000000000000000000000000000000bb' as Address;
@@ -34,12 +34,12 @@ const context: ApplyContext = {
     decimalsOf: (address) => TOKENS.find((token) => token.address === address.toLowerCase())?.decimals ?? 18
 };
 
-function freshDb(): IndexerDb
+async function seededDb(): Promise<IndexerDb>
 {
-    const db = new IndexerDb(':memory:');
+    const db = await freshDb();
     for (const token of TOKENS)
     {
-        db.upsertToken(token);
+        await db.upsertToken(token);
     }
     return db;
 }
@@ -300,36 +300,36 @@ describe('decodeLog fuzz', () =>
 
 describe('applyEvent', () =>
 {
-    function seedPool(db: IndexerDb): void
+    async function seedPool(db: IndexerDb): Promise<void>
     {
-        applyEvent(db, decodeLog(poolCreatedLog(), FACTORY)!, context);
+        await applyEvent(db, decodeLog(poolCreatedLog(), FACTORY)!, context);
     }
 
-    it('stores a created pool by identity, with no reserves to hold', () =>
+    it('stores a created pool by identity, with no reserves to hold', async () =>
     {
-        const db = freshDb();
-        seedPool(db);
-        const stored = db.getV3Pool(POOL);
+        const db = await seededDb();
+        await seedPool(db);
+        const stored = await db.getV3Pool(POOL);
         expect(stored?.token0).toBe(NURA);
         expect(stored?.fee).toBe(500);
-        expect(db.listV3Pools()).toHaveLength(1);
+        expect(await db.listV3Pools()).toHaveLength(1);
     });
 
-    it('charts a swap at the price the swap itself reports', () =>
+    it('charts a swap at the price the swap itself reports', async () =>
     {
-        const db = freshDb();
-        seedPool(db);
-        applyEvent(db, decodeLog(v3SwapLog(10n ** 18n, -2n * 10n ** 6n), FACTORY)!, context);
+        const db = await seededDb();
+        await seedPool(db);
+        await applyEvent(db, decodeLog(v3SwapLog(10n ** 18n, -2n * 10n ** 6n), FACTORY)!, context);
 
         // In the feed...
-        const [row] = db.recentEvents(10);
+        const [row] = await db.recentEvents(10);
         expect(row.kind).toBe('swap');
         expect(row.amount1Out).toBe(2n * 10n ** 6n);
 
         // ...and in the chart. A concentrated pool has no reserves to divide,
         // but its Swap states the post-trade sqrtPriceX96 outright. The fixture
         // trades at Q96 - a raw 1:1 - which over 18 and 6 decimals is 1e30 wad.
-        const [candle] = db.candles(POOL, 0);
+        const [candle] = await db.candles(POOL, 0);
         expect(candle.close).toBe(10n ** 30n);
         expect(candle.open).toBe(10n ** 30n);
         // Volume counts both sides of the trade.
@@ -337,10 +337,10 @@ describe('applyEvent', () =>
         expect(candle.volume1).toBe(2n * 10n ** 6n);
     });
 
-    it('stores swaps idempotently', () =>
+    it('stores swaps idempotently', async () =>
     {
-        const db = freshDb();
-        seedPool(db);
+        const db = await seededDb();
+        await seedPool(db);
         const swap = {
             kind: 'swap' as const,
             pair: POOL,
@@ -354,41 +354,41 @@ describe('applyEvent', () =>
             amount1Out: 2n * 10n ** 6n,
             sqrtPriceX96: 1n << 96n
         };
-        applyEvent(db, swap, context);
-        applyEvent(db, swap, context); // replayed tail must not double-count
-        expect(db.recentEvents(10)).toHaveLength(1);
-        expect(db.candles(POOL, 0)[0].volume0).toBe(10n ** 18n);
+        await applyEvent(db, swap, context);
+        await applyEvent(db, swap, context); // replayed tail must not double-count
+        expect(await db.recentEvents(10)).toHaveLength(1);
+        expect((await db.candles(POOL, 0))[0].volume0).toBe(10n ** 18n);
     });
 
-    it('charts nothing for a pool it never saw created', () =>
+    it('charts nothing for a pool it never saw created', async () =>
     {
         // No pool row means no token decimals to price the sqrt against, and a
         // candle priced on a guess is worse than no candle.
-        const db = freshDb();
-        applyEvent(db, decodeLog(v3SwapLog(10n ** 18n, -2n * 10n ** 6n), FACTORY)!, context);
-        expect(db.recentEvents(10)).toHaveLength(1);
-        expect(db.candles(POOL, 0)).toHaveLength(0);
+        const db = await seededDb();
+        await applyEvent(db, decodeLog(v3SwapLog(10n ** 18n, -2n * 10n ** 6n), FACTORY)!, context);
+        expect(await db.recentEvents(10)).toHaveLength(1);
+        expect(await db.candles(POOL, 0)).toHaveLength(0);
     });
 
-    it('drops the manager\'s zero-amount burn poke', () =>
+    it('drops the manager\'s zero-amount burn poke', async () =>
     {
-        const db = freshDb();
-        seedPool(db);
+        const db = await seededDb();
+        await seedPool(db);
 
         // `burn(0)` settles a position's fees before a collect. It is a real log
         // describing nothing, and an empty row in somebody's activity is a lie.
-        applyEvent(db, decodeLog(v3BurnLog(0n, 0n), FACTORY)!, context);
-        expect(db.recentEvents(10)).toHaveLength(0);
+        await applyEvent(db, decodeLog(v3BurnLog(0n, 0n), FACTORY)!, context);
+        expect(await db.recentEvents(10)).toHaveLength(0);
 
-        applyEvent(db, decodeLog(v3BurnLog(11n, 22n), FACTORY)!, context);
-        expect(db.recentEvents(10)).toHaveLength(1);
+        await applyEvent(db, decodeLog(v3BurnLog(11n, 22n), FACTORY)!, context);
+        expect(await db.recentEvents(10)).toHaveLength(1);
     });
 
-    it('stores a mint with both deposited amounts and no outputs', () =>
+    it('stores a mint with both deposited amounts and no outputs', async () =>
     {
-        const db = freshDb();
-        seedPool(db);
-        applyEvent(db, {
+        const db = await seededDb();
+        await seedPool(db);
+        await applyEvent(db, {
             kind: 'mint',
             pair: POOL,
             blockNumber: 12,
@@ -398,25 +398,25 @@ describe('applyEvent', () =>
             amount0: 11n,
             amount1: 22n
         }, context);
-        const [row] = db.recentEvents(10);
+        const [row] = await db.recentEvents(10);
         expect(row.kind).toBe('mint');
         expect(row.amount0In).toBe(11n);
         expect(row.amount1In).toBe(22n);
         expect(row.amount0Out).toBe(0n);
         expect(row.amount1Out).toBe(0n);
         // A deposit is not a trade: it must not draw a candle.
-        expect(db.candles(POOL, 0)).toEqual([]);
+        expect(await db.candles(POOL, 0)).toEqual([]);
     });
 
-    it('splits trades in different hours into different candles', () =>
+    it('splits trades in different hours into different candles', async () =>
     {
-        const db = freshDb();
-        seedPool(db);
+        const db = await seededDb();
+        await seedPool(db);
         const hourApart: ApplyContext = {
             ...context,
             timestampOf: (blockNumber) => (blockNumber === 12 ? 1_700_000_000 : 1_700_000_000 + HOUR)
         };
-        applyEvent(db, {
+        await applyEvent(db, {
             kind: 'swap',
             pair: POOL,
             blockNumber: 12,
@@ -429,7 +429,7 @@ describe('applyEvent', () =>
             amount1Out: 1n,
             sqrtPriceX96: 1n << 96n
         }, hourApart);
-        applyEvent(db, {
+        await applyEvent(db, {
             kind: 'swap',
             pair: POOL,
             blockNumber: 13,
@@ -442,29 +442,29 @@ describe('applyEvent', () =>
             amount1Out: 1n,
             sqrtPriceX96: 2n << 96n
         }, hourApart);
-        expect(db.candles(POOL, 0)).toHaveLength(2);
+        expect(await db.candles(POOL, 0)).toHaveLength(2);
     });
 
-    it('merges swaps in the same hour into one candle with high/low', () =>
+    it('merges swaps in the same hour into one candle with high/low', async () =>
     {
-        const db = freshDb();
-        seedPool(db);
+        const db = await seededDb();
+        await seedPool(db);
         const base = context.timestampOf(12);
         expect(hourStartOf(base)).toBe(hourStartOf(context.timestampOf(13)));
 
-        applyEvent(db, {
+        await applyEvent(db, {
             kind: 'swap', pair: POOL, blockNumber: 12, logIndex: 1, txHash: '0x01', account: TRADER,
             amount0In: 10n ** 18n, amount1In: 0n, amount0Out: 0n, amount1Out: 0n,
             sqrtPriceX96: 1n << 96n
         }, context);
         // Price moves: the second trade reports a dearer post-trade price.
-        applyEvent(db, {
+        await applyEvent(db, {
             kind: 'swap', pair: POOL, blockNumber: 13, logIndex: 5, txHash: '0x02', account: TRADER,
             amount0In: 0n, amount1In: 5n * 10n ** 6n, amount0Out: 0n, amount1Out: 0n,
             sqrtPriceX96: 2n << 96n
         }, context);
 
-        const candles = db.candles(POOL, 0);
+        const candles = await db.candles(POOL, 0);
         expect(candles).toHaveLength(1);
         expect(candles[0].high > candles[0].open).toBe(true);
         expect(candles[0].close).toBe(candles[0].high);
@@ -535,14 +535,14 @@ describe('hourStartOf', () =>
 
 describe('IndexerDb.wipe', () =>
 {
-    it('clears every table', () =>
+    it('clears every table', async () =>
     {
-        const db = freshDb();
-        applyEvent(db, decodeLog(poolCreatedLog(), FACTORY)!, context);
-        db.setMeta('cursor', '5');
-        db.wipe();
-        expect(db.listV3Pools()).toEqual([]);
-        expect(db.listTokens()).toEqual([]);
-        expect(db.getMeta('cursor')).toBeNull();
+        const db = await seededDb();
+        await applyEvent(db, decodeLog(poolCreatedLog(), FACTORY)!, context);
+        await db.setMeta('cursor', '5');
+        await db.wipe();
+        expect(await db.listV3Pools()).toEqual([]);
+        expect(await db.listTokens()).toEqual([]);
+        expect(await db.getMeta('cursor')).toBeNull();
     });
 });

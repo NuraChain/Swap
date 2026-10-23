@@ -20,6 +20,7 @@
         "@azerothjs/schema": "^2.1.0",
         "@nuraswap/shared": "1.5.0",
         "azerothjs": "^2.1.0",
+        "pg": "^8.23.1",
         "viem": "^2.57.4"
     },
     "devDependencies": {
@@ -27,8 +28,11 @@
         "@azerothjs/devtools": "^2.1.0",
         "@azerothjs/eslint-plugin": "^2.1.0",
         "@azerothjs/ws": "^2.1.0",
+        "@electric-sql/pglite": "^0.5.11",
         "@eslint/js": "^10.0.1",
+        "@types/emscripten": "^1.41.6",
         "@types/node": "^26.6.5",
+        "@types/pg": "^8.23.1",
         "eslint": "^10.12.0",
         "globals": "^17.13.0",
         "jiti": "^2.7.0",

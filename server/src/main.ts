@@ -1,4 +1,3 @@
-import { mkdirSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { pipeline, requestId, securityHeaders, rateLimit, logRequests, loadConfig, flag, num, oneOf, str, withResponseHeaders, type WebHandler } from '@azerothjs/http';
@@ -7,6 +6,7 @@ import type { PageRenderer, PageRoute } from '@azerothjs/kit';
 import { createLogger, teeSink, terminalSink } from '@azerothjs/logger';
 import { fileSink } from '@azerothjs/logger/node';
 import { loadDeploymentIfPresent } from '@nuraswap/shared/deployments';
+import pg from 'pg';
 import { createPublicClient, http } from 'viem';
 
 import { manifestOf } from '@azerothjs/http/api';
@@ -19,36 +19,42 @@ import { IndexerDb } from './indexer/db.ts';
 import { UNKNOWN_TOKEN, readTokenMetadata } from './indexer/erc20.ts';
 import { startIndexer } from './indexer/live.ts';
 
+// The repository root: the one .env lives there, and CLIENT_DIR / SSR_ENTRY are
+// written relative to it - not to whatever directory the process started in.
+const ROOT = new URL('../../', import.meta.url);
+
 try
 {
-    process.loadEnvFile();
+    process.loadEnvFile(fileURLToPath(new URL('.env', ROOT)));
 }
 catch
 {
     // No .env file - the ambient environment is the configuration.
 }
 
+// Every variable is required; there are no defaults. A missing one fails the
+// boot with the full list instead of quietly running against a guess.
 const config = loadConfig({
-    port: num('PORT', { default: 3000 }),
-    env: oneOf('NODE_ENV', ['development', 'production', 'test'], { default: 'development' }),
-    chainId: num('CHAIN_ID', { default: 1020 }),
-    dataDir: str('DATA_DIR', { default: '../data' }),
-    clientDir: str('CLIENT_DIR', { default: '../application/dist' }),
-    ssrEntry: str('SSR_ENTRY', { default: '../application/dist-server/entry.server.js' }),
+    port: num('PORT'),
+    env: oneOf('NODE_ENV', ['development', 'production', 'test']),
+    chainId: num('CHAIN_ID'),
+    databaseUrl: str('DATABASE_URL', { secret: true }),
+    clientDir: str('CLIENT_DIR'),
+    ssrEntry: str('SSR_ENTRY'),
     // Whether a reverse proxy sits in front. It decides what the rate limiter
     // counts: off, the peer address is the bucket, and behind a proxy that is
     // the PROXY for every visitor - one shared budget an attacker exhausts for
     // everybody. On, the forwarded address is trusted, which is only safe when
-    // something actually strips and rewrites it. Default off: a directly exposed
-    // server must not believe a header the client can forge.
-    trustProxy: flag('TRUST_PROXY', { default: false }),
+    // something actually strips and rewrites it. A directly exposed server must
+    // not believe a header the client can forge.
+    trustProxy: flag('TRUST_PROXY'),
     // The only outbound HTTP this process makes. A bridged asset is worth what
     // it bridges, and no pool on this chain states that - with the feed off,
     // every USD figure that depends on one reads $0. That is the correct
     // behaviour for an air-gapped box and the wrong one everywhere else, so it
     // is a switch rather than an assumption.
-    priceFeed: flag('PRICE_FEED', { default: true }),
-    priceFeedMs: num('PRICE_FEED_MS', { default: 60_000 })
+    priceFeed: flag('PRICE_FEED'),
+    priceFeedMs: num('PRICE_FEED_MS')
 });
 const isProduction = config.env === 'production';
 
@@ -88,12 +94,19 @@ const tokens = await Promise.all(deployment.tokens.map(async (listed) =>
 }));
 const active = { ...deployment, tokens };
 
-const dataDir = fileURLToPath(new URL(`${ config.dataDir }/`, new URL('..', import.meta.url)));
-mkdirSync(dataDir, { recursive: true });
-const db = new IndexerDb(`${ dataDir }${ config.chainId }.db`);
+// One database per chain: the identity stamp the indexer keeps wipes the rows
+// anyway when the chain behind them changes.
+const pool = new pg.Pool({ connectionString: config.databaseUrl });
+// An idle client the server drops (restart, failover) errors on the pool; the
+// next query reconnects, so it is logged rather than allowed to kill the process.
+pool.on('error', (error) =>
+{
+    log.warn('database client dropped', { error: String(error) });
+});
+const db = await IndexerDb.open(pool);
 for (const token of active.tokens)
 {
-    db.upsertToken(token);
+    await db.upsertToken(token);
 }
 
 // Nura Chain is CometBFT consensus under the EVM: a block that is committed is
@@ -116,7 +129,7 @@ const feed = config.priceFeed
 // In production this server serves the whole app - one origin, no CORS between halves -
 // from the self-contained SSR bundle, which carries the route table and the page renderer.
 const ssr = isProduction
-    ? await import(pathToFileURL(config.ssrEntry).href) as { routes: PageRoute[]; renderPage: PageRenderer }
+    ? await import(pathToFileURL(fileURLToPath(new URL(config.ssrEntry, ROOT))).href) as { routes: PageRoute[]; renderPage: PageRenderer }
     : undefined;
 
 const api = createApi({ db, deployment: active, externalPrices: feed.prices, status: indexer.status });
@@ -158,7 +171,7 @@ const app = session?.app ?? buildApp({
         ? undefined
         : {
             routes: ssr.routes,
-            clientDir: config.clientDir,
+            clientDir: fileURLToPath(new URL(config.clientDir, ROOT)),
             renderer: ssr.renderPage,
             manifest: manifestOf(api),
             // The site's ten languages: every page is negotiated per request
@@ -208,11 +221,17 @@ const served = await serve(handler, {
 });
 // The HMR socket rides this server: vite was never given one of its own.
 session?.attach(served.server);
-handleShutdownSignals(served, { beforeExit: () => void session?.close() });
-process.once('SIGINT', indexer.stop);
-process.once('SIGTERM', indexer.stop);
-process.once('SIGINT', feed.stop);
-process.once('SIGTERM', feed.stop);
+// The indexer stops BEFORE the pool ends: it resolves once its last query has
+// returned, so no write is cut off mid-chunk.
+handleShutdownSignals(served, {
+    beforeExit: async () =>
+    {
+        feed.stop();
+        await indexer.stop();
+        await pool.end();
+        await session?.close();
+    }
+});
 
 // The panel's Server tab connects here and mirrors the server's reactive graph. Dev only,
 // token-gated; the token lives in `.env` so it survives restarts.

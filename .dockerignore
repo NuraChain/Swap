@@ -9,10 +9,6 @@
 **/dist
 **/dist-server
 **/.azeroth
-data
-**/*.db
-**/*.db-shm
-**/*.db-wal
 .env
 **/.env
 **/*.local

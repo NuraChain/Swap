@@ -1,13 +1,23 @@
-// The indexer's storage. node:sqlite (no native build step), one file per chain.
-// All uint256 values are TEXT - SQLite integers are i64 and amounts are not.
-// Every event insert is idempotent via the (block_number, log_index) primary key:
-// node --watch restarts replay the tail and must not double-count.
-
-import { DatabaseSync } from 'node:sqlite';
+// The indexer's storage, on PostgreSQL. All uint256 values are NUMERIC(78,0) -
+// exact for every 256-bit integer - and cross the wire as strings, read back
+// into bigints. Every event insert is idempotent via the (block_number,
+// log_index) primary key: node --watch restarts replay the tail and must not
+// double-count.
 
 export type Address = `0x${ string }`;
 
 export type EventKind = 'swap' | 'mint' | 'burn';
+
+/**
+ * The one method this module needs from a client. `pg`'s Pool satisfies it in
+ * production; the tests hand in an in-process PGlite, which answers the same
+ * shape. Drivers disagree on int8 (pg: string, PGlite: number), so every row
+ * mapper below coerces explicitly instead of trusting a cast.
+ */
+export interface SqlClient
+{
+    query: (text: string, params?: unknown[]) => Promise<{ rows: unknown[]; rowCount?: number | null }>;
+}
 
 export interface TokenRow
 {
@@ -26,8 +36,7 @@ export interface V3PoolRow
     createdBlock: number;
     // What the pool CONTRACT holds, refreshed by the indexer. A concentrated
     // pool has no reserves to derive a TVL from, so its balances are the only
-    // honest answer - and reading them on a timer keeps the API handlers
-    // synchronous, which is the whole shape of this server.
+    // honest answer.
     balance0: bigint;
     balance1: bigint;
     // The pool's OWN price, out of slot0. NOT derivable from the balances: a
@@ -63,231 +72,241 @@ export interface CandleRow
     volume1: bigint;
 }
 
-const SCHEMA = `
-CREATE TABLE IF NOT EXISTS meta (
-    key TEXT PRIMARY KEY,
-    value TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS tokens (
-    address TEXT PRIMARY KEY,
-    symbol TEXT NOT NULL,
-    name TEXT NOT NULL,
-    decimals INTEGER NOT NULL
-);
-CREATE TABLE IF NOT EXISTS v3_pools (
-    address TEXT PRIMARY KEY,
-    token0 TEXT NOT NULL,
-    token1 TEXT NOT NULL,
-    fee INTEGER NOT NULL,
-    created_block INTEGER NOT NULL,
-    balance0 TEXT NOT NULL DEFAULT '0',
-    balance1 TEXT NOT NULL DEFAULT '0',
-    sqrt_price_x96 TEXT NOT NULL DEFAULT '0'
-);
-CREATE TABLE IF NOT EXISTS events (
-    block_number INTEGER NOT NULL,
-    log_index INTEGER NOT NULL,
-    tx_hash TEXT NOT NULL,
-    ts INTEGER NOT NULL,
-    pair TEXT NOT NULL,
-    kind TEXT NOT NULL,
-    account TEXT NOT NULL,
-    amount0_in TEXT NOT NULL DEFAULT '0',
-    amount1_in TEXT NOT NULL DEFAULT '0',
-    amount0_out TEXT NOT NULL DEFAULT '0',
-    amount1_out TEXT NOT NULL DEFAULT '0',
-    PRIMARY KEY (block_number, log_index)
-);
-CREATE INDEX IF NOT EXISTS events_by_time ON events (ts DESC);
-CREATE INDEX IF NOT EXISTS events_by_pair ON events (pair, ts DESC);
-CREATE INDEX IF NOT EXISTS events_by_account ON events (account, ts DESC);
-CREATE TABLE IF NOT EXISTS candles (
-    pair TEXT NOT NULL,
-    hour_start INTEGER NOT NULL,
-    open TEXT NOT NULL,
-    high TEXT NOT NULL,
-    low TEXT NOT NULL,
-    close TEXT NOT NULL,
-    volume0 TEXT NOT NULL DEFAULT '0',
-    volume1 TEXT NOT NULL DEFAULT '0',
-    PRIMARY KEY (pair, hour_start)
-);
-`;
+// One statement per entry: a multi-statement string only runs over the simple
+// query protocol, which not every client speaks.
+const SCHEMA = [
+    `CREATE TABLE IF NOT EXISTS meta (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+    )`,
+    `CREATE TABLE IF NOT EXISTS tokens (
+        address TEXT PRIMARY KEY,
+        symbol TEXT NOT NULL,
+        name TEXT NOT NULL,
+        decimals INTEGER NOT NULL
+    )`,
+    `CREATE TABLE IF NOT EXISTS v3_pools (
+        address TEXT PRIMARY KEY,
+        token0 TEXT NOT NULL,
+        token1 TEXT NOT NULL,
+        fee INTEGER NOT NULL,
+        created_block BIGINT NOT NULL,
+        balance0 NUMERIC(78, 0) NOT NULL DEFAULT 0,
+        balance1 NUMERIC(78, 0) NOT NULL DEFAULT 0,
+        sqrt_price_x96 NUMERIC(78, 0) NOT NULL DEFAULT 0
+    )`,
+    `CREATE TABLE IF NOT EXISTS events (
+        block_number BIGINT NOT NULL,
+        log_index INTEGER NOT NULL,
+        tx_hash TEXT NOT NULL,
+        ts BIGINT NOT NULL,
+        pair TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        account TEXT NOT NULL,
+        amount0_in NUMERIC(78, 0) NOT NULL DEFAULT 0,
+        amount1_in NUMERIC(78, 0) NOT NULL DEFAULT 0,
+        amount0_out NUMERIC(78, 0) NOT NULL DEFAULT 0,
+        amount1_out NUMERIC(78, 0) NOT NULL DEFAULT 0,
+        PRIMARY KEY (block_number, log_index)
+    )`,
+    'CREATE INDEX IF NOT EXISTS events_by_time ON events (ts DESC)',
+    'CREATE INDEX IF NOT EXISTS events_by_pair ON events (pair, ts DESC)',
+    'CREATE INDEX IF NOT EXISTS events_by_account ON events (account, ts DESC)',
+    `CREATE TABLE IF NOT EXISTS candles (
+        pair TEXT NOT NULL,
+        hour_start BIGINT NOT NULL,
+        open NUMERIC(78, 0) NOT NULL,
+        high NUMERIC(78, 0) NOT NULL,
+        low NUMERIC(78, 0) NOT NULL,
+        close NUMERIC(78, 0) NOT NULL,
+        volume0 NUMERIC(78, 0) NOT NULL DEFAULT 0,
+        volume1 NUMERIC(78, 0) NOT NULL DEFAULT 0,
+        PRIMARY KEY (pair, hour_start)
+    )`
+];
 
-interface V3PoolWire
+type Wire = Record<string, unknown>;
+
+function big(value: unknown): bigint
 {
-    address: Address;
-    token0: Address;
-    token1: Address;
-    fee: number;
-    created_block: number;
-    balance0: string;
-    balance1: string;
-    sqrt_price_x96: string;
+    return BigInt(String(value));
 }
 
-function v3PoolOf(row: V3PoolWire): V3PoolRow
+function tokenOf(row: Wire): TokenRow
 {
     return {
-        address: row.address,
-        token0: row.token0,
-        token1: row.token1,
-        fee: row.fee,
-        createdBlock: row.created_block,
-        balance0: BigInt(row.balance0),
-        balance1: BigInt(row.balance1),
-        sqrtPriceX96: BigInt(row.sqrt_price_x96)
+        address: row.address as Address,
+        symbol: row.symbol as string,
+        name: row.name as string,
+        decimals: Number(row.decimals)
+    };
+}
+
+function v3PoolOf(row: Wire): V3PoolRow
+{
+    return {
+        address: row.address as Address,
+        token0: row.token0 as Address,
+        token1: row.token1 as Address,
+        fee: Number(row.fee),
+        createdBlock: Number(row.created_block),
+        balance0: big(row.balance0),
+        balance1: big(row.balance1),
+        sqrtPriceX96: big(row.sqrt_price_x96)
+    };
+}
+
+function eventOf(row: Wire): EventRow
+{
+    return {
+        blockNumber: Number(row.block_number),
+        logIndex: Number(row.log_index),
+        txHash: row.tx_hash as string,
+        timestamp: Number(row.ts),
+        pair: row.pair as Address,
+        kind: row.kind as EventKind,
+        account: row.account as Address,
+        amount0In: big(row.amount0_in),
+        amount1In: big(row.amount1_in),
+        amount0Out: big(row.amount0_out),
+        amount1Out: big(row.amount1_out)
+    };
+}
+
+function candleOf(row: Wire): CandleRow
+{
+    return {
+        pair: row.pair as Address,
+        hourStart: Number(row.hour_start),
+        open: big(row.open),
+        high: big(row.high),
+        low: big(row.low),
+        close: big(row.close),
+        volume0: big(row.volume0),
+        volume1: big(row.volume1)
     };
 }
 
 export class IndexerDb
 {
-    #db: DatabaseSync;
+    #sql: SqlClient;
 
-    constructor(path: string)
+    // Use IndexerDb.open(): it creates the schema this constructor assumes.
+    constructor(sql: SqlClient)
     {
-        this.#db = new DatabaseSync(path);
-        this.#db.exec('PRAGMA journal_mode = WAL;');
-        this.#db.exec(SCHEMA);
-        this.#migrate();
+        this.#sql = sql;
     }
 
-    // CREATE TABLE IF NOT EXISTS does nothing to a table that already exists, so
-    // schema changes land here instead. Two shapes of history are handled:
-    // - a database written before the balances/sqrt_price columns existed gets
-    //   them added in place;
-    // - one written by the dual-protocol indexer carries a `pairs` table and a
-    //   `protocol` column on events; both are V2 relics this build does not read,
-    //   so they are shed here too. The identity stamp changes alongside
-    //   (live.ts), which wipes the rows - these drops only clear the shells.
-    #migrate(): void
+    /** Creates the schema if it is missing. The caller owns the client and ends it. */
+    public static async open(sql: SqlClient): Promise<IndexerDb>
     {
-        const columns: Array<[string, string, string]> = [
-            ['v3_pools', 'balance0', "ALTER TABLE v3_pools ADD COLUMN balance0 TEXT NOT NULL DEFAULT '0'"],
-            ['v3_pools', 'balance1', "ALTER TABLE v3_pools ADD COLUMN balance1 TEXT NOT NULL DEFAULT '0'"],
-            ['v3_pools', 'sqrt_price_x96', "ALTER TABLE v3_pools ADD COLUMN sqrt_price_x96 TEXT NOT NULL DEFAULT '0'"]
-        ];
-        for (const [table, column, ddl] of columns)
+        for (const statement of SCHEMA)
         {
-            const present = this.#db.prepare(`PRAGMA table_info(${ table })`).all() as unknown as Array<{ name: string }>;
-            if (!present.some((entry) => entry.name === column))
-            {
-                // Table and column names are literals from this file's own
-                // schema, never input.
-                this.#db.exec(ddl);
-            }
+            await sql.query(statement);
         }
-        const tables = this.#db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as unknown as Array<{ name: string }>;
-        if (tables.some((entry) => entry.name === 'pairs'))
-        {
-            this.#db.exec('DROP TABLE pairs');
-        }
-        const eventColumns = this.#db.prepare('PRAGMA table_info(events)').all() as unknown as Array<{ name: string }>;
-        if (eventColumns.some((entry) => entry.name === 'protocol'))
-        {
-            this.#db.exec('ALTER TABLE events DROP COLUMN protocol');
-        }
+        return new IndexerDb(sql);
     }
 
-    public close(): void
+    async #rows(text: string, params: unknown[] = []): Promise<Wire[]>
     {
-        this.#db.close();
+        // PostgreSQL refuses a NUL byte in a text parameter outright, and every
+        // read here is keyed by request input (`?account=%00`). No stored value
+        // can contain one, so such a key matches nothing - an empty answer, not
+        // a 500.
+        if (params.some((param) => typeof param === 'string' && param.includes('\0')))
+        {
+            return [];
+        }
+        return (await this.#sql.query(text, params)).rows as Wire[];
     }
 
     // Chain identity mismatch (re-genesised chain, different deployment) makes every
     // stored row a lie about an address space that no longer exists.
-    public wipe(): void
+    public async wipe(): Promise<void>
     {
-        this.#db.exec('DELETE FROM meta; DELETE FROM tokens; DELETE FROM v3_pools; '
-            + 'DELETE FROM events; DELETE FROM candles;');
+        await this.#sql.query('TRUNCATE meta, tokens, v3_pools, events, candles');
     }
 
-    public getMeta(key: string): string | null
+    public async getMeta(key: string): Promise<string | null>
     {
-        const row = this.#db.prepare('SELECT value FROM meta WHERE key = ?').get(key) as { value: string } | undefined;
-        return row?.value ?? null;
+        const [row] = await this.#rows('SELECT value FROM meta WHERE key = $1', [key]);
+        return row === undefined ? null : row.value as string;
     }
 
-    public setMeta(key: string, value: string): void
+    public async setMeta(key: string, value: string): Promise<void>
     {
-        this.#db
-            .prepare('INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
-            .run(key, value);
+        await this.#sql.query(
+            'INSERT INTO meta (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = excluded.value',
+            [key, value]
+        );
     }
 
-    public upsertToken(token: TokenRow): void
+    public async upsertToken(token: TokenRow): Promise<void>
     {
-        this.#db
-            .prepare('INSERT INTO tokens (address, symbol, name, decimals) VALUES (?, ?, ?, ?) '
-                + 'ON CONFLICT(address) DO UPDATE SET symbol = excluded.symbol, name = excluded.name, decimals = excluded.decimals')
-            .run(token.address.toLowerCase(), token.symbol, token.name, token.decimals);
+        await this.#sql.query(
+            'INSERT INTO tokens (address, symbol, name, decimals) VALUES ($1, $2, $3, $4) '
+                + 'ON CONFLICT (address) DO UPDATE SET symbol = excluded.symbol, name = excluded.name, decimals = excluded.decimals',
+            [token.address.toLowerCase(), token.symbol, token.name, token.decimals]
+        );
     }
 
-    public getToken(address: string): TokenRow | null
+    public async getToken(address: string): Promise<TokenRow | null>
     {
-        const row = this.#db.prepare('SELECT * FROM tokens WHERE address = ?').get(address.toLowerCase()) as
-            | { address: Address; symbol: string; name: string; decimals: number }
-            | undefined;
-        return row ?? null;
+        const [row] = await this.#rows('SELECT * FROM tokens WHERE address = $1', [address.toLowerCase()]);
+        return row === undefined ? null : tokenOf(row);
     }
 
-    public listTokens(): TokenRow[]
+    public async listTokens(): Promise<TokenRow[]>
     {
-        return this.#db.prepare('SELECT * FROM tokens ORDER BY symbol').all() as unknown as TokenRow[];
+        return (await this.#rows('SELECT * FROM tokens ORDER BY symbol')).map(tokenOf);
     }
 
-    public upsertV3Pool(pool: { address: Address; token0: Address; token1: Address; fee: number; createdBlock: number }): void
+    public async upsertV3Pool(pool: { address: Address; token0: Address; token1: Address; fee: number; createdBlock: number }): Promise<void>
     {
-        this.#db
-            .prepare('INSERT INTO v3_pools (address, token0, token1, fee, created_block) VALUES (?, ?, ?, ?, ?) '
-                + 'ON CONFLICT(address) DO NOTHING')
-            .run(
-                pool.address.toLowerCase(),
-                pool.token0.toLowerCase(),
-                pool.token1.toLowerCase(),
-                pool.fee,
-                pool.createdBlock
-            );
+        await this.#sql.query(
+            'INSERT INTO v3_pools (address, token0, token1, fee, created_block) VALUES ($1, $2, $3, $4, $5) '
+                + 'ON CONFLICT (address) DO NOTHING',
+            [pool.address.toLowerCase(), pool.token0.toLowerCase(), pool.token1.toLowerCase(), pool.fee, pool.createdBlock]
+        );
     }
 
-    public updateV3Balances(pool: string, balance0: bigint, balance1: bigint): void
+    public async updateV3Balances(pool: string, balance0: bigint, balance1: bigint): Promise<void>
     {
-        this.#db
-            .prepare('UPDATE v3_pools SET balance0 = ?, balance1 = ? WHERE address = ?')
-            .run(balance0.toString(), balance1.toString(), pool.toLowerCase());
+        await this.#sql.query(
+            'UPDATE v3_pools SET balance0 = $1, balance1 = $2 WHERE address = $3',
+            [balance0.toString(), balance1.toString(), pool.toLowerCase()]
+        );
     }
 
-    public updateV3Price(pool: string, sqrtPriceX96: bigint): void
+    public async updateV3Price(pool: string, sqrtPriceX96: bigint): Promise<void>
     {
-        this.#db
-            .prepare('UPDATE v3_pools SET sqrt_price_x96 = ? WHERE address = ?')
-            .run(sqrtPriceX96.toString(), pool.toLowerCase());
+        await this.#sql.query(
+            'UPDATE v3_pools SET sqrt_price_x96 = $1 WHERE address = $2',
+            [sqrtPriceX96.toString(), pool.toLowerCase()]
+        );
     }
 
-    public getV3Pool(address: string): V3PoolRow | null
+    public async getV3Pool(address: string): Promise<V3PoolRow | null>
     {
-        const row = this.#db.prepare('SELECT * FROM v3_pools WHERE address = ?').get(address.toLowerCase()) as
-            | V3PoolWire
-            | undefined;
+        const [row] = await this.#rows('SELECT * FROM v3_pools WHERE address = $1', [address.toLowerCase()]);
         return row === undefined ? null : v3PoolOf(row);
     }
 
-    public listV3Pools(): V3PoolRow[]
+    public async listV3Pools(): Promise<V3PoolRow[]>
     {
-        const rows = this.#db.prepare('SELECT * FROM v3_pools ORDER BY created_block')
-            .all() as unknown as V3PoolWire[];
-        return rows.map(v3PoolOf);
+        return (await this.#rows('SELECT * FROM v3_pools ORDER BY created_block')).map(v3PoolOf);
     }
 
     /** @returns false when the event was already stored (idempotent replay). */
-    public insertEvent(event: EventRow): boolean
+    public async insertEvent(event: EventRow): Promise<boolean>
     {
-        const result = this.#db
-            .prepare('INSERT OR IGNORE INTO events '
+        const result = await this.#sql.query(
+            'INSERT INTO events '
                 + '(block_number, log_index, tx_hash, ts, pair, kind, account, '
                 + 'amount0_in, amount1_in, amount0_out, amount1_out) '
-                + 'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-            .run(
+                + 'VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) '
+                + 'ON CONFLICT (block_number, log_index) DO NOTHING',
+            [
                 event.blockNumber,
                 event.logIndex,
                 event.txHash,
@@ -299,127 +318,78 @@ export class IndexerDb
                 event.amount1In.toString(),
                 event.amount0Out.toString(),
                 event.amount1Out.toString()
-            );
-        return result.changes === 1;
+            ]
+        );
+        return result.rowCount === 1;
     }
 
-    public recentEvents(limit: number, filter?: { pair?: string; account?: string }): EventRow[]
+    public async recentEvents(limit: number, filter?: { pair?: string; account?: string }): Promise<EventRow[]>
     {
         const clauses: string[] = [];
         const args: Array<string | number> = [];
         if (filter?.pair !== undefined)
         {
-            clauses.push('pair = ?');
             args.push(filter.pair.toLowerCase());
+            clauses.push(`pair = $${ args.length }`);
         }
         if (filter?.account !== undefined)
         {
-            clauses.push('account = ?');
             args.push(filter.account.toLowerCase());
+            clauses.push(`account = $${ args.length }`);
         }
         const where = clauses.length === 0 ? '' : ` WHERE ${ clauses.join(' AND ') }`;
-        const rows = this.#db
-            .prepare(`SELECT * FROM events${ where } ORDER BY ts DESC, log_index DESC LIMIT ?`)
-            .all(...args, limit) as unknown as Array<Record<string, string | number>>;
-        return rows.map((row) => ({
-            blockNumber: row.block_number as number,
-            logIndex: row.log_index as number,
-            txHash: row.tx_hash as string,
-            timestamp: row.ts as number,
-            pair: row.pair as Address,
-            kind: row.kind as EventKind,
-            account: row.account as Address,
-            amount0In: BigInt(row.amount0_in as string),
-            amount1In: BigInt(row.amount1_in as string),
-            amount0Out: BigInt(row.amount0_out as string),
-            amount1Out: BigInt(row.amount1_out as string)
-        }));
+        args.push(limit);
+        const rows = await this.#rows(`SELECT * FROM events${ where } ORDER BY ts DESC, log_index DESC LIMIT $${ args.length }`, args);
+        return rows.map(eventOf);
     }
 
     // Applies one swap to its hourly candle. `price` is token1-per-token0, decimals
-    // adjusted, 1e18 fixed point. The merge runs in JS: candle values are bigints
-    // stored as TEXT, and SQLite arithmetic (i64/REAL) cannot hold them.
-    public recordCandlePoint(pair: string, hourStart: number, price: bigint, volume0: bigint, volume1: bigint): void
+    // adjusted, 1e18 fixed point. One upsert: NUMERIC holds every uint256, so the
+    // high/low/volume merge runs in the database without a read first.
+    public async recordCandlePoint(pair: string, hourStart: number, price: bigint, volume0: bigint, volume1: bigint): Promise<void>
     {
-        const key = pair.toLowerCase();
-        const existing = this.#db
-            .prepare('SELECT high, low, volume0, volume1 FROM candles WHERE pair = ? AND hour_start = ?')
-            .get(key, hourStart) as { high: string; low: string; volume0: string; volume1: string } | undefined;
-        if (existing === undefined)
-        {
-            this.#db
-                .prepare('INSERT INTO candles (pair, hour_start, open, high, low, close, volume0, volume1) '
-                    + 'VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-                .run(
-                    key,
-                    hourStart,
-                    price.toString(),
-                    price.toString(),
-                    price.toString(),
-                    price.toString(),
-                    volume0.toString(),
-                    volume1.toString()
-                );
-            return;
-        }
-        const high = price > BigInt(existing.high) ? price : BigInt(existing.high);
-        const low = price < BigInt(existing.low) ? price : BigInt(existing.low);
-        this.#db
-            .prepare('UPDATE candles SET high = ?, low = ?, close = ?, volume0 = ?, volume1 = ? '
-                + 'WHERE pair = ? AND hour_start = ?')
-            .run(
-                high.toString(),
-                low.toString(),
-                price.toString(),
-                (BigInt(existing.volume0) + volume0).toString(),
-                (BigInt(existing.volume1) + volume1).toString(),
-                key,
-                hourStart
-            );
+        await this.#sql.query(
+            'INSERT INTO candles (pair, hour_start, open, high, low, close, volume0, volume1) '
+                + 'VALUES ($1, $2, $3, $3, $3, $3, $4, $5) '
+                + 'ON CONFLICT (pair, hour_start) DO UPDATE SET '
+                + 'high = GREATEST(candles.high, excluded.high), '
+                + 'low = LEAST(candles.low, excluded.low), '
+                + 'close = excluded.close, '
+                + 'volume0 = candles.volume0 + excluded.volume0, '
+                + 'volume1 = candles.volume1 + excluded.volume1',
+            [pair.toLowerCase(), hourStart, price.toString(), volume0.toString(), volume1.toString()]
+        );
     }
 
-    public candles(pair: string, fromHour: number): CandleRow[]
+    public async candles(pair: string, fromHour: number): Promise<CandleRow[]>
     {
-        const rows = this.#db
-            .prepare('SELECT * FROM candles WHERE pair = ? AND hour_start >= ? ORDER BY hour_start')
-            .all(pair.toLowerCase(), fromHour) as unknown as Array<Record<string, string | number>>;
-        return rows.map((row) => ({
-            pair: row.pair as Address,
-            hourStart: row.hour_start as number,
-            open: BigInt(row.open as string),
-            high: BigInt(row.high as string),
-            low: BigInt(row.low as string),
-            close: BigInt(row.close as string),
-            volume0: BigInt(row.volume0 as string),
-            volume1: BigInt(row.volume1 as string)
-        }));
+        const rows = await this.#rows(
+            'SELECT * FROM candles WHERE pair = $1 AND hour_start >= $2 ORDER BY hour_start',
+            [pair.toLowerCase(), fromHour]
+        );
+        return rows.map(candleOf);
     }
 
     // A pool's live price lives at the END of its candle series - the pools
     // table's sqrt_price_x96 is refreshed on its own 15s beat, while every swap
-    // lands here immediately. Reading the whole series to take its last element
-    // made every pool row cost O(all candles ever); this asks the
-    // (pair, hour_start) primary key for exactly one.
-    public latestClose(pool: string): bigint | null
+    // lands here immediately. The (pair, hour_start) primary key answers for
+    // exactly one row.
+    public async latestClose(pool: string): Promise<bigint | null>
     {
-        const row = this.#db
-            .prepare('SELECT close FROM candles WHERE pair = ? ORDER BY hour_start DESC LIMIT 1')
-            .get(pool.toLowerCase()) as { close: string } | undefined;
-        return row === undefined ? null : BigInt(row.close);
+        const [row] = await this.#rows(
+            'SELECT close FROM candles WHERE pair = $1 ORDER BY hour_start DESC LIMIT 1',
+            [pool.toLowerCase()]
+        );
+        return row === undefined ? null : big(row.close);
     }
 
-    public volumeSince(pool: string, sinceHour: number): { volume0: bigint; volume1: bigint }
+    public async volumeSince(pool: string, sinceHour: number): Promise<{ volume0: bigint; volume1: bigint }>
     {
-        const rows = this.#db
-            .prepare('SELECT volume0, volume1 FROM candles WHERE pair = ? AND hour_start >= ?')
-            .all(pool.toLowerCase(), sinceHour) as unknown as Array<{ volume0: string; volume1: string }>;
-        let volume0 = 0n;
-        let volume1 = 0n;
-        for (const row of rows)
-        {
-            volume0 += BigInt(row.volume0);
-            volume1 += BigInt(row.volume1);
-        }
-        return { volume0, volume1 };
+        const [row] = await this.#rows(
+            'SELECT COALESCE(SUM(volume0), 0) AS volume0, COALESCE(SUM(volume1), 0) AS volume1 '
+                + 'FROM candles WHERE pair = $1 AND hour_start >= $2',
+            [pool.toLowerCase(), sinceHour]
+        );
+        return { volume0: big(row.volume0), volume1: big(row.volume1) };
     }
 }

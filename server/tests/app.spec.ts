@@ -1,5 +1,5 @@
 // The market API exercised the template way: pure app.handle(new Request(...)),
-// no sockets, over a seeded in-memory database.
+// no sockets, over a seeded in-process PostgreSQL (PGlite, see pg.ts).
 
 import type { Deployment } from '@nuraswap/shared/deployments';
 import { WAD } from '@nuraswap/shared/math';
@@ -9,9 +9,10 @@ import { describe, expect, it } from 'vitest';
 import { buildApp, createApi } from '../src/app.ts';
 import { applyEvent } from '../src/indexer/apply.ts';
 import { feeAprBps } from '../src/indexer/pricing.ts';
-import { IndexerDb } from '../src/indexer/db.ts';
 import type { ApplyContext } from '../src/indexer/apply.ts';
-import type { Address } from '../src/indexer/db.ts';
+import type { Address, IndexerDb } from '../src/indexer/db.ts';
+
+import { freshDb } from './pg.ts';
 
 const WNURA = '0x000000000000000000000000000000000000b0b0' as Address;
 const ALPHA = '0x0000000000000000000000000000000000000001' as Address;
@@ -51,12 +52,12 @@ const DEPLOYMENT: Deployment = {
     }
 };
 
-function seededDb(): IndexerDb
+async function seededDb(): Promise<IndexerDb>
 {
-    const db = new IndexerDb(':memory:');
+    const db = await freshDb();
     for (const token of DEPLOYMENT.tokens)
     {
-        db.upsertToken(token);
+        await db.upsertToken(token);
     }
     const context: ApplyContext = {
         timestampOf: () => Math.floor(Date.now() / 1000),
@@ -65,13 +66,13 @@ function seededDb(): IndexerDb
     // ALPHA/USDT at $2.50 and WNURA/USDT at $850. What each pool HOLDS stands in
     // for its TVL - a concentrated pool has no reserves to derive one from - and
     // its slot0 price is what the price graph and candles are built from.
-    applyEvent(db, { kind: 'poolCreated', pool: POOL_AU, token0: ALPHA, token1: USDT, fee: 500, blockNumber: 5 }, context);
-    db.updateV3Balances(POOL_AU, 40_000n * 10n ** 18n, 100_000n * 10n ** 6n);
-    db.updateV3Price(POOL_AU, SQRT_AU);
-    applyEvent(db, { kind: 'poolCreated', pool: POOL_WU, token0: WNURA, token1: USDT, fee: 500, blockNumber: 6 }, context);
-    db.updateV3Balances(POOL_WU, 1000n * 10n ** 18n, 850_000n * 10n ** 6n);
-    db.updateV3Price(POOL_WU, SQRT_WU);
-    applyEvent(db, {
+    await applyEvent(db, { kind: 'poolCreated', pool: POOL_AU, token0: ALPHA, token1: USDT, fee: 500, blockNumber: 5 }, context);
+    await db.updateV3Balances(POOL_AU, 40_000n * 10n ** 18n, 100_000n * 10n ** 6n);
+    await db.updateV3Price(POOL_AU, SQRT_AU);
+    await applyEvent(db, { kind: 'poolCreated', pool: POOL_WU, token0: WNURA, token1: USDT, fee: 500, blockNumber: 6 }, context);
+    await db.updateV3Balances(POOL_WU, 1000n * 10n ** 18n, 850_000n * 10n ** 6n);
+    await db.updateV3Price(POOL_WU, SQRT_WU);
+    await applyEvent(db, {
         kind: 'swap',
         pair: POOL_AU,
         blockNumber: 7,
@@ -87,12 +88,14 @@ function seededDb(): IndexerDb
     return db;
 }
 
-function testApp(
+// Every call reseeds the file's one shared database, so a test holds a single
+// app at a time.
+async function testApp(
     status = { headBlock: 12, indexedBlock: 10 },
     externalPrices: ReadonlyMap<string, bigint> = new Map()
 )
 {
-    const db = seededDb();
+    const db = await seededDb();
     const api = createApi({ db, deployment: DEPLOYMENT, externalPrices: () => externalPrices, status: () => status });
     const app = buildApp({ dev: false, api });
     return {
@@ -119,7 +122,7 @@ describe('market api', () =>
 {
     it('GET /api/market/stats aggregates TVL, volume, and indexer lag', async () =>
     {
-        const response = await testApp().get('/api/market/stats');
+        const response = await (await testApp()).get('/api/market/stats');
         expect(response.status).toBe(200);
         const body = await response.json();
         expect(body.chainId).toBe(1020);
@@ -134,7 +137,7 @@ describe('market api', () =>
 
     it('lets the external feed price a bridged token, but never the stable', async () =>
     {
-        const app = testApp({ headBlock: 12, indexedBlock: 10 }, new Map([
+        const app = await testApp({ headBlock: 12, indexedBlock: 10 }, new Map([
             // A bridged asset is worth what it bridges, so the feed OUTRANKS what a
             // local pool implies about it - that pool is the thin one, not the feed.
             ['ALPHA', 999n * WAD],
@@ -153,7 +156,7 @@ describe('market api', () =>
 
     it('GET /api/market/pools lists both pools with prices and APR fields', async () =>
     {
-        const response = await testApp().get('/api/market/pools');
+        const response = await (await testApp()).get('/api/market/pools');
         const pools = await response.json();
         expect(pools).toHaveLength(2);
         const alphaPool = pools.find((entry: { address: string }) => entry.address === POOL_AU);
@@ -174,7 +177,7 @@ describe('market api', () =>
 
     it('GET /api/market/pools/:address returns candles, 404s unknown pools', async () =>
     {
-        const app = testApp();
+        const app = await testApp();
         const detail = await app.get(`/api/market/pools/${ POOL_AU }`);
         expect(detail.status).toBe(200);
         const body = await detail.json();
@@ -186,7 +189,7 @@ describe('market api', () =>
 
     it('GET /api/market/pools/:address/traded answers the boolean without the candle detail', async () =>
     {
-        const app = testApp();
+        const app = await testApp();
         // The seeded pool has a swap in its history: it has traded.
         const traded = await (await app.get(`/api/market/pools/${ POOL_AU }/traded`)).json();
         expect(traded).toEqual({ traded: true });
@@ -203,7 +206,7 @@ describe('market api', () =>
         // A concentrated pool has no reserves, so its balances stand in and its
         // price comes off the sqrtPriceX96 the swap reported - here the encoding
         // of ALPHA/USDT at 2.50 over 18 and 6 decimals.
-        const app = testApp();
+        const app = await testApp();
 
         const detail = await app.get(`/api/market/pools/${ POOL_AU }`);
         expect(detail.status).toBe(200);
@@ -220,7 +223,7 @@ describe('market api', () =>
 
     it('GET /api/market/txs renders the swap with in/out direction', async () =>
     {
-        const response = await testApp().get('/api/market/txs');
+        const response = await (await testApp()).get('/api/market/txs');
         const txs = await response.json();
         expect(txs).toHaveLength(1);
         expect(txs[0].kind).toBe('swap');
@@ -232,7 +235,7 @@ describe('market api', () =>
 
     it('GET /api/market/tokens serves the registry with USD prices', async () =>
     {
-        const tokens = await (await testApp().get('/api/market/tokens')).json();
+        const tokens = await (await (await testApp()).get('/api/market/tokens')).json();
         expect(tokens.map((token: { symbol: string }) => token.symbol).sort()).toEqual(['ALPHA', 'USDT', 'WNURA']);
         const bySymbol = Object.fromEntries(tokens.map((token: { symbol: string; priceUsd: number }) => [token.symbol, token.priceUsd]));
         expect(bySymbol.USDT).toBe(1);
@@ -244,7 +247,7 @@ describe('market api', () =>
 
     it('GET /api/market/txs?account= filters to the caller', async () =>
     {
-        const app = testApp();
+        const app = await testApp();
         const mine = await (await app.get(`/api/market/txs?account=${ TRADER }`)).json();
         expect(mine).toHaveLength(1);
         const nobody = await (await app.get('/api/market/txs?account=0x00000000000000000000000000000000000000dd')).json();
@@ -253,7 +256,7 @@ describe('market api', () =>
 
     it('GET /api/market/deployment serves the active deployment', async () =>
     {
-        const deployment = await (await testApp().get('/api/market/deployment')).json();
+        const deployment = await (await (await testApp()).get('/api/market/deployment')).json();
         expect(deployment.chainId).toBe(1020);
         expect(deployment.contracts.wnura).toBe(DEPLOYMENT.contracts.wnura);
         expect(deployment.v3).toEqual(DEPLOYMENT.v3);
@@ -262,7 +265,7 @@ describe('market api', () =>
 
     it('GET /api/healthz still answers', async () =>
     {
-        const response = await testApp().get('/api/healthz');
+        const response = await (await testApp()).get('/api/healthz');
         expect((await response.json()).ok).toBe(true);
     });
 });
@@ -275,7 +278,7 @@ describe('api surface', () =>
 {
     it('answers JSON on every route', async () =>
     {
-        const app = testApp();
+        const app = await testApp();
         for (const route of ROUTES)
         {
             const response = await app.get(route);
@@ -288,7 +291,7 @@ describe('api surface', () =>
 
     it('refuses every method except reads, and says which are allowed', async () =>
     {
-        const app = testApp();
+        const app = await testApp();
         for (const method of ['POST', 'PUT', 'PATCH', 'DELETE'])
         {
             const response = await app.send('/api/market/stats', { method });
@@ -301,13 +304,13 @@ describe('api surface', () =>
 
     it('serves HEAD alongside GET', async () =>
     {
-        const response = await testApp().send('/api/market/stats', { method: 'HEAD' });
+        const response = await (await testApp()).send('/api/market/stats', { method: 'HEAD' });
         expect(response.status).toBe(200);
     });
 
     it('404s an unknown route with a typed error body', async () =>
     {
-        const app = testApp();
+        const app = await testApp();
         for (const path of ['/api/market/nope', '/api/nope', '/nope'])
         {
             const response = await app.get(path);
@@ -321,12 +324,12 @@ describe('api surface', () =>
     // author has to decide deliberately rather than by accident.
     it('leaves the database untouched no matter what is called', async () =>
     {
-        const app = testApp();
+        const app = await testApp();
         const before = {
-            pools: app.db.listV3Pools().length,
-            tokens: app.db.listTokens().length,
-            events: app.db.recentEvents(100).length,
-            balances: app.db.getV3Pool(POOL_AU)?.balance0
+            pools: (await app.db.listV3Pools()).length,
+            tokens: (await app.db.listTokens()).length,
+            events: (await app.db.recentEvents(100)).length,
+            balances: (await app.db.getV3Pool(POOL_AU))?.balance0
         };
         for (const route of ROUTES)
         {
@@ -337,21 +340,21 @@ describe('api surface', () =>
             await app.send('/api/market/pools', { method, body: '{"reserve0":"0"}' });
         }
         expect({
-            pools: app.db.listV3Pools().length,
-            tokens: app.db.listTokens().length,
-            events: app.db.recentEvents(100).length,
-            balances: app.db.getV3Pool(POOL_AU)?.balance0
+            pools: (await app.db.listV3Pools()).length,
+            tokens: (await app.db.listTokens()).length,
+            events: (await app.db.recentEvents(100)).length,
+            balances: (await app.db.getV3Pool(POOL_AU))?.balance0
         }).toEqual(before);
     });
 
     it('publishes a manifest whose routes match the ones it serves', async () =>
     {
-        const manifest = await (await testApp().get('/api/_manifest')).json();
+        const app = await testApp();
+        const manifest = await (await app.get('/api/_manifest')).json();
         expect(manifest.market.stats).toEqual({ method: 'GET', path: '/market/stats' });
         expect(manifest.market.pool.path).toBe('/market/pools/:address');
         // Every declared route resolves - the browser's typed client is built
         // from exactly this, so a drift here is a dead call site there.
-        const app = testApp();
         for (const entry of Object.values(manifest.market) as Array<{ path: string }>)
         {
             const path = entry.path.replace(':address', POOL_AU);
@@ -364,7 +367,7 @@ describe('response shapes', () =>
 {
     it('sends every on-chain amount as a decimal string, never a JSON number', async () =>
     {
-        const app = testApp();
+        const app = await testApp();
         const [pool] = await (await app.get('/api/market/pools')).json();
         for (const field of ['reserve0', 'reserve1', 'priceWad'])
         {
@@ -384,7 +387,7 @@ describe('response shapes', () =>
 
     it('sends USD figures as numbers at display precision', async () =>
     {
-        const stats = await (await testApp().get('/api/market/stats')).json();
+        const stats = await (await (await testApp()).get('/api/market/stats')).json();
         expect(typeof stats.tvlUsd).toBe('number');
         expect(typeof stats.volume24hUsd).toBe('number');
         expect(Number.isInteger(stats.poolCount)).toBe(true);
@@ -393,7 +396,7 @@ describe('response shapes', () =>
 
     it('gives every pool the full row the table renders', async () =>
     {
-        const pools = await (await testApp().get('/api/market/pools')).json();
+        const pools = await (await (await testApp()).get('/api/market/pools')).json();
         for (const pool of pools)
         {
             expect(Object.keys(pool).sort()).toEqual([
@@ -405,7 +408,7 @@ describe('response shapes', () =>
 
     it('gives the deployment exactly the fields the app reads', async () =>
     {
-        const deployment = await (await testApp().get('/api/market/deployment')).json();
+        const deployment = await (await (await testApp()).get('/api/market/deployment')).json();
         expect(Object.keys(deployment).sort()).toEqual([
             'chainId', 'contracts', 'explorerUrl', 'faucet', 'networkName', 'rpcUrl', 'tokens', 'v3'
         ]);
@@ -422,7 +425,7 @@ describe('pool detail', () =>
 {
     it('finds a pool whichever case the address is asked for in', async () =>
     {
-        const app = testApp();
+        const app = await testApp();
         const lower = await app.get(`/api/market/pools/${ POOL_AU }`);
         const upper = await app.get(`/api/market/pools/${ POOL_AU.toUpperCase() }`);
         expect(lower.status).toBe(200);
@@ -432,14 +435,14 @@ describe('pool detail', () =>
 
     it('404s an unknown pool with the reason, not a blank body', async () =>
     {
-        const response = await testApp().get('/api/market/pools/0x00000000000000000000000000000000000000ee');
+        const response = await (await testApp()).get('/api/market/pools/0x00000000000000000000000000000000000000ee');
         expect(response.status).toBe(404);
         expect((await response.json()).error.message).toBe('unknown pool');
     });
 
     it('404s a malformed address rather than searching for it', async () =>
     {
-        const app = testApp();
+        const app = await testApp();
         for (const bad of ['0x', 'not-an-address', '0x' + 'f'.repeat(200), '%20', '..%2F..%2Fetc'])
         {
             const response = await app.get(`/api/market/pools/${ encodeURIComponent(bad) }`);
@@ -451,7 +454,7 @@ describe('pool detail', () =>
     // quote has to come back as "no such pool", not as a different pool.
     it('treats an injection payload in the path as an address that does not exist', async () =>
     {
-        const app = testApp();
+        const app = await testApp();
         const hostile = encodeURIComponent("' OR '1'='1");
         const response = await app.get(`/api/market/pools/${ hostile }`);
         expect(response.status).toBe(404);
@@ -461,7 +464,7 @@ describe('pool detail', () =>
 
     it('returns candles in ascending, gapless hours', async () =>
     {
-        const detail = await (await testApp().get(`/api/market/pools/${ POOL_AU }`)).json();
+        const detail = await (await (await testApp()).get(`/api/market/pools/${ POOL_AU }`)).json();
         const hours = detail.candles.map((candle: { hourStart: number }) => candle.hourStart);
         expect(hours.length).toBeGreaterThan(0);
         for (let index = 1; index < hours.length; index++)
@@ -472,7 +475,7 @@ describe('pool detail', () =>
 
     it('carries the pool row alongside the candles', async () =>
     {
-        const detail = await (await testApp().get(`/api/market/pools/${ POOL_AU }`)).json();
+        const detail = await (await (await testApp()).get(`/api/market/pools/${ POOL_AU }`)).json();
         expect(detail.token0.symbol).toBe('ALPHA');
         expect(detail.reserve0).toBe((40_000n * 10n ** 18n).toString());
         expect(Array.isArray(detail.candles)).toBe(true);
@@ -483,7 +486,7 @@ describe('transaction feed', () =>
 {
     it('filters by account and answers empty for a stranger', async () =>
     {
-        const app = testApp();
+        const app = await testApp();
         expect(await (await app.get(`/api/market/txs?account=${ TRADER }`)).json()).toHaveLength(1);
         const stranger = await app.get('/api/market/txs?account=0x00000000000000000000000000000000000000dd');
         expect(stranger.status).toBe(200);
@@ -492,13 +495,13 @@ describe('transaction feed', () =>
 
     it('matches an account whatever case it is asked for in', async () =>
     {
-        const response = await testApp().get(`/api/market/txs?account=${ TRADER.toUpperCase() }`);
+        const response = await (await testApp()).get(`/api/market/txs?account=${ TRADER.toUpperCase() }`);
         expect(await response.json()).toHaveLength(1);
     });
 
     it('answers an empty list, not an error, for hostile filter values', async () =>
     {
-        const app = testApp();
+        const app = await testApp();
         const payloads = ["' OR 1=1 --", '"; DROP TABLE events; --', '../../etc/passwd', '<script>alert(1)</script>', '\u0000'];
         for (const payload of payloads)
         {
@@ -512,7 +515,7 @@ describe('transaction feed', () =>
 
     it('ignores query parameters it does not declare', async () =>
     {
-        const response = await testApp().get('/api/market/txs?limit=999&order=drop&account=');
+        const response = await (await testApp()).get('/api/market/txs?limit=999&order=drop&account=');
         expect(response.status).toBe(200);
         // An empty account is a filter for the empty address, not "no filter".
         expect(await response.json()).toEqual([]);
@@ -522,7 +525,7 @@ describe('transaction feed', () =>
     {
         // Symbols come from the chain and can contain anything; the API is JSON,
         // so the guarantee is that they arrive as data and stay strings.
-        const app = testApp();
+        const app = await testApp();
         const body = await (await app.get('/api/market/txs')).json();
         expect(typeof body[0].tokenA.symbol).toBe('string');
         expect(typeof body[0].txHash).toBe('string');
@@ -533,7 +536,7 @@ describe('indexer lag reporting', () =>
 {
     it('reports how far behind the head the index is', async () =>
     {
-        const stats = await (await testApp({ headBlock: 100, indexedBlock: 60 }).get('/api/market/stats')).json();
+        const stats = await (await (await testApp({ headBlock: 100, indexedBlock: 60 })).get('/api/market/stats')).json();
         expect(stats.blocksBehind).toBe(40);
         expect(stats.indexedBlock).toBe(60);
     });
@@ -542,7 +545,7 @@ describe('indexer lag reporting', () =>
     // A negative lag would render as a banner claiming the future.
     it('never reports a negative lag', async () =>
     {
-        const stats = await (await testApp({ headBlock: 10, indexedBlock: 42 }).get('/api/market/stats')).json();
+        const stats = await (await (await testApp({ headBlock: 10, indexedBlock: 42 })).get('/api/market/stats')).json();
         expect(stats.blocksBehind).toBe(0);
     });
 });
@@ -551,9 +554,9 @@ describe('unpriceable and unknown data', () =>
 {
     it('names a token the registry has never seen without failing the request', async () =>
     {
-        const db = seededDb();
+        const db = await seededDb();
         const GHOST = '0x00000000000000000000000000000000000000e1' as Address;
-        db.upsertV3Pool({
+        await db.upsertV3Pool({
             address: '0x00000000000000000000000000000000000000e2' as Address,
             token0: GHOST,
             token1: USDT,
@@ -573,12 +576,11 @@ describe('unpriceable and unknown data', () =>
         const ghostPool = pools.find((entry: { token0: { address: string } }) => entry.token0.address === GHOST);
         expect(ghostPool.token0.symbol).toBe('???');
         expect(ghostPool.token0.decimals).toBe(18);
-        db.close();
     });
 
     it('serves an empty exchange without inventing numbers', async () =>
     {
-        const db = new IndexerDb(':memory:');
+        const db = await freshDb();
         const api = createApi({
             db,
             deployment: DEPLOYMENT,
@@ -593,6 +595,5 @@ describe('unpriceable and unknown data', () =>
         expect(await (await app.handle(new Request('http://local/api/market/pools'))).json()).toEqual([]);
         expect(await (await app.handle(new Request('http://local/api/market/tokens'))).json()).toEqual([]);
         expect(await (await app.handle(new Request('http://local/api/market/txs'))).json()).toEqual([]);
-        db.close();
     });
 });
