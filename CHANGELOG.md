@@ -9,8 +9,30 @@ this changelog covers the application, the indexer, and the shared maths.
 
 ## [Unreleased]
 
+## [1.5.5] - 2026-10-24
+
 ### Changed
 
+- **The indexer stores into PostgreSQL; SQLite is gone.** `server/src/indexer/db.ts`
+  talks to a `pg` pool named by `DATABASE_URL`, replacing the `node:sqlite` file
+  under `DATA_DIR`. Every uint256 column is `NUMERIC(78,0)`, so the candle merge
+  and the 24h volume sum run in SQL rather than in JS over TEXT, and block
+  numbers and timestamps are `BIGINT`. The storage API is async end to end:
+  the market handlers build one token-and-pool view per request instead of a
+  query per row, and the indexer's `stop()` resolves once its last write has
+  returned, so shutdown ends the pool without cutting a chunk in half. An
+  existing SQLite database is not carried over: the first boot against an
+  empty Postgres reindexes from `startBlock`. The server suite runs against an
+  in-process PostgreSQL (PGlite), so it still needs no database server.
+- **Configuration has no defaults, and it lives at the repository root.** Every
+  variable `server/src/main.ts` reads is required, and a missing or empty one
+  stops the boot with the full list. The server reads `.env` from the root, and
+  `CLIENT_DIR`/`SSR_ENTRY` resolve against the root too. `.env.example` lists
+  every key with no value. The Docker image no longer bakes in `PORT` or
+  `NODE_ENV`, and its `/app/data` volume is gone.
+- **The V3 periphery moved.** `shared/deployments/1020.json` points at the new
+  SwapRouter, QuoterV2 and NonfungiblePositionManager. The whitepaper's address
+  appendix is updated in all ten languages, and the PDFs are regenerated.
 - **The bridged tokens moved to new contracts, and there are four of them.**
   `shared/deployments/1020.json` lists Bridge BNB and Bridge USDT at their new
   addresses and adds Bridge BTC and Bridge ETH, all 18 decimals, as the
@@ -20,6 +42,17 @@ this changelog covers the application, the indexer, and the shared maths.
   ETH marks, which a listed address earns the same way the others do. The
   whitepaper's address appendix and the sentences naming the bridged tokens are
   updated in all ten languages, and the PDFs are regenerated.
+- Dependencies are at their latest releases, TypeScript excepted (held at 6).
+
+### Fixed
+
+- A NUL byte in a lookup (`/api/market/txs?account=%00`) now matches nothing
+  instead of answering 500. PostgreSQL rejects the byte in a text parameter.
+
+### Removed
+
+- The `service:*` scripts and `scripts/`, `TESTING.md`, `CONTRIBUTING.md`,
+  `.coderabbit.yaml`, and the `.claude/` agents, skills and rules.
 
 ## [1.5.0] - 2026-10-05
 
