@@ -25,6 +25,7 @@ import {
     v3Addresses
 } from '../../lib/chain.ts';
 import type { Address } from '../../lib/chain.ts';
+import { trace, traceError } from '../../lib/debug.ts';
 import { fmtAmount, fmtPercentBps } from '../../lib/format.ts';
 import { t } from '../../lib/i18n.ts';
 import { buildCreateAndMint, buildMint, enabledFeeTiers, poolsForPair, sortTokens } from '../../lib/v3.ts';
@@ -113,16 +114,18 @@ export default component AddV3Liquidity(props: {
     mount
     {
         const v3 = v3Addresses();
+        trace('liquidity', 'add sheet opened', { v3, wnura: wnura(), account: account() });
         if (v3 !== null)
         {
             void enabledFeeTiers(v3.factory).then((list) =>
             {
+                trace('liquidity', 'fee tiers', list);
                 tiers = list;
                 if (!list.some((tier) => tier.fee === fee) && list.length > 0)
                 {
                     fee = list.find((tier) => tier.fee === 3000)?.fee ?? list[0].fee;
                 }
-            }).catch(() => undefined);
+            }).catch((error: unknown) => traceError('liquidity', 'fee tier read failed', error));
         }
     }
 
@@ -152,12 +155,13 @@ export default component AddV3Liquidity(props: {
         void poolsForPair(v3.factory, current.token0, current.token1)
             .then((found) =>
             {
+                trace('liquidity', `pools for ${ key }`, found.map((entry) => ({ fee: entry.fee, address: entry.address })));
                 if (poolsFor === key)
                 {
                     pools = found;
                 }
             })
-            .catch(() => undefined);
+            .catch((error: unknown) => traceError('liquidity', `pool read failed for ${ key }`, error));
     }
 
     derived pool = pools.find((entry) => entry.fee === fee) ?? null;
@@ -360,10 +364,28 @@ export default component AddV3Liquidity(props: {
                         ? t().swap.insufficient
                         : t().liquidity.add;
 
+    // Logged on change only, so the console reads as a timeline of what the
+    // button is waiting for rather than one line per keystroke.
+    effect (actionLabel)
+    {
+        trace('liquidity', `button: ${ actionLabel }`, {
+            ready,
+            firstProvider,
+            fee,
+            tickLower,
+            tickUpper,
+            needsApproveA,
+            needsApproveB,
+            amountA: amountAText,
+            amountB: amountBText
+        });
+    }
+
     const deadline = (): Promise<bigint> => chainDeadline(1200);
 
     const approveToken = async (token: TokenRef, amount: bigint): Promise<void> =>
     {
+        trace('liquidity', `approve ${ token.symbol }`, { spender: manager(), amount });
         busy = true;
         await sendTx(
             `${ t().swap.approve } ${ token.symbol }`,
@@ -379,10 +401,12 @@ export default component AddV3Liquidity(props: {
 
     const supply = async (): Promise<void> =>
     {
+        trace('liquidity', 'confirm clicked');
         const current = ordered;
         const v3 = v3Addresses();
         if (current === null || v3 === null || tickLower === null || tickUpper === null)
         {
+            trace('liquidity', 'confirm ignored: the form is incomplete', { pair: current, v3, tickLower, tickUpper });
             return;
         }
         const owner = account() as Address;
@@ -416,7 +440,8 @@ export default component AddV3Liquidity(props: {
             recipient: owner,
             nativeValue
         };
-        const label = `${ t().liquidity.add }: ${ current.ref0.symbol }/${ current.ref1.symbol } ${ fmtPercentBps(fee / 100) }`;
+        trace('liquidity', firstProvider ? 'creating the pool and minting' : 'minting into the existing pool', { ...request, sqrtPrice });
+        const label = `${ t().liquidity.add }:${ current.ref0.symbol }/${ current.ref1.symbol } ${ fmtPercentBps(fee / 100) }`;
         // The deadline read sits inside the send: awaited before it, a failed
         // read left the button busy forever with no toast to say why.
         const ok = await sendTx(
@@ -651,7 +676,7 @@ export default component AddV3Liquidity(props: {
                                         size="lg"
                                         disabled={ !ready }
                                         testId="v3-add-review"
-                                        onClick={ () => { confirming = true; } }
+                                        onClick={ () => { trace('liquidity', 'review clicked'); confirming = true; } }
                                     >
                                         { actionLabel }
                                     </Button>

@@ -25,6 +25,7 @@ import {
     publicClient
 } from './chain.ts';
 import type { Address } from './chain.ts';
+import { trace } from './debug.ts';
 
 export { ZERO_ADDRESS };
 /** SwapRouter02's "pay me, not the caller" sentinel; the original uses address(0). */
@@ -126,6 +127,7 @@ export async function enabledFeeTiers(factory: Address): Promise<FeeTier[]>
     });
     if (!reads.some((read) => read.status === 'success'))
     {
+        trace('v3', `no fee tier read succeeded on factory ${ factory } - falling back to the canonical four`, reads[0]);
         return FEE_TIERS.map((tier) => ({ ...tier }));
     }
     const enabled: FeeTier[] = [];
@@ -167,6 +169,11 @@ async function poolAddresses(
         })),
         allowFailure: true
     });
+    const failed = reads.filter((read) => read.status !== 'success');
+    if (failed.length > 0)
+    {
+        trace('v3', `${ failed.length } of ${ reads.length } getPool reads failed - those pools look missing`, failed[0]);
+    }
     const found: PoolLocation[] = [];
     wanted.forEach((entry, index) =>
     {

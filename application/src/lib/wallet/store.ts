@@ -11,6 +11,7 @@ import { createWalletClient, custom, type WalletClient } from 'viem';
 
 import type { DeploymentInfo } from '../../api.ts';
 import { ERC20_ABI, chainOf, deployment, ensureDeployment, explorerTxUrl, publicClient, type Address } from '../chain.ts';
+import { trace, traceError } from '../debug.ts';
 import { t } from '../i18n.ts';
 import { classifyTxError } from '../tx-errors.ts';
 import { isHiddenWallet } from './brands.ts';
@@ -555,6 +556,7 @@ export async function addChainToWallet(): Promise<void>
 export async function sendTx(label: string, send: () => Promise<`0x${ string }`>): Promise<boolean>
 {
     const toastId = pushToast('pending', `${ label }…`);
+    trace('tx', `start: ${ label }`, { account: account(), onRightChain: onRightChain() });
     try
     {
         // The chain guard lives HERE, not on each button: the swap page gated its
@@ -568,14 +570,18 @@ export async function sendTx(label: string, send: () => Promise<`0x${ string }`>
             await switchChain().catch(() => undefined);
             if (!onRightChain())
             {
+                trace('tx', 'still on the wrong network after the switch prompt');
                 resolveToast(toastId, 'error', t().errors.wrongNetwork);
                 return false;
             }
         }
+        trace('tx', 'asking the wallet to sign');
         const hash = await send();
+        trace('tx', `sent ${ hash }, waiting for the receipt`);
         const url = explorerTxUrl(hash);
         const receipt = await publicClient().waitForTransactionReceipt({ hash });
         const ok = receipt.status === 'success';
+        trace('tx', `receipt: ${ receipt.status } in block ${ receipt.blockNumber }`);
         resolveToast(
             toastId,
             ok ? 'success' : 'error',
@@ -588,6 +594,7 @@ export async function sendTx(label: string, send: () => Promise<`0x${ string }`>
     }
     catch (error)
     {
+        traceError('tx', `failed (${ classifyTxError(error) }): ${ label }`, error);
         resolveToast(toastId, 'error', mapTxError(error));
         return false;
     }
