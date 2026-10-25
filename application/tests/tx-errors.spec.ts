@@ -40,6 +40,10 @@ describe('classifyTxError', () =>
     {
         expect(classifyTxError(new Error('TransferHelper: TRANSFER_FROM_FAILED'))).toBe('transferFailed');
         expect(classifyTxError(new Error('TransferHelper: TRANSFER_FAILED'))).toBe('transferFailed');
+        // V3 periphery's TransferHelper reverts with bare codes.
+        expect(classifyTxError(new Error('Execution reverted with reason: STF.'))).toBe('transferFailed');
+        expect(classifyTxError(new Error('execution reverted: ST'))).toBe('transferFailed');
+        expect(classifyTxError(new Error('RPC STATUS: 500'))).toBe('unknown');
     });
 
     it('maps a pool too shallow to route', () =>
