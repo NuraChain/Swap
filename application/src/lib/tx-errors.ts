@@ -58,7 +58,8 @@ export function classifyTxError(error: unknown): TxFailure
     // The V3 periphery's TransferHelper reverts with bare codes: STF (transferFrom),
     // ST (transfer), STE (native send). Matched only as a revert reason, since the
     // codes alone are too short to search for anywhere in a message.
-    if (/TRANSFER_FROM_FAILED|TRANSFER_FAILED|(?:reason:|reverted:)\s*(?:STF|ST|STE)\b/.test(message))
+    // Wallets quote the reason (`reverted: "STF"`, `reason="STF"`); viem does not.
+    if (/TRANSFER_FROM_FAILED|TRANSFER_FAILED|(?:reason[:=]|reverted:)\s*"?(?:STF|ST|STE)\b/.test(message))
     {
         return 'transferFailed';
     }

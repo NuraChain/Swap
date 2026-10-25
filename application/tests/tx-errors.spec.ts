@@ -43,6 +43,8 @@ describe('classifyTxError', () =>
         // V3 periphery's TransferHelper reverts with bare codes.
         expect(classifyTxError(new Error('Execution reverted with reason: STF.'))).toBe('transferFailed');
         expect(classifyTxError(new Error('execution reverted: ST'))).toBe('transferFailed');
+        // The shape a browser wallet actually returned for a native-NURA mint.
+        expect(classifyTxError(new Error('execution reverted: "STF" (action="estimateGas", reason="STF")'))).toBe('transferFailed');
         expect(classifyTxError(new Error('RPC STATUS: 500'))).toBe('unknown');
     });
 
