@@ -7,7 +7,7 @@
 // tiers its factory enables. A hardcoded guess would work against mainnet's
 // canonical deployment and silently mis-encode a call against anything else.
 
-import { encodeFunctionData, type Abi } from 'viem';
+import { encodeFunctionData, parseAbi, type Abi } from 'viem';
 
 import { FEE_TIERS, getAmountsForLiquidity, getSqrtRatioAtTick } from '@nuraswap/shared/v3-math';
 
@@ -504,6 +504,45 @@ export async function detectRouterFlavour(router: Address): Promise<'v1' | '02'>
         return '02';
     }
     return 'v1';
+}
+
+const PERIPHERY_WETH9_ABI = parseAbi(['function WETH9() view returns (address)']);
+const nativeWrapCache = new Map<string, boolean>();
+
+/**
+ * Whether a router or position manager can take and pay out native NURA. It
+ * wraps through its own immutable WETH9; a periphery deployed against any
+ * other wrapper does not recognise the pools' WNURA as its own, so a native
+ * payment falls through to transferFrom on WNURA the trader never approved and
+ * reverts with STF. Those flows pay WNURA as a plain ERC20 instead.
+ *
+ * Only a definitive answer is remembered. A failed read says "pay WNURA" for
+ * this attempt - that path works against any periphery - and asks again next
+ * time.
+ */
+export async function wrapsNative(contract: Address, wnura: Address): Promise<boolean>
+{
+    const key = contract.toLowerCase();
+    const known = nativeWrapCache.get(key);
+    if (known !== undefined)
+    {
+        return known;
+    }
+    const weth9 = await Promise.resolve()
+        .then(() => publicClient().readContract({ address: contract, abi: PERIPHERY_WETH9_ABI, functionName: 'WETH9' }))
+        .catch(() => null);
+    if (weth9 === null)
+    {
+        trace('v3', `WETH9() unreadable on ${ contract } - paying WNURA for now`);
+        return false;
+    }
+    const answer = weth9.toLowerCase() === wnura.toLowerCase();
+    if (!answer)
+    {
+        trace('v3', `${ contract } wraps through ${ weth9 }, not WNURA ${ wnura } - native NURA has to be wrapped first`);
+    }
+    nativeWrapCache.set(key, answer);
+    return answer;
 }
 
 export interface SwapParams

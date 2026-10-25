@@ -118,6 +118,8 @@ export const ar: Dict = {
         swapping: 'جارٍ المبادلة',
         wrap: 'تغليف',
         unwrap: 'فك التغليف',
+        wrapFirst: 'المنصة تقبل WNURA هنا، لا NURA. غلّف NURA أولًا. التحويل واحد بواحد ويمكنك فكّه متى شئت.',
+        receiveWrapped: 'ستستلم WNURA بدل NURA. لاستعادة NURA، بادل WNURA إلى NURA. التحويل واحد بواحد.',
         rate: 'السعر',
         priceImpact: 'أثر السعر',
         minReceived: 'الحد الأدنى للاستلام',

@@ -118,6 +118,8 @@ export const hi: Dict = {
         swapping: 'स्वैप हो रहा है',
         wrap: 'रैप',
         unwrap: 'अनरैप',
+        wrapFirst: 'यहाँ एक्सचेंज NURA नहीं, WNURA लेता है। पहले अपना NURA रैप करें। यह 1:1 है और कभी भी वापस हो सकता है।',
+        receiveWrapped: 'आपको NURA नहीं, WNURA मिलेगा। NURA वापस पाने के लिए WNURA को NURA में स्वैप करें। यह 1:1 है।',
         rate: 'दर',
         priceImpact: 'प्राइस इम्पैक्ट',
         minReceived: 'न्यूनतम प्राप्ति',

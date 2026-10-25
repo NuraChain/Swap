@@ -55,6 +55,8 @@ interface Script
     failEveryRead: boolean;
     /** The next N reads throw - a partial outage, not a total one. */
     failNextReads: number;
+    /** The wrapper the router and manager were deployed against. */
+    weth9: Address;
 }
 
 let script: Script;
@@ -78,7 +80,8 @@ function freshScript(): Script
         owed: { amount0: 0n, amount1: 0n },
         calls: [],
         failEveryRead: false,
-        failNextReads: 0
+        failNextReads: 0,
+        weth9: WNURA
     };
 }
 
@@ -172,6 +175,8 @@ async function answer(read: ReadArgs): Promise<unknown>
             }
             return abiOutputCount(read.abi, 'quoteExactInputSingle') === 4 ? [out, 0n, 0, 0n] : out;
         }
+        case 'WETH9':
+            return script.weth9;
         case 'positionManager':
         {
             // Only SwapRouter02 has one. A v1 router reverts, which is the whole
@@ -523,6 +528,42 @@ describe('the SwapRouter probe', () =>
         const swap = decodeFunctionData({ abi: request.abi, data: calls[0] });
         expect((swap.args?.[0] as { recipient: string }).recipient).toBe('0x0000000000000000000000000000000000000002');
         expect(decodeFunctionData({ abi: request.abi, data: calls[1] }).functionName).toBe('unwrapWETH9');
+    });
+});
+
+// A periphery deployed against another wrapper takes NURA as value, wraps it
+// into ITS WETH9, and then cannot pay the pool's WNURA - the mint or swap
+// reverts with STF. The probe is what tells the pages to pay WNURA instead.
+describe('the native-wrap probe', () =>
+{
+    it('says yes when the periphery wraps through the pools\' WNURA, in any case', async () =>
+    {
+        script.weth9 = WNURA.toUpperCase().replace('0X', '0x') as Address;
+        const v3 = await loadV3();
+        expect(await v3.wrapsNative(MANAGER, WNURA)).toBe(true);
+    });
+
+    it('says no when the periphery wraps through a different contract', async () =>
+    {
+        script.weth9 = '0x00000000000000000000000000000000000000f0';
+        const v3 = await loadV3();
+        expect(await v3.wrapsNative(ROUTER, WNURA)).toBe(false);
+        // Definitive, so remembered.
+        const probes = script.calls.filter((name) => name === 'WETH9').length;
+        expect(await v3.wrapsNative(ROUTER, WNURA)).toBe(false);
+        expect(script.calls.filter((name) => name === 'WETH9').length).toBe(probes);
+    });
+
+    // An unreachable RPC is not an answer: pay WNURA (works anywhere) for this
+    // attempt, and ask again next time.
+    it('pays WNURA after a failed read without pinning the answer', async () =>
+    {
+        script.failEveryRead = true;
+        const v3 = await loadV3();
+        expect(await v3.wrapsNative(MANAGER, WNURA)).toBe(false);
+
+        script.failEveryRead = false;
+        expect(await v3.wrapsNative(MANAGER, WNURA)).toBe(true);
     });
 });
 

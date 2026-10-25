@@ -120,6 +120,8 @@ export const en = {
         swapping: 'Swapping',
         wrap: 'Wrap',
         unwrap: 'Unwrap',
+        wrapFirst: 'The exchange takes WNURA here, not NURA. Wrap your NURA first. It is 1:1 and you can unwrap any time.',
+        receiveWrapped: 'You will receive WNURA, not NURA. To get NURA back, swap WNURA to NURA. It is 1:1.',
         rate: 'Rate',
         priceImpact: 'Price impact',
         minReceived: 'Minimum received',

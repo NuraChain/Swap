@@ -118,6 +118,8 @@ export const ru: Dict = {
         swapping: 'Обмениваем',
         wrap: 'Обернуть',
         unwrap: 'Развернуть',
+        wrapFirst: 'Здесь биржа принимает WNURA, а не NURA. Сначала оберните NURA. Это 1:1, и вернуть можно в любой момент.',
+        receiveWrapped: 'Вы получите WNURA, а не NURA. Чтобы вернуть NURA, обменяйте WNURA на NURA. Это 1:1.',
         rate: 'Курс',
         priceImpact: 'Влияние на цену',
         minReceived: 'Минимум к получению',

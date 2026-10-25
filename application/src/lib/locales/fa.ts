@@ -118,6 +118,8 @@ export const fa: Dict = {
         swapping: 'در حال مبادله',
         wrap: 'تبدیل به رپد',
         unwrap: 'بازکردن رپد',
+        wrapFirst: 'صرافی اینجا WNURA می‌گیرد، نه NURA. اول NURA را به WNURA تبدیل کنید. نسبت یک به یک است و هر وقت بخواهید برمی‌گردد.',
+        receiveWrapped: 'به جای NURA، WNURA دریافت می‌کنید. برای برگشت به NURA، WNURA را به NURA مبادله کنید. نسبت یک به یک است.',
         rate: 'نرخ',
         priceImpact: 'اثر قیمتی',
         minReceived: 'حداقل دریافتی',

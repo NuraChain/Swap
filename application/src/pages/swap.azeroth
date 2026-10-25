@@ -15,12 +15,14 @@ import {
     ensureDeployment,
     isNativeToken,
     refreshAllowances,
-    v3Addresses
+    v3Addresses,
+    wnuraToken
 } from '../lib/chain.ts';
 import type { Address } from '../lib/chain.ts';
 import { fmtPercentBps } from '../lib/format.ts';
 import { t } from '../lib/i18n.ts';
-import { bestTier, buildV3Swap, poolsForPair, quoteAllTiers } from '../lib/v3.ts';
+import { trace } from '../lib/debug.ts';
+import { bestTier, buildV3Swap, poolsForPair, quoteAllTiers, wrapsNative } from '../lib/v3.ts';
 import type { TierQuote, V3PoolState } from '../lib/v3.ts';
 import {
     account,
@@ -87,6 +89,8 @@ export default component Swap()
     state slippageBps = 50;
     state deadlineMinutes = 20;
     state infiniteApprove = false;
+    /** False when the router cannot wrap or unwrap NURA itself: NURA moves as WNURA. */
+    state routerWraps = true;
 
     state tokenList: TokenRef[] = [NATIVE_TOKEN];
 
@@ -122,6 +126,15 @@ export default component Swap()
         void (async () =>
         {
             info = await ensureDeployment();
+            const router = v3Addresses()?.swapRouter;
+            if (router !== undefined)
+            {
+                void wrapsNative(router, wnuraAddress()).then((ok) =>
+                {
+                    trace('swap', ok ? 'the router takes native NURA' : 'the router cannot wrap NURA - asking for WNURA');
+                    routerWraps = ok;
+                });
+            }
             const served = await client.market.tokens();
             tokenList = [NATIVE_TOKEN, ...served];
             tokenOut = served.find((token) => token.symbol === 'NURA') ?? served[0] ?? null;
@@ -275,9 +288,23 @@ export default component Swap()
         && ((isNativeToken(tokenIn) && sameToken(hopAddress(tokenOut as TokenRef), wnuraAddress()) && !isNativeToken(tokenOut as TokenRef))
             || (isNativeToken(tokenOut as TokenRef) && sameToken(hopAddress(tokenIn), wnuraAddress()) && !isNativeToken(tokenIn)));
 
+    // A router that cannot wrap takes NURA only as WNURA, and cannot pay NURA
+    // out either - both sides go as the wrapper, and the page says so.
+    derived payWrapped = !routerWraps && !isWrapPair && isNativeToken(tokenIn);
+    derived receiveWrapped = !routerWraps && !isWrapPair && tokenOut !== null && isNativeToken(tokenOut as TokenRef);
+    /** The token the router actually pulls. */
+    derived payToken = payWrapped ? wnuraToken() : tokenIn;
+
+    const wnuraBalance = (): bigint => balances()[wnuraAddress().toLowerCase()] ?? 0n;
+
+    // What is already wrapped counts toward a WNURA payment: only the rest is wrapped.
     derived balanceIn = isNativeToken(tokenIn)
-        ? nativeBalance()
+        ? nativeBalance() + (payWrapped ? wnuraBalance() : 0n)
         : balances()[tokenIn.address.toLowerCase()] ?? 0n;
+
+    derived wrapShortfall = !payWrapped || parsedIn === null || (parsedIn as bigint) <= wnuraBalance()
+        ? 0n
+        : (parsedIn as bigint) - wnuraBalance();
 
     derived balanceOut = tokenOut === null
         ? null
@@ -390,20 +417,21 @@ export default component Swap()
     // the length of an RPC round-trip, every five seconds. The action button
     // flipped between "Approve X" and "Swap" on its own, and a click that landed
     // in the gap sent a swap the router had no allowance for - which reverts.
-    effect (tokenIn, account(), txEpoch(), info)
+    effect (tokenIn, account(), txEpoch(), info, routerWraps)
     {
         const owner = account();
-        const key = `${ owner ?? '' }|${ tokenIn.address }|${ info === null ? '' : spender() }`;
+        const pulled = payToken;
+        const key = `${ owner ?? '' }|${ pulled.address }|${ info === null ? '' : spender() }`;
         if (key !== allowanceKey)
         {
             allowanceKey = key;
             allowance = MAX_UINT256;
         }
-        if (info === null || owner === null || isNativeToken(tokenIn))
+        if (info === null || owner === null || isNativeToken(pulled))
         {
             return;
         }
-        refreshAllowances(owner, [{ token: tokenIn, spender: spender(), onValue: (value) => { allowance = value; } }]);
+        refreshAllowances(owner, [{ token: pulled, spender: spender(), onValue: (value) => { allowance = value; } }]);
     }
 
     // Holes under a <Show> re-evaluate while the guard is reacting, so markup
@@ -415,7 +443,7 @@ export default component Swap()
     // withdraw() burns the caller's OWN balance - neither moves tokens through
     // the router, so demanding approval here would cost a pointless transaction.
     derived needsApprove = !isWrapPair
-        && !isNativeToken(tokenIn)
+        && !isNativeToken(payToken)
         && parsedIn !== null
         && allowance < (parsedIn as bigint);
 
@@ -453,14 +481,29 @@ export default component Swap()
         {
             return;
         }
+        const pulled = payToken;
         busy = true;
         await sendTx(
-            `${ t().swap.approve } ${ tokenIn.symbol }`,
+            `${ t().swap.approve } ${ pulled.symbol }`,
             () => requiredWallet().writeContract({
-                address: tokenIn.address as Address,
+                address: pulled.address as Address,
                 abi: ERC20_ABI,
                 functionName: 'approve',
                 args: [spender(), infiniteApprove ? MAX_UINT256 : amount]
+            } as never)
+        );
+        busy = false;
+    };
+
+    const wrapForRouter = async (): Promise<void> =>
+    {
+        const amount = wrapShortfall;
+        trace('swap', 'wrapping NURA the router cannot take', { amount });
+        busy = true;
+        await sendTx(
+            `${ t().swap.wrap } NURA`,
+            () => requiredWallet().writeContract({
+                address: wnuraAddress(), abi: WNURA_ABI, functionName: 'deposit', value: amount
             } as never)
         );
         busy = false;
@@ -515,9 +558,10 @@ export default component Swap()
                 amountOutMin: minOut,
                 recipient: owner,
                 deadline: when,
-                nativeIn: isNativeToken(tokenIn),
-                nativeOut: isNativeToken(out)
+                nativeIn: isNativeToken(tokenIn) && !payWrapped,
+                nativeOut: isNativeToken(out) && !receiveWrapped
             });
+            trace('swap', 'sending', { payWrapped, receiveWrapped, fee: current.fee, amount, minOut });
             await sendTx(label, () => requiredWallet().writeContract(request as never));
             amountText = '';
         }
@@ -763,38 +807,53 @@ export default component Swap()
                                 }
                                 >
                                     <Show
-                                        when={ !needsApprove }
+                                        when={ wrapShortfall === 0n }
                                         fallback={
-                                        <Button block size="lg" busy={ busy } testId="approve" onClick={ () => void approve() }>
-                                            { `${ t().swap.approve } ${ tokenIn.symbol }` }
-                                        </Button>
+                                        <div class="flex flex-col gap-2">
+                                            <p class="text-center text-xs leading-relaxed text-faint">{ t().swap.wrapFirst }</p>
+                                            <Button block size="lg" busy={ busy } testId="wrap-first" onClick={ () => void wrapForRouter() }>
+                                                { `${ t().swap.wrap } NURA` }
+                                            </Button>
+                                        </div>
                                     }
                                     >
                                         <Show
-                                            when={ highImpact && !confirmedHighImpact }
+                                            when={ !needsApprove }
                                             fallback={
-                                            <Button
-                                                block
-                                                size="lg"
-                                                busy={ busy || quoting }
-                                                disabled={ quote === null && !isWrapPair }
-                                                testId="swap"
-                                                onClick={ () => void swap() }
-                                            >
-                                                { isWrapPair
-                                                    ? (isNativeToken(tokenIn) ? t().swap.wrap : t().swap.unwrap)
-                                                    : t().swap.swapAction }
+                                            <Button block size="lg" busy={ busy } testId="approve" onClick={ () => void approve() }>
+                                                { `${ t().swap.approve } ${ payToken.symbol }` }
                                             </Button>
                                         }
                                         >
-                                            <Button block size="lg" variant="danger" testId="swap-anyway" onClick={ () => { confirmedHighImpact = true; } }>
-                                            { t().swap.confirmHighImpact }
-                                            </Button>
+                                            <Show
+                                                when={ highImpact && !confirmedHighImpact }
+                                                fallback={
+                                                <Button
+                                                    block
+                                                    size="lg"
+                                                    busy={ busy || quoting }
+                                                    disabled={ quote === null && !isWrapPair }
+                                                    testId="swap"
+                                                    onClick={ () => void swap() }
+                                                >
+                                                    { isWrapPair
+                                                        ? (isNativeToken(tokenIn) ? t().swap.wrap : t().swap.unwrap)
+                                                        : t().swap.swapAction }
+                                                </Button>
+                                            }
+                                            >
+                                                <Button block size="lg" variant="danger" testId="swap-anyway" onClick={ () => { confirmedHighImpact = true; } }>
+                                                { t().swap.confirmHighImpact }
+                                                </Button>
+                                            </Show>
                                         </Show>
                                     </Show>
                                 </Show>
                             </Show>
                         </Show>
+                    </Show>
+                    <Show when={ receiveWrapped }>
+                        <p class="mt-2 text-center text-xs leading-relaxed text-faint" data-testid="receive-wrapped">{ t().swap.receiveWrapped }</p>
                     </Show>
                 </div>
             </div>

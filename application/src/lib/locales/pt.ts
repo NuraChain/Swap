@@ -118,6 +118,8 @@ export const pt: Dict = {
         swapping: 'A trocar',
         wrap: 'Envolver',
         unwrap: 'Desenvolver',
+        wrapFirst: 'Aqui a exchange aceita WNURA, não NURA. Envolva primeiro o seu NURA. É 1:1 e pode desfazer quando quiser.',
+        receiveWrapped: 'Vai receber WNURA, não NURA. Para recuperar NURA, troque WNURA por NURA. É 1:1.',
         rate: 'Taxa de câmbio',
         priceImpact: 'Impacto no preço',
         minReceived: 'Mínimo recebido',

@@ -183,6 +183,12 @@ export function deployment(): DeploymentInfo | null
     return deploymentSignal();
 }
 
+/** WNURA as a plain token, for a flow that has to pay it as an ERC20. */
+export function wnuraToken(): TokenRef
+{
+    return { address: deploymentSignal()?.contracts.wnura ?? '0x', symbol: 'WNURA', name: 'Wrapped NURA', decimals: 18 };
+}
+
 export function ensureDeployment(): Promise<DeploymentInfo>
 {
     // The in-flight promise is shared so N callers cost one request - but a

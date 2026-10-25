@@ -21,14 +21,16 @@ import {
     chainDeadline,
     deployment,
     isNativeToken,
+    WNURA_ABI,
     refreshAllowances,
-    v3Addresses
+    v3Addresses,
+    wnuraToken
 } from '../../lib/chain.ts';
 import type { Address } from '../../lib/chain.ts';
 import { trace, traceError } from '../../lib/debug.ts';
 import { fmtAmount, fmtPercentBps } from '../../lib/format.ts';
 import { t } from '../../lib/i18n.ts';
-import { buildCreateAndMint, buildMint, enabledFeeTiers, poolsForPair, sortTokens } from '../../lib/v3.ts';
+import { buildCreateAndMint, buildMint, enabledFeeTiers, poolsForPair, sortTokens, wrapsNative } from '../../lib/v3.ts';
 import type { FeeTier, V3PoolState } from '../../lib/v3.ts';
 import { account, balances, nativeBalance, requiredWallet, sendTx, txEpoch } from '../../lib/wallet/store.ts';
 
@@ -76,6 +78,8 @@ export default component AddV3Liquidity(props: {
     state confirming = false;
     state busy = false;
     state walletOpen = false;
+    /** False when the position manager cannot wrap NURA itself: the NURA side is paid as WNURA. */
+    state managerWraps = true;
     /** Set once per pair+tier, so retyping a range is never overwritten. */
     let rangeSeededFor = '';
     /** The pair the loaded pool list belongs to; a refresh of the same pair keeps it. */
@@ -86,12 +90,19 @@ export default component AddV3Liquidity(props: {
     const wnura = (): Address => (deployment()?.contracts.wnura ?? '0x') as Address;
     const hop = (token: TokenRef): Address => (isNativeToken(token) ? wnura() : token.address) as Address;
 
+    const wnuraBalance = (): bigint => balances()[wnura().toLowerCase()] ?? 0n;
+
+    // When NURA has to go in as WNURA, what is already wrapped counts too: only
+    // the shortfall gets wrapped.
     const balanceOf = (token: TokenRef | null): bigint =>
         token === null
             ? 0n
             : isNativeToken(token)
-                ? nativeBalance()
+                ? nativeBalance() + (managerWraps ? 0n : wnuraBalance())
                 : balances()[token.address.toLowerCase()] ?? 0n;
+
+    /** The token that actually moves: NURA becomes WNURA when the manager cannot wrap. */
+    const payToken = (token: TokenRef): TokenRef => (isNativeToken(token) && !managerWraps ? wnuraToken() : token);
 
     // Which of the two picks is token0. The pool decides by address, so this is
     // the mapping every amount, price and tick below is expressed in.
@@ -117,6 +128,11 @@ export default component AddV3Liquidity(props: {
         trace('liquidity', 'add sheet opened', { v3, wnura: wnura(), account: account() });
         if (v3 !== null)
         {
+            void wrapsNative(v3.positionManager, wnura()).then((ok) =>
+            {
+                trace('liquidity', ok ? 'the manager takes native NURA' : 'the manager cannot wrap NURA - asking for WNURA');
+                managerWraps = ok;
+            });
             void enabledFeeTiers(v3.factory).then((list) =>
             {
                 trace('liquidity', 'fee tiers', list);
@@ -311,11 +327,11 @@ export default component AddV3Liquidity(props: {
     // and re-blanking a known allowance there dropped the approve gate for the
     // length of an RPC round-trip, every five seconds - long enough to click the
     // deposit button on a token the position manager cannot pull.
-    effect (tokenA, tokenB, account(), txEpoch())
+    effect (tokenA, tokenB, account(), txEpoch(), managerWraps)
     {
         const owner = account();
-        const a = tokenA;
-        const b = tokenB;
+        const a = tokenA === null ? null : payToken(tokenA as TokenRef);
+        const b = tokenB === null ? null : payToken(tokenB as TokenRef);
         const key = `${ owner ?? '' }|${ a === null ? '' : a.address }|${ b === null ? '' : b.address }`;
         if (key !== allowanceKey)
         {
@@ -333,10 +349,19 @@ export default component AddV3Liquidity(props: {
         ]);
     }
 
-    derived needsApproveA = needsA && tokenA !== null && !isNativeToken(tokenA)
+    derived needsApproveA = needsA && tokenA !== null && !isNativeToken(payToken(tokenA as TokenRef))
         && parsedA !== null && allowanceA < (parsedA as bigint);
-    derived needsApproveB = needsB && tokenB !== null && !isNativeToken(tokenB)
+    derived needsApproveB = needsB && tokenB !== null && !isNativeToken(payToken(tokenB as TokenRef))
         && parsedB !== null && allowanceB < (parsedB as bigint);
+
+    // NURA the manager cannot wrap has to be WNURA in the wallet before the mint:
+    // the part not already wrapped is one deposit() on WNURA itself.
+    derived nativeAmount = isNativeToken(tokenA) && needsA
+        ? (parsedA ?? 0n)
+        : isNativeToken(tokenB) && needsB
+            ? (parsedB ?? 0n)
+            : 0n;
+    derived wrapShortfall = managerWraps || nativeAmount <= wnuraBalance() ? 0n : nativeAmount - wnuraBalance();
 
     derived insufficient = (parsedA !== null && (parsedA as bigint) > balanceOf(tokenA))
         || (parsedB !== null && (parsedB as bigint) > balanceOf(tokenB));
@@ -348,7 +373,8 @@ export default component AddV3Liquidity(props: {
         && rangeValid
         && sqrtPrice > 0n
         && hasAmount
-        && !insufficient;
+        && !insufficient
+        && wrapShortfall === 0n;
 
     // A disabled button that does not say why reads as a broken one: name the
     // first thing still missing, in the order the form asks for it.
@@ -376,12 +402,30 @@ export default component AddV3Liquidity(props: {
             tickUpper,
             needsApproveA,
             needsApproveB,
+            managerWraps,
+            wrapShortfall,
             amountA: amountAText,
             amountB: amountBText
         });
     }
 
     const deadline = (): Promise<bigint> => chainDeadline(1200);
+
+    const wrapNative = async (amount: bigint): Promise<void> =>
+    {
+        trace('liquidity', 'wrapping NURA the manager cannot take', { amount });
+        busy = true;
+        await sendTx(
+            `${ t().swap.wrap } NURA`,
+            () => requiredWallet().writeContract({
+                address: wnura(),
+                abi: WNURA_ABI,
+                functionName: 'deposit',
+                value: amount
+            } as never)
+        );
+        busy = false;
+    };
 
     const approveToken = async (token: TokenRef, amount: bigint): Promise<void> =>
     {
@@ -421,11 +465,15 @@ export default component AddV3Liquidity(props: {
         // check`, including on a pool this very transaction creates.
         const min0 = minOutForSlippage(amount0, LIQUIDITY_SLIPPAGE_BPS);
         const min1 = minOutForSlippage(amount1, LIQUIDITY_SLIPPAGE_BPS);
-        const nativeValue = isNativeToken(tokenA)
-            ? (parsedA ?? 0n)
-            : isNativeToken(tokenB)
-                ? (parsedB ?? 0n)
-                : 0n;
+        // Paid as WNURA, the mint carries no value and the manager pulls the
+        // wrapped side like any other ERC20.
+        const nativeValue = !managerWraps
+            ? 0n
+            : isNativeToken(tokenA)
+                ? (parsedA ?? 0n)
+                : isNativeToken(tokenB)
+                    ? (parsedB ?? 0n)
+                    : 0n;
         const request = {
             manager: v3.positionManager,
             token0: current.token0,
@@ -441,7 +489,7 @@ export default component AddV3Liquidity(props: {
             nativeValue
         };
         trace('liquidity', firstProvider ? 'creating the pool and minting' : 'minting into the existing pool', { ...request, sqrtPrice });
-        const label = `${ t().liquidity.add }:${ current.ref0.symbol }/${ current.ref1.symbol } ${ fmtPercentBps(fee / 100) }`;
+        const label = `${ t().liquidity.add }: ${ current.ref0.symbol }/${ current.ref1.symbol } ${ fmtPercentBps(fee / 100) }`;
         // The deadline read sits inside the send: awaited before it, a failed
         // read left the button busy forever with no toast to say why.
         const ok = await sendTx(
@@ -666,31 +714,43 @@ export default component AddV3Liquidity(props: {
                     }
                 >
                     <Show
-                        when={ needsApproveA }
+                        when={ wrapShortfall === 0n || insufficient }
                         fallback={
-                            <Show
-                                when={ needsApproveB }
-                                fallback={
-                                    <Button
-                                        block
-                                        size="lg"
-                                        disabled={ !ready }
-                                        testId="v3-add-review"
-                                        onClick={ () => { trace('liquidity', 'review clicked'); confirming = true; } }
-                                    >
-                                        { actionLabel }
-                                    </Button>
-                                }
-                            >
-                                <Button block size="lg" busy={ busy } onClick={ () => void approveToken(tokenB as TokenRef, parsedB as bigint) }>
-                                    { `${ t().swap.approve } ${ (tokenB as TokenRef).symbol }` }
+                            <div class="flex flex-col gap-2">
+                                <p class="text-center text-xs leading-relaxed text-faint">{ t().swap.wrapFirst }</p>
+                                <Button block size="lg" busy={ busy } testId="v3-wrap" onClick={ () => void wrapNative(wrapShortfall) }>
+                                    { `${ t().swap.wrap } NURA` }
                                 </Button>
-                            </Show>
+                            </div>
                         }
                     >
-                        <Button block size="lg" busy={ busy } onClick={ () => void approveToken(tokenA as TokenRef, parsedA as bigint) }>
-                            { `${ t().swap.approve } ${ (tokenA as TokenRef).symbol }` }
-                        </Button>
+                        <Show
+                            when={ needsApproveA }
+                            fallback={
+                                <Show
+                                    when={ needsApproveB }
+                                    fallback={
+                                        <Button
+                                            block
+                                            size="lg"
+                                            disabled={ !ready }
+                                            testId="v3-add-review"
+                                            onClick={ () => { trace('liquidity', 'review clicked'); confirming = true; } }
+                                        >
+                                            { actionLabel }
+                                        </Button>
+                                    }
+                                >
+                                    <Button block size="lg" busy={ busy } testId="v3-approve-b" onClick={ () => void approveToken(payToken(tokenB as TokenRef), parsedB as bigint) }>
+                                        { `${ t().swap.approve } ${ payToken(tokenB as TokenRef).symbol }` }
+                                    </Button>
+                                </Show>
+                            }
+                        >
+                            <Button block size="lg" busy={ busy } testId="v3-approve-a" onClick={ () => void approveToken(payToken(tokenA as TokenRef), parsedA as bigint) }>
+                                { `${ t().swap.approve } ${ payToken(tokenA as TokenRef).symbol }` }
+                            </Button>
+                        </Show>
                     </Show>
                 </Show>
             </Show>

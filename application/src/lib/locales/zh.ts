@@ -118,6 +118,8 @@ export const zh: Dict = {
         swapping: '兑换中',
         wrap: '包装',
         unwrap: '解包',
+        wrapFirst: '这里交易所收取 WNURA，而不是 NURA。请先把 NURA 包装成 WNURA。比例 1:1，随时可以换回。',
+        receiveWrapped: '你将收到 WNURA，而不是 NURA。想换回 NURA，把 WNURA 兑换成 NURA 即可，比例 1:1。',
         rate: '汇率',
         priceImpact: '价格影响',
         minReceived: '最少收到',

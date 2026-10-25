@@ -118,6 +118,8 @@ export const tr: Dict = {
         swapping: 'Takas ediliyor',
         wrap: 'Sar',
         unwrap: 'Çöz',
+        wrapFirst: 'Borsa burada NURA değil WNURA alıyor. Önce NURA’nızı sarın. Oran 1:1 ve istediğiniz zaman geri alabilirsiniz.',
+        receiveWrapped: 'NURA yerine WNURA alacaksınız. NURA’ya dönmek için WNURA’yı NURA’ya takas edin. Oran 1:1.',
         rate: 'Kur',
         priceImpact: 'Fiyat etkisi',
         minReceived: 'Asgari alınacak',
