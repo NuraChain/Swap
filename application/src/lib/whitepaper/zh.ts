@@ -390,12 +390,12 @@ export const zh: Whitepaper = {
                         table(
                             ['是什么', '地址'],
                             [
-                                ['工厂——创建池子', '0xe5D168482F49A3089a58042c48Fd8f39e9466421'],
-                                ['路由器——执行兑换', '0x692420a1bba97c2953bE5255436c59a555C6c2CE'],
-                                ['报价器——回答“我能拿到多少？”', '0xAbd9e45896BdABD2823e001022B3597A230eB8b2'],
-                                ['仓位管理器——你的收据', '0x862795E8B54ADc2af6C3eE8A553BF326CcD31Fc2'],
-                                ['Tick lens——读取梯子', '0xb002829401939969d6FCA4C7A2bB5b185A7B76Dc'],
-                                ['WNURA——代币形式的 NURA', '0x186c7AADB2EA4B20E21fC002033b53CEBD3EBBc2'],
+                                ['工厂——创建池子', '0x38f606fd69dEF1F3F6C3E70290f48BF885a7776a'],
+                                ['路由器——执行兑换', '0x60126ad5df6eFcb8f744063b10f5B881886629d0'],
+                                ['报价器——回答“我能拿到多少？”', '0x692420a1bba97c2953bE5255436c59a555C6c2CE'],
+                                ['仓位管理器——你的收据', '0xc4814A17f50df52Cf5774448D253E7b4E81039ee'],
+                                ['Tick lens——读取梯子', '0xe5D168482F49A3089a58042c48Fd8f39e9466421'],
+                                ['WNURA——代币形式的 NURA', '0x14Bd67b20d4CA05677B311830F85A2DFAE579eD2'],
                                 ['Multicall——一次问很多问题', '0xf58884FCf45d8F5Cc8A73c618D23EB27b732CA24'],
                                 ['Bridge BNB', '0x578fACf1f6d7de0E78D59f405C2A53f387d94E93'],
                                 ['Bridge USDT', '0xeAF3361a86C22e9691283A30338b57cA95567207'],

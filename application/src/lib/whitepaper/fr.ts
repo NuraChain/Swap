@@ -390,12 +390,12 @@ export const fr: Whitepaper = {
                         table(
                             ['Ce que c’est', 'Adresse'],
                             [
-                                ['Factory : crée les pools', '0xe5D168482F49A3089a58042c48Fd8f39e9466421'],
-                                ['Routeur : fait les échanges', '0x692420a1bba97c2953bE5255436c59a555C6c2CE'],
-                                ['Cotateur : répond « combien je recevrais ? »', '0xAbd9e45896BdABD2823e001022B3597A230eB8b2'],
-                                ['Gestionnaire de positions : vos reçus', '0x862795E8B54ADc2af6C3eE8A553BF326CcD31Fc2'],
-                                ['Tick lens : lit l’échelle', '0xb002829401939969d6FCA4C7A2bB5b185A7B76Dc'],
-                                ['WNURA : NURA sous forme de jeton', '0x186c7AADB2EA4B20E21fC002033b53CEBD3EBBc2'],
+                                ['Factory : crée les pools', '0x38f606fd69dEF1F3F6C3E70290f48BF885a7776a'],
+                                ['Routeur : fait les échanges', '0x60126ad5df6eFcb8f744063b10f5B881886629d0'],
+                                ['Cotateur : répond « combien je recevrais ? »', '0x692420a1bba97c2953bE5255436c59a555C6c2CE'],
+                                ['Gestionnaire de positions : vos reçus', '0xc4814A17f50df52Cf5774448D253E7b4E81039ee'],
+                                ['Tick lens : lit l’échelle', '0xe5D168482F49A3089a58042c48Fd8f39e9466421'],
+                                ['WNURA : NURA sous forme de jeton', '0x14Bd67b20d4CA05677B311830F85A2DFAE579eD2'],
                                 ['Multicall : beaucoup de questions d’un coup', '0xf58884FCf45d8F5Cc8A73c618D23EB27b732CA24'],
                                 ['Bridge BNB', '0x578fACf1f6d7de0E78D59f405C2A53f387d94E93'],
                                 ['Bridge USDT', '0xeAF3361a86C22e9691283A30338b57cA95567207'],
