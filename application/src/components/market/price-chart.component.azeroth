@@ -1,8 +1,7 @@
-import { formatTokenAmount } from '@nuraswap/shared/digits';
-
 import { client } from '../../api.ts';
 import type { Candle, TokenRef } from '../../api.ts';
-import { fmtNumber, t } from '../../lib/i18n.ts';
+import { fmtPrice } from '../../lib/format.ts';
+import { t } from '../../lib/i18n.ts';
 import { txEpoch } from '../../lib/wallet/store.ts';
 
 // Hourly close of token1-per-token0 as a single-series area chart: 2px brand
@@ -29,11 +28,19 @@ export default component PriceChart(props: { pairAddress: string })
             .catch(() => { candles = []; });
     }
 
-    derived points = candles.map((candle) =>
-    {
-        const raw = Number(formatTokenAmount(BigInt(candle.close), 18, 12));
-        return { time: candle.hourStart, value: raw };
-    });
+    // Prices are wads; a plain division keeps a price far below 1e-12, which a
+    // fixed-decimal string cut to zero.
+    const priceOf = (wad: string): number => Number(BigInt(wad)) / 1e18;
+
+    // A pool's first hour of trading is ONE candle, and a line needs two points:
+    // it drew as "no trades" right after the first trade. One candle charts as
+    // its own open and close instead.
+    derived points = candles.length === 1
+        ? [
+            { time: candles[0].hourStart, value: priceOf(candles[0].open) },
+            { time: Math.max(candles[0].hourStart, Math.floor(Date.now() / 1000)), value: priceOf(candles[0].close) }
+        ]
+        : candles.map((candle) => ({ time: candle.hourStart, value: priceOf(candle.close) }));
 
     derived domain = (() =>
     {
@@ -92,7 +99,7 @@ export default component PriceChart(props: { pairAddress: string })
             </span>
             <Show when={ points.length > 0 }>
                 <span class="font-mono text-lg text-val">
-                    { fmtNumber(points[points.length - 1]?.value ?? 0, 6) }
+                    { fmtPrice(points[points.length - 1]?.value ?? 0) }
                 </span>
             </Show>
         </div>
@@ -154,7 +161,7 @@ export default component PriceChart(props: { pairAddress: string })
                     }
                 >
                     <span class="font-mono">
-                        { `${ timeLabel(points[hover as number].time) } · ${ fmtNumber(points[hover as number].value, 6) } ${ quoteToken?.symbol ?? '' }` }
+                        { `${ timeLabel(points[hover as number].time) } · ${ fmtPrice(points[hover as number].value) } ${ quoteToken?.symbol ?? '' }` }
                     </span>
                 </Show>
             </div>

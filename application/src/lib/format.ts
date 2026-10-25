@@ -100,6 +100,18 @@ export function fmtUsdPriceLabel(price: number): string
     return markUsd(fmtUsdPrice(price));
 }
 
+// A pool price, which can sit many places past the point: a pair of 18-decimal
+// tokens worth a billion to one prices at 0.000000002, and every fixed-fraction
+// rule above prints that as 0. Below one it keeps four significant digits.
+export function fmtPrice(value: number): string
+{
+    if (value >= 1 || value === 0)
+    {
+        return fmtNumber(value, value >= 10_000 ? 2 : 6);
+    }
+    return new Intl.NumberFormat(langInfo().locale, { maximumSignificantDigits: 4 }).format(value);
+}
+
 export function fmtPercentBps(bps: number): string
 {
     const text = fmtNumber(bps / 100, 2);

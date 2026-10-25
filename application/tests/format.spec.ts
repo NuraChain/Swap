@@ -5,7 +5,7 @@
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { addressGradient, fmtAmount, fmtAmountCompact, fmtPercentBps, fmtTime, fmtUsdPrice, shortAddress } from '../src/lib/format.ts';
+import { addressGradient, fmtAmount, fmtAmountCompact, fmtPercentBps, fmtPrice, fmtTime, fmtUsdPrice, shortAddress } from '../src/lib/format.ts';
 import { setLang } from '../src/lib/i18n.ts';
 
 const WAD = 10n ** 18n;
@@ -80,6 +80,26 @@ describe('fmtUsdPrice', () =>
     {
         expect(fmtUsdPrice(0.000000004)).toBe('0');
         expect(fmtUsdPrice(1234.56789)).toBe('1,234.5679');
+    });
+});
+
+describe('fmtPrice', () =>
+{
+    // NURA/BNB opened near 0.000000002 BNB per NURA, and the chart's six fixed
+    // decimals printed its price as 0.
+    it('keeps four significant digits below one', () =>
+    {
+        setLang('en');
+        expect(fmtPrice(0.000000001992027921)).toBe('0.000000001992');
+        expect(fmtPrice(0.0525)).toBe('0.0525');
+    });
+
+    it('reads like any other figure from one up', () =>
+    {
+        setLang('en');
+        expect(fmtPrice(0)).toBe('0');
+        expect(fmtPrice(653.671234)).toBe('653.671234');
+        expect(fmtPrice(12_345.6789)).toBe('12,345.68');
     });
 });
 
