@@ -9,6 +9,45 @@ this changelog covers the application, the indexer, and the shared maths.
 
 ## [Unreleased]
 
+## [1.5.6] - 2026-10-25
+
+### Added
+
+- **NURA goes in as WNURA when the exchange cannot wrap it.** The router and the
+  position manager wrap native NURA through their own `WETH9`; deployed against
+  a different wrapper than the pools' WNURA, a native payment falls through to
+  `transferFrom` and reverts with `STF`. `wrapsNative()` reads `WETH9()` and
+  compares it to the deployment's WNURA. When they differ, swap and add
+  liquidity ask to wrap the NURA not already wrapped, approve WNURA, and send no
+  value; a swap to NURA pays out WNURA and says so. A matching periphery keeps
+  the native path.
+- **A console trail for the chain flows.** Adding liquidity and every
+  transaction log their steps under `[nuraswap:*]`: the addresses read, the pool
+  and fee-tier reads and how many failed, what the button waits for, and the
+  receipt or the raw error.
+
+### Changed
+
+- **Pointed at the redeployed chain.** `shared/deployments/1020.json` names the
+  new WNURA, factory, SwapRouter, QuoterV2, NonfungiblePositionManager and
+  TickLens, with `startBlock` at the factory's deploy block. The indexer wipes
+  and reindexes on its own when the factory changes. The whitepaper's address
+  appendix follows in all ten languages, and the PDFs are regenerated.
+- The add-liquidity button names what the form still needs - a token, an
+  opening price, a range, an amount, or more balance - instead of sitting
+  disabled under "Add liquidity". Two new strings, in all ten languages.
+
+### Fixed
+
+- The price chart draws a pool's first hour of trading. One hourly candle used
+  to read as "No trades charted yet"; it now charts as its open and close.
+- A price far below one keeps four significant digits on the chart. NURA/BNB at
+  0.000000002 printed as 0.
+- A failed token transfer (`STF`, `ST`, `STE`, quoted by the wallet or not)
+  reads as a transfer failure, not as the generic on-chain failure.
+- A failed deadline read no longer leaves the add-liquidity button busy with no
+  toast: it is read inside the send, where every failure is reported.
+
 ## [1.5.5] - 2026-10-24
 
 ### Changed
