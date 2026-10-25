@@ -189,6 +189,8 @@ export const fr: Dict = {
         fullRange: 'Plage complète',
         currentPrice: 'Prix actuel',
         invalidRange: 'Le prix minimum doit être inférieur au maximum.',
+        needOpeningPrice: 'Saisissez le prix d’ouverture',
+        needRange: 'Choisissez une plage de prix',
         oneSided: 'Cette plage est entièrement d’un côté du prix : le pool n’acceptera donc qu’un seul des deux jetons.',
         createPool: 'Aucun pool à ce palier pour l’instant. Votre dépôt le crée et fixe le prix d’ouverture - alignez-le sur le marché, sinon l’arbitrage prendra l’écart.',
         openingPrice: 'Prix d’ouverture',

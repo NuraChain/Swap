@@ -189,6 +189,8 @@ export const pt: Dict = {
         fullRange: 'Intervalo total',
         currentPrice: 'Preço atual',
         invalidRange: 'O preço mínimo tem de ser inferior ao máximo.',
+        needOpeningPrice: 'Indique o preço de abertura',
+        needRange: 'Defina um intervalo de preço',
         oneSided: 'Este intervalo fica todo de um lado do preço, por isso o pool aceita apenas um dos tokens.',
         createPool: 'Ainda não há pool neste escalão. O seu depósito cria-o e fixa o preço de abertura - acerte com o mercado, ou a arbitragem leva a diferença.',
         openingPrice: 'Preço de abertura',

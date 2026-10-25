@@ -189,6 +189,8 @@ export const tr: Dict = {
         fullRange: 'Tam aralık',
         currentPrice: 'Güncel fiyat',
         invalidRange: 'En düşük fiyat, en yüksekten küçük olmalı.',
+        needOpeningPrice: 'Açılış fiyatını girin',
+        needRange: 'Bir fiyat aralığı seçin',
         oneSided: 'Bu aralık tamamen fiyatın bir tarafında; havuz bu yüzden yalnızca tek bir token alır.',
         createPool: 'Bu ücret kademesinde henüz havuz yok. Yatırdığınız tutar havuzu oluşturur ve açılış fiyatını belirler - piyasayla uyumlu tutun, yoksa farkı arbitraj alır.',
         openingPrice: 'Açılış fiyatı',

@@ -346,6 +346,20 @@ export default component AddV3Liquidity(props: {
         && hasAmount
         && !insufficient;
 
+    // A disabled button that does not say why reads as a broken one: name the
+    // first thing still missing, in the order the form asks for it.
+    derived actionLabel = ordered === null
+        ? t().swap.selectToken
+        : sqrtPrice <= 0n && firstProvider
+            ? t().v3.needOpeningPrice
+            : !rangeValid
+                ? t().v3.needRange
+                : !hasAmount
+                    ? t().swap.enterAmount
+                    : insufficient
+                        ? t().swap.insufficient
+                        : t().liquidity.add;
+
     const deadline = (): Promise<bigint> => chainDeadline(1200);
 
     const approveToken = async (token: TokenRef, amount: bigint): Promise<void> =>
@@ -375,7 +389,6 @@ export default component AddV3Liquidity(props: {
         const amount0 = (current.aIsToken0 ? parsedA : parsedB) ?? 0n;
         const amount1 = (current.aIsToken0 ? parsedB : parsedA) ?? 0n;
         busy = true;
-        const when = await deadline();
         // Both minimums carry the tolerance, first provider or not. The position
         // manager derives one liquidity figure from the pair of amounts, rounding
         // down, then derives the amounts back out of that liquidity - so at least
@@ -401,15 +414,20 @@ export default component AddV3Liquidity(props: {
             amount0Min: min0,
             amount1Min: min1,
             recipient: owner,
-            deadline: when,
             nativeValue
         };
         const label = `${ t().liquidity.add }: ${ current.ref0.symbol }/${ current.ref1.symbol } ${ fmtPercentBps(fee / 100) }`;
+        // The deadline read sits inside the send: awaited before it, a failed
+        // read left the button busy forever with no toast to say why.
         const ok = await sendTx(
             label,
-            () => requiredWallet().writeContract((firstProvider
-                ? buildCreateAndMint(request, sqrtPrice)
-                : buildMint(request)) as never)
+            async () =>
+            {
+                const signed = { ...request, deadline: await deadline() };
+                return requiredWallet().writeContract((firstProvider
+                    ? buildCreateAndMint(signed, sqrtPrice)
+                    : buildMint(signed)) as never);
+            }
         );
         busy = false;
         if (ok)
@@ -635,7 +653,7 @@ export default component AddV3Liquidity(props: {
                                         testId="v3-add-review"
                                         onClick={ () => { confirming = true; } }
                                     >
-                                        { insufficient ? t().swap.insufficient : t().liquidity.add }
+                                        { actionLabel }
                                     </Button>
                                 }
                             >
