@@ -21,7 +21,7 @@
         "@nuraswap/shared": "1.5.6",
         "azerothjs": "^2.1.0",
         "pg": "^8.23.1",
-        "viem": "^2.57.10"
+        "viem": "^2.57.11"
     },
     "devDependencies": {
         "@azerothjs/cli": "^2.1.0",
