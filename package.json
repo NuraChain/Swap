@@ -29,11 +29,11 @@
         "verify": "npm run lint:rtl && npm run check && npm run build && npm test"
     },
     "optionalDependencies": {
-        "@tailwindcss/oxide-linux-x64-gnu": "4.3.3",
-        "@tailwindcss/oxide-win32-x64-msvc": "4.3.3"
+        "@tailwindcss/oxide-linux-x64-gnu": "4.3.5",
+        "@tailwindcss/oxide-win32-x64-msvc": "4.3.5"
     },
     "devDependencies": {
         "@azerothjs/cli": "^2.1.0",
-        "@vitest/coverage-v8": "^5.0.5"
+        "@vitest/coverage-v8": "^5.1.0"
     }
 }
